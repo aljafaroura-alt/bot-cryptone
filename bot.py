@@ -2074,11 +2074,11 @@ def stop_schedule(message):
 
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
-    chat_id = message.chat.id # <-- INI YG BIKIN chat_id ADA
+    chat_id = message.chat.id
 
     # 1. CEK SCHEDULE AKTIF
     schedule_text = "🔴 OFF"
-    if chat_id in schedule_jobs: # <-- INI HARUS DI DALEM FUNGSI
+    if chat_id in schedule_jobs:
         job = schedule_jobs[chat_id]
         try:
             mode = job.job_func.__name__.replace('job_', '').replace('_radar', '').upper()
@@ -2091,14 +2091,14 @@ def status_cmd(message):
             next_run = next_run_wib.strftime('%H:%M:%S WIB')
             
             schedule_text = f"✅ ON\n   ├ Mode   : {mode}\n   ├ Tiap   : {interval} {unit}\n   └ Next   : {next_run}"
-        except:
-            schedule_text = "✅ ON"
+        except Exception as e:
+            schedule_text = f"✅ ON | Error baca next_run: {e}"
 
     # 2. CEK SNIPER AKTIF
     sniper_text = "✅ ON" if globals().get('SNIPER_ALL_COIN', False) else "🔴 OFF"
 
-    # 3. CEK SESSION - PAKE NAMA FUNGSI LU
-    session_text = get_sesi() # <-- INI YG BENER
+    # 3. CEK SESSION
+    session_text = get_sesi()
 
     # 4. HITUNG UPTIME
     uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
@@ -2111,7 +2111,7 @@ def status_cmd(message):
     teks += f"Sniper  : {sniper_text}\n"
     teks += f"Schedule: {schedule_text}\n"
     teks += f"Session : {session_text}\n"
-    teks += f"WIB     : {get_wib()}\n" # <-- Ga pake WIB lagi
+    teks += f"WIB     : {get_wib()}\n"
     teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
     teks += "✅ Semua sistem normal"
 
