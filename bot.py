@@ -12,16 +12,16 @@ from hyperliquid.utils import constants
 import concurrent.futures
 import schedule
 
-15  TOKEN = os.environ.get('TOKEN')
-16  bot = telebot.TeleBot(TOKEN)
-17  info = Info(constants.MAINNET_API_URL)
-18   
-19  # GLOBAL SWITCH
-20  SNIPER_ALL_COIN = False  # Default mati
-21  USER_ID = 8347576377  # PASTIIN ID TELEGRAM LU UDAH ADA
-22  
-23  last_scan = 0
-24  cached_results = ""
+TOKEN = os.environ.get('TOKEN')
+bot = telebot.TeleBot(TOKEN)
+info = Info(constants.MAINNET_API_URL)
+
+# GLOBAL SWITCH
+SNIPER_ALL_COIN = False  # Default mati
+USER_ID = 8347576377  # PASTIIN ID TELEGRAM LU UDAH ADA
+  
+last_scan = 0
+cached_results = ""
 
 # ========== SMART MONEY AUTO ENTRY ==========
 PERPS_CACHE = []
