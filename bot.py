@@ -18,7 +18,7 @@ import schedule
 18  
 19  # GLOBAL SWITCH
 20  SNIPER_ALL_COIN = False  # Default mati
-21  USER_ID = 12345678  # PASTIIN ID TELEGRAM LU UDAH ADA
+21  USER_ID = 8347576377  # PASTIIN ID TELEGRAM LU UDAH ADA
 22  
 23  last_scan = 0
 24  cached_results = ""
