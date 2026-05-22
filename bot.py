@@ -15,6 +15,8 @@ import schedule
 TOKEN = os.environ.get('TOKEN')
 bot = telebot.TeleBot(TOKEN)
 info = Info(constants.MAINNET_API_URL)
+START_TIME = time.time()
+
 
 # GLOBAL SWITCH
 SNIPER_ALL_COIN = False  # Default mati
@@ -2026,43 +2028,49 @@ def stop_schedule(message):
 threading.Thread(target=run_scheduler, daemon=True).start()
 # ===== AUTO SCHEDULE END =====
 
-# ===== AUTO SCHEDULE END =====
-
 @bot.message_handler(commands=['status'])
-def status(message):
-    global SNIPER_ALL_COIN
-    from datetime import datetime, timezone, timedelta
+def status_cmd(message):
+    chat_id = message.chat.id
     
-    # Status Sniper
-    sniper_status = "✅ ON" if SNIPER_ALL_COIN else "⬜ OFF"
+    # 1. CEK SCHEDULE AKTIF
+    schedule_text = "🔴 OFF"
+    if chat_id in schedule_jobs:
+        job = schedule_jobs[chat_id]
+        try:
+            # Ambil nama fungsi: job_insane_radar → INSANE
+            mode = job.job_func.__name__.replace('job_', '').replace('_radar', '').upper()
+            interval = job.interval
+            unit = job.unit[:-1] if job.unit.endswith('s') else job.unit # minutes → minute
+            
+            # Hitung next run
+            next_run = job.next_run.strftime('%H:%M:%S WIB')
+            
+            schedule_text = f"✅ ON\n   ├ Mode   : {mode}\n   ├ Tiap   : {interval} {unit}\n   └ Next   : {next_run}"
+        except:
+            schedule_text = "✅ ON"
+
+    # 2. CEK SNIPER AKTIF - Optional kalo lu ada var sniper_active
+    sniper_text = "✅ ON" if globals().get('sniper_active', False) else "🔴 OFF"
     
-    # Status Schedule - cek ada job jalan ga
-    schedule_status = "✅ ON" if schedule.get_jobs() else "⬜ OFF"
+    # 3. CEK SESSION
+    session_text = get_session_now() # Pake fungsi session lu
     
-    # Session trading berdasarkan jam WIB
-    wib = datetime.now(timezone(timedelta(hours=7)))
-    hour = wib.hour
-    if 7 <= hour < 15:
-        session = "🇯🇵 TOKYO — ASIA SESSION"
-    elif 15 <= hour < 21:
-        session = "🇬🇧 LONDON — EU SESSION"  
-    elif 21 <= hour or hour < 4:
-        session = "🇺🇸 NEW YORK — US SESSION"
-    else:
-        session = "😴 OFF HOURS"
+    # 4. HITUNG UPTIME BOT
+    uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
     
-    text = f"""
-⚙️ **SYSTEM STATUS**
-━━━━━━━━━━━━━━━━━━━━━━━
-Bot : ✅ ONLINE
-Sniper : {sniper_status}
-Schedule : {schedule_status}
-Session : {session}
-WIB : {wib.strftime('%d/%m %H:%M WIB')}
-━━━━━━━━━━━━━━━━━━━━━━━
-✅ Semua sistem normal
-    """
-    bot.reply_to(message, text)
+    # 5. RENDER TEXT
+    teks = f"⚙️ <b>SYSTEM STATUS</b>\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    teks += f"Bot      : ✅ ONLINE\n"
+    teks += f"Uptime   : {uptime}\n"
+    teks += f"Sniper   : {sniper_text}\n"
+    teks += f"Schedule : {schedule_text}\n"
+    teks += f"Session  : {session_text}\n"
+    teks += f"WIB      : {get_wib()} WIB\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    teks += "✅ Semua sistem normal"
+    
+    bot.send_message(chat_id, teks, parse_mode='HTML')
 
 # ===== ULTIMATE SNIPER ALL COIN =====
 @bot.message_handler(commands=['sniper'])
