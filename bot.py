@@ -12,12 +12,16 @@ from hyperliquid.utils import constants
 import concurrent.futures
 import schedule
 
-TOKEN = os.environ.get('TOKEN')
-bot = telebot.TeleBot(TOKEN)
-info = Info(constants.MAINNET_API_URL)
- 
-last_scan = 0
-cached_results = ""
+15  TOKEN = os.environ.get('TOKEN')
+16  bot = telebot.TeleBot(TOKEN)
+17  info = Info(constants.MAINNET_API_URL)
+18  
+19  # GLOBAL SWITCH
+20  SNIPER_ALL_COIN = False  # Default mati
+21  USER_ID = 12345678  # PASTIIN ID TELEGRAM LU UDAH ADA
+22  
+23  last_scan = 0
+24  cached_results = ""
 
 # ========== SMART MONEY AUTO ENTRY ==========
 PERPS_CACHE = []
@@ -1981,101 +1985,108 @@ def status(message):
 
     bot.reply_to(message, teks)
 
-# ===== ULTIMATE SNIPER START =====
-from telebot import types
-alert_status = {"active": False, "last": {"wall": 0, "setup": 0}}
-
-def get_ctx_data(coin):
-    """Ambil ctx data kayak di /warroom lu"""
-    data = info.meta_and_asset_ctxs()
-    assets = data[0]["universe"]
-    ctxs = data[1]
-    for asset, c in zip(assets, ctxs):
-        if asset["name"] == coin:
-            return c
-    return None
-
-def ultimate_sniper(chat_id):
+# ===== ULTIMATE SNIPER ALL COIN =====
+@bot.message_handler(commands=['sniper'])
+def sniper_on(message):
+    global SNIPER_ALL_COIN
+    SNIPER_ALL_COIN = True
+    
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
     
-    bot.send_message(chat_id, 
-        "🐋 ULTIMATE SNIPER ON\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "Jagain 2 hal:\n"
-        "1. 🛡️ Bid Wall BTC >$200k\n"
-        "2. 🎯 Setup Ready BTC\n\n"
-        "Syarat Setup: Wall >$150k + Delta >+30% + Funding <-0.01%\n"
-        "Cooldown 10-15 menit biar ga spam.",
+    bot.send_message(message.chat.id,
+        "🐋 **ULTIMATE SNIPER ALL COIN - ON**\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Jagain 156 koin Hyperliquid:\n"
+        "1. 🛡️ Bid Wall > $150k\n"
+        "2. 📡 OB Delta > +30%\n"
+        "3. 💸 Funding < -0.01%\n"
+        "Kalo 3 syarat kena di koin manapun = auto notif masuk.\n"
+        "Cooldown 3 detik/koin biar ga spam.\n"
+        "Ketik /stopsniper buat matiin.",
         reply_markup=markup
     )
-    
-    while alert_status["active"]:
-        try:
-            now = time.time()
-            coin = "BTC"
-            
-            ctx = get_ctx_data(coin)
-            if not ctx:
-                time.sleep(30)
-                continue
-                
-            # Pake fungsi asli dari /warroom lu
-            wall = get_bid_wall(coin) # ← UDAH ADA
-            delta = get_ob_delta(coin) # ← UDAH ADA 
-            funding = get_funding_pct(ctx) # ← UDAH ADA
-            
-            # 1. WALL ALERT
-            if wall > 200000 and now - alert_status["last"]["wall"] > 600:
-                teks = f"🛡️ WALL ALERT AKTIF\n"
-                teks += f"Bid Wall BTC: ${wall/1e6:.2f}M\n"
-                teks += f"Ada tembok tebel. Stop hunt kelar?\n/warroom BTC"
-                bot.send_message(chat_id, teks)
-                alert_status["last"]["wall"] = now
-                
-            # 2. SETUP READY ALERT - 3 SYARAT WAJIB
-            if wall > 150000 and delta > 30 and funding < -0.01 and now - alert_status["last"]["setup"] > 900:
-                teks = f"🎯 SETUP READY\n"
-                teks += f"BTC: Wall ${wall/1e6:.2f}M | Delta +{delta:.0f}% | Funding {funding:.4f}%\n"
-                teks += f"Warroom udah ga SKIP lagi\n/entry BTC"
-                bot.send_message(chat_id, teks)
-                alert_status["last"]["setup"] = now
-                
-            time.sleep(30) # Cek tiap 30 detik
-            
-        except Exception as e:
-            print(f"Sniper error: {e}")
-            time.sleep(60)
-    
-    markup = types.InlineKeyboardMarkup()
-    btn_on = types.InlineKeyboardButton("🐋 START SNIPER", callback_data="sniper")
-    markup.add(btn_on)
-    bot.send_message(chat_id, "🔕 ULTIMATE SNIPER OFF", reply_markup=markup)
 
-@bot.message_handler(commands=['sniper'])
-def sniper_on(message):
-    if not alert_status["active"]:
-        alert_status["active"] = True
-        thread = threading.Thread(target=ultimate_sniper, args=(message.chat.id,))
-        thread.daemon = True
-        thread.start()
-    else:
-        bot.reply_to(message, "Udah ON bro 🐋 Tinggal tunggu notif")
+@bot.callback_query_handler(func=lambda call: call.data == "stopsniper")
+def callback_stop_sniper(call):
+    global SNIPER_ALL_COIN
+    SNIPER_ALL_COIN = False
+    bot.edit_message_text("🔕 **SNIPER ALL COIN - OFF**\nUdah dimatiin. Ga bakal ada notif entry lagi.", 
+                         call.message.chat.id, call.message.message_id)
 
 @bot.message_handler(commands=['stopsniper'])
-def sniper_off(message):
-    alert_status["active"] = False
-    bot.reply_to(message, "Sniper off 😴")
+def handle_stop_sniper(message):
+    global SNIPER_ALL_COIN
+    SNIPER_ALL_COIN = False
+    bot.reply_to(message, "🔕 **SNIPER ALL COIN - OFF**\nUdah dimatiin. Ga bakal ada notif entry lagi.")
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_sniper(call):
-    if call.data == "sniper":
-        sniper_on(call.message)
-        bot.answer_callback_query(call.id, "Sniper ON 🐋")
-    elif call.data == "stopsniper":
-        sniper_off(call.message)
-        bot.answer_callback_query(call.id, "Sniper OFF 😴")
+# GANTI FUNGSI run_scheduler() LU JADI INI
+def run_scheduler():
+    global SNIPER_ALL_COIN
+    while True:
+        try:
+            print("Running Smart Money scan...")
+            all_mids = info.all_mids()
+            coins = [c for c in all_mids.keys() if c.endswith("-PERP")]
+            print(f"Update list: {len(coins)} perps Hyperliquid")
+            
+            for coin in coins:
+                symbol = coin.replace("-PERP", "")
+                
+                try:
+                    # Skip kalo chaos
+                    if is_market_chaos(symbol): 
+                        continue
+                    
+                    # Pake fungsi lu yg udah ada
+                    ctx = get_ctx_data(symbol)
+                    if not ctx: continue
+                    
+                    wall = get_bid_wall(symbol) # fungsi lu
+                    delta = get_ob_delta(symbol) # fungsi lu 
+                    funding = get_funding_pct(ctx) # fungsi lu
+                    price = float(all_mids[coin])
+                    
+                    # SYARAT SMART MONEY ENTRY - ALL COIN
+                    wall_min = 150000 
+                    delta_min = 30 
+                    funding_max = -0.01 
+                    
+                    # CUMA KIRIM KALO SNIPER NYALA
+                    if SNIPER_ALL_COIN and wall >= wall_min and delta >= delta_min and funding <= funding_max:
+                        
+                        # Cek cooldown per koin biar ga spam
+                        now = time.time()
+                        if symbol in last_entry_time:
+                            if now - last_entry_time[symbol] < 600: # 10 menit cooldown
+                                continue
+                        
+                        alert = f"""
+🐋 **SMART MONEY ENTRY {symbol}-PERP**
+⏰ {datetime.now(timezone(timedelta(hours=7))).strftime('%d/%m %H:%M')} WIB
+━━━━━━━━━━━━━━━━━━━━━━━
+💰 Harga : ${price:.4f}
+💸 Funding: {funding:.4f}%
+📡 OB Delta: {delta:.1f}%
+🐋 Bid Wall: ${wall/1e6:.2f}M
+━━━━━━━━━━━━━━━━━━━━━━━
+/warroom {symbol} /entry {symbol}
+"""
+                        bot.send_message(USER_ID, alert, parse_mode='Markdown')
+                        print(f"ALERT SENT: {symbol}")
+                        last_entry_time[symbol] = now
+                        time.sleep(3) # jeda 3 detik/koin
+                        
+                except Exception as e:
+                    print(f"Error scan {symbol}: {e}")
+                    continue
+            
+            time.sleep(300) # Scan tiap 5 menit
+            
+        except Exception as e:
+            print(f"Scanner error: {e}")
+            time.sleep(60)
 # ===== ULTIMATE SNIPER END =====
 
 # ═══════════════════════════════════════════════════════════
