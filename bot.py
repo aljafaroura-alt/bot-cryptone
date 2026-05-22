@@ -2074,47 +2074,47 @@ def stop_schedule(message):
 
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
-    chat_id = message.chat.id
-    
+    chat_id = message.chat.id # <-- INI YG BIKIN chat_id ADA
+
     # 1. CEK SCHEDULE AKTIF
-schedule_text = "🔴 OFF"
-if chat_id in schedule_jobs:
-    job = schedule_jobs[chat_id]
-    try:
-        mode = job.job_func.__name__.replace('job_', '').replace('_radar', '').upper()
-        interval = job.interval
-        unit = job.unit[:-1] if job.unit.endswith('s') else job.unit
-        
-        # INI YG BENER - CONVERT UTC KE WIB
-        next_run_utc = job.next_run
-        next_run_wib = next_run_utc + timedelta(hours=7) # <-- TAMBAH INI
-        next_run = next_run_wib.strftime('%H:%M:%S WIB') # <-- GANTI INI
-        
-        schedule_text = f"✅ ON\n   ├ Mode   : {mode}\n   ├ Tiap   : {interval} {unit}\n   └ Next   : {next_run}"
-    except:
-        schedule_text = "✅ ON"
+    schedule_text = "🔴 OFF"
+    if chat_id in schedule_jobs: # <-- INI HARUS DI DALEM FUNGSI
+        job = schedule_jobs[chat_id]
+        try:
+            mode = job.job_func.__name__.replace('job_', '').replace('_radar', '').upper()
+            interval = job.interval
+            unit = job.unit[:-1] if job.unit.endswith('s') else job.unit
+            
+            # FIX TIMEZONE UTC → WIB
+            next_run_utc = job.next_run
+            next_run_wib = next_run_utc + timedelta(hours=7)
+            next_run = next_run_wib.strftime('%H:%M:%S WIB')
+            
+            schedule_text = f"✅ ON\n   ├ Mode   : {mode}\n   ├ Tiap   : {interval} {unit}\n   └ Next   : {next_run}"
+        except:
+            schedule_text = "✅ ON"
 
     # 2. CEK SNIPER AKTIF
     sniper_text = "✅ ON" if globals().get('SNIPER_ALL_COIN', False) else "🔴 OFF"
-    
+
     # 3. CEK SESSION - PAKE NAMA FUNGSI LU
     session_text = get_sesi() # <-- INI YG BENER
-    
+
     # 4. HITUNG UPTIME
     uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
-    
+
     # 5. RENDER TEXT
     teks = f"⚙️ <b>SYSTEM STATUS</b>\n"
     teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
-    teks += f"Bot      : ✅ ONLINE\n"
-    teks += f"Uptime   : {uptime}\n"
-    teks += f"Sniper   : {sniper_text}\n"
-    teks += f"Schedule : {schedule_text}\n"
-    teks += f"Session  : {session_text}\n"
-    teks += f"WIB      : {get_wib()}\n" # <-- Ga pake WIB lagi
+    teks += f"Bot     : ✅ ONLINE\n"
+    teks += f"Uptime  : {uptime}\n"
+    teks += f"Sniper  : {sniper_text}\n"
+    teks += f"Schedule: {schedule_text}\n"
+    teks += f"Session : {session_text}\n"
+    teks += f"WIB     : {get_wib()}\n" # <-- Ga pake WIB lagi
     teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
     teks += "✅ Semua sistem normal"
-    
+
     bot.send_message(chat_id, teks, parse_mode='HTML')
 
 # ===== ULTIMATE SNIPER ALL COIN =====
