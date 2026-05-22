@@ -1,16 +1,17 @@
+import os
 import telebot
 from telebot import types
 import threading
 import time
 import requests
 from datetime import datetime, timezone, timedelta
-from cache import get_cache, set_cache
+#from cache import get_cache, set_cache
 from hyperliquid.info import Info
 from hyperliquid.utils import constants
 import concurrent.futures
 import schedule
 
-TOKEN = "8966251450:AAGISG43AP1pwgyLfyYjWqNnIbisum1Tig4"
+TOKEN = os.environ.get('TOKEN')
 bot = telebot.TeleBot(TOKEN)
 info = Info(constants.MAINNET_API_URL)
 
