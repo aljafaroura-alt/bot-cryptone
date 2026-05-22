@@ -1970,20 +1970,39 @@ scheduler_thread.start()
 
 @bot.message_handler(commands=['status'])
 def status(message):
-    chat_id = message.chat.id
-    sniper_stat = "✅ ON" if alert_status["active"] else "⬜ OFF"
-    schedule_stat = "✅ ON" if chat_id in schedule_jobs else "⬜ OFF"
-
-    teks = f"⚙️ SYSTEM STATUS\n━━━━━━━━━━━━━━━━━━━━━━━\n"
-    teks += f"Bot : ✅ ONLINE\n"
-    teks += f"Sniper : {sniper_stat}\n"
-    teks += f"Schedule : {schedule_stat}\n"
-    teks += f"Session : {get_sesi()}\n"
-    teks += f"WIB : {get_wib()}\n"
-    teks += f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-    teks += f"✅ Semua sistem normal"
-
-    bot.reply_to(message, teks)
+    global SNIPER_ALL_COIN
+    from datetime import datetime, timezone, timedelta
+    
+    # Status Sniper
+    sniper_status = "✅ ON" if SNIPER_ALL_COIN else "⬜ OFF"
+    
+    # Status Schedule - cek ada job jalan ga
+    schedule_status = "✅ ON" if schedule.get_jobs() else "⬜ OFF"
+    
+    # Session trading berdasarkan jam WIB
+    wib = datetime.now(timezone(timedelta(hours=7)))
+    hour = wib.hour
+    if 7 <= hour < 15:
+        session = "🇯🇵 TOKYO — ASIA SESSION"
+    elif 15 <= hour < 21:
+        session = "🇬🇧 LONDON — EU SESSION"  
+    elif 21 <= hour or hour < 4:
+        session = "🇺🇸 NEW YORK — US SESSION"
+    else:
+        session = "😴 OFF HOURS"
+    
+    text = f"""
+⚙️ **SYSTEM STATUS**
+━━━━━━━━━━━━━━━━━━━━━━━
+Bot : ✅ ONLINE
+Sniper : {sniper_status}
+Schedule : {schedule_status}
+Session : {session}
+WIB : {wib.strftime('%d/%m %H:%M WIB')}
+━━━━━━━━━━━━━━━━━━━━━━━
+✅ Semua sistem normal
+    """
+    bot.reply_to(message, text)
 
 # ===== ULTIMATE SNIPER ALL COIN =====
 @bot.message_handler(commands=['sniper'])
