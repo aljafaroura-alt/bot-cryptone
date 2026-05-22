@@ -18,6 +18,43 @@ info = Info(constants.MAINNET_API_URL)
 last_scan = 0
 cached_results = ""
 
+# ========== SMART MONEY AUTO ENTRY ==========
+PERPS_CACHE = []
+LAST_FETCH = 0
+last_entry_time = {}
+
+def is_market_chaos(symbol):
+    """Return True kalo market chaos >1.5% dalam 1m. Pake Hyperliquid API"""
+    try:
+        candles = info.candles_snapshot(symbol, "1m", 1)
+        if not candles: return True
+        open_price = float(candles[0]['o'])
+        close_price = float(candles[0]['c'])
+        change_pct = abs((close_price - open_price) / open_price * 100)
+        
+        if change_pct > 1.5:
+            print(f"[CHAOS] {symbol} gerak {change_pct:.2f}% dalam 1m. Skip entry.")
+            return True
+        return False
+    except Exception as e:
+        print(f"Error cek chaos {symbol}: {e}")
+        return True
+
+def get_all_hyperliquid_perps():
+    global PERPS_CACHE, LAST_FETCH
+    if time.time() - LAST_FETCH < 3600 and PERPS_CACHE:
+        return PERPS_CACHE
+    try:
+        meta = info.meta()
+        PERPS_CACHE = [coin['name'] for coin in meta['universe'] if not coin['isDelisted']]
+        LAST_FETCH = time.time()
+        print(f"Update list: {len(PERPS_CACHE)} perps Hyperliquid")
+        return PERPS_CACHE
+    except Exception as e:
+        print(f"Gagal ambil list: {e}")
+        return PERPS_CACHE or ["BTC", "ETH", "SOL"]
+# ========== END STEP 5 ==========
+
 # ═══════════════════════════════════════════════════════════
 # UTILS
 # ═══════════════════════════════════════════════════════════
