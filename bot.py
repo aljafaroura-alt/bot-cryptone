@@ -1892,8 +1892,6 @@ def report(message):
         bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
 
 # ===== AUTO SCHEDULE START =====
-
-# ===== AUTO SCHEDULE START =====
 schedule_jobs = {} # Simpen job biar bisa di-stop
 OI_HISTORY = {} # Buat simpen OI 5 menit lalu
 
@@ -1904,20 +1902,20 @@ def get_narrative_coins():
         all_coins.extend(sector_coins)
     return list(set(all_coins)) # Hilangin duplicate, dapet ~100 coin
 
-def get_anomaly_data(coin):
+def get_anomaly_data(coin, meta_cache):
     """Ambil semua data mentah buat deteksi anomali"""
+    global OI_HISTORY # WAJIB BIAR OI_HISTORY KE-UPDATE
     try:
-        # 1. OI NOW + DELTA 5M
-        meta = info.meta_and_asset_ctxs()
+        # 1. OI NOW + DELTA 5M - PAKE CACHE
         oi_now = 0
-        for asset in meta[1]:
+        for asset in meta_cache[1]:
             if asset['name'] == coin:
                 oi_now = float(asset['openInterest']) * float(asset['markPx'])
                 break
 
         oi_last = OI_HISTORY.get(coin)
         oi_delta = oi_now - oi_last if oi_last else 0
-        OI_HISTORY[coin] = oi_now # Update history
+        OI_HISTORY = oi_now
 
         # 2. PRICE 5M AGO
         candles = info.candles_snapshot(coin, "5m", 2)
@@ -1938,9 +1936,9 @@ def get_anomaly_data(coin):
         l2 = info.l2_snapshot(coin)
         ask_wall = max([float(a['sz']) * float(a['px']) for a in l2['levels'][1]], default=0)
 
-        # 5. FUNDING + OB DELTA
+        # 5. FUNDING + OB DELTA - PAKE CACHE
         funding, ob_delta = 0, 0
-        for asset in meta[1]:
+        for asset in meta_cache[1]:
             if asset['name'] == coin:
                 funding = float(asset['funding']) * 100
                 ob_delta = float(asset.get('ob_delta_1m', 0))
@@ -1961,14 +1959,27 @@ def get_anomaly_data(coin):
 def job_insane_radar(chat_id):
     """Job INSANE RADAR tiap X menit - SCAN SEMUA COIN NARRATIVE"""
     try:
-        COINS = get_narrative_coins() # 100 COIN REAL DARI NARRATIVE LU
+        COINS = get_narrative_coins()
         hasil_anomali = []
-
+        
+        # AMBIL META SEKALI AJA BUAT HEMAT REQUEST
+        meta_cache = info.meta_and_asset_ctxs()
+        
         bot.send_message(chat_id, f"🔍 <b>INSANE RADAR START</b>\nScanning {len(COINS)} coins...", parse_mode='HTML')
 
         for coin in COINS:
             try:
-                d = get_anomaly_data(coin)
+                # SKIP COIN VOLUME KECIL < $1M BIAR CEPET
+                skip = False
+                for asset in meta_cache[1]:
+                    if asset['name'] == coin:
+                        if float(asset['dayNtlVlm']) < 1_000_000:
+                            skip = True
+                        break
+                if skip:
+                    continue
+                
+                d = get_anomaly_data(coin, meta_cache)
                 if not d:
                     continue
 
@@ -1991,13 +2002,15 @@ def job_insane_radar(chat_id):
             except Exception as e:
                 print(f"Skip {coin}: {e}")
                 continue
+            
+            time.sleep(0.1) # DELAY 0.1 DETIK BIAR GA KENA RATE LIMIT
 
         # KIRIM HASIL
         if hasil_anomali:
             teks = f"🤯 <b>INSANE RADAR</b> | {get_wib()}\n"
             teks += f"Scan {len(COINS)} coins | Found {len(hasil_anomali)} anomali\n"
             teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
-            for i, line in enumerate(hasil_anomali[:10], 1): # Max 10 biar ga spam
+            for i, line in enumerate(hasil_anomali[:10], 1):
                 teks += f"{i}. {line}\n"
             if len(hasil_anomali) > 10:
                 teks += f"... +{len(hasil_anomali)-10} anomali lainnya\n"
