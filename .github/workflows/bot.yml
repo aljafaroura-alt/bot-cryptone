@@ -1,4 +1,7 @@
 name: Bot Cryptone 24/7
+concurrency:
+  group: bot-cryptone
+  cancel-in-progress: true
 
 on:
   workflow_dispatch:
