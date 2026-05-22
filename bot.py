@@ -2077,17 +2077,22 @@ def status_cmd(message):
     chat_id = message.chat.id
     
     # 1. CEK SCHEDULE AKTIF
-    schedule_text = "🔴 OFF"
-    if chat_id in schedule_jobs:
-        job = schedule_jobs[chat_id]
-        try:
-            mode = job.job_func.__name__.replace('job_', '').replace('_radar', '').upper()
-            interval = job.interval
-            unit = job.unit[:-1] if job.unit.endswith('s') else job.unit
-            next_run = job.next_run.strftime('%H:%M:%S WIB')
-            schedule_text = f"✅ ON\n   ├ Mode   : {mode}\n   ├ Tiap   : {interval} {unit}\n   └ Next   : {next_run}"
-        except:
-            schedule_text = "✅ ON"
+schedule_text = "🔴 OFF"
+if chat_id in schedule_jobs:
+    job = schedule_jobs[chat_id]
+    try:
+        mode = job.job_func.__name__.replace('job_', '').replace('_radar', '').upper()
+        interval = job.interval
+        unit = job.unit[:-1] if job.unit.endswith('s') else job.unit
+        
+        # INI YG BENER - CONVERT UTC KE WIB
+        next_run_utc = job.next_run
+        next_run_wib = next_run_utc + timedelta(hours=7) # <-- TAMBAH INI
+        next_run = next_run_wib.strftime('%H:%M:%S WIB') # <-- GANTI INI
+        
+        schedule_text = f"✅ ON\n   ├ Mode   : {mode}\n   ├ Tiap   : {interval} {unit}\n   └ Next   : {next_run}"
+    except:
+        schedule_text = "✅ ON"
 
     # 2. CEK SNIPER AKTIF
     sniper_text = "✅ ON" if globals().get('SNIPER_ALL_COIN', False) else "🔴 OFF"
