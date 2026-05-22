@@ -2,6 +2,7 @@ import os
 import telebot
 from telebot import types
 import threading
+import asyncio
 import time
 import requests
 from datetime import datetime, timezone, timedelta
@@ -2078,6 +2079,30 @@ def callback_sniper(call):
 # ===== ULTIMATE SNIPER END =====
 
 # ═══════════════════════════════════════════════════════════
-print("🤖 HL Terminal Bot MONSTER — ONLINE")
-bot.infinity_polling()
+def run_scheduler():
+    while True:
+        try:
+            print("Running Smart Money scan...")
+            asyncio.run(check_all_hyperliquid_entry())
+        except Exception as e:
+            print(f"Scheduler error: {e}")
+        time.sleep(300) # 5 menit
+
+if __name__ == "__main__":
+    # KILL WEBHOOK BIAR GA 409 LAGI
+    bot.remove_webhook()
+    time.sleep(2)
+    
+    # JALANIN SCANNER ALL PERPS DI BACKGROUND
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    
+    # JALANIN BOT TELEGRAM
+    print("🤖 HL Terminal Bot MONSTER - ONLINE")
+    while True:
+        try:
+            bot.infinity_polling(timeout=20, long_polling_timeout=20)
+        except Exception as e:
+            print(f"Polling error: {e}")
+            time.sleep(15)
 
