@@ -1,0 +1,3 @@
+pyTelegramBotAPI
+hyperliquid-python-sdk
+requests
