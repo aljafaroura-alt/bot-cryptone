@@ -1,3 +1,4 @@
 pyTelegramBotAPI
 hyperliquid-python-sdk
 requests
+schedule 
