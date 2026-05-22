@@ -1892,37 +1892,97 @@ def report(message):
 # ===== AUTO SCHEDULE START =====
 
 schedule_jobs = {} # Simpen job biar bisa di-stop
+OI_HISTORY = {} # Buat simpen OI 5 menit lalu
 
 def run_scheduler():
     while True:
         schedule.run_pending()
         time.sleep(1)
 
-def job_warroom_btc(chat_id):
-    """Job yang dijalanin tiap X menit"""
+def get_anomaly_data(coin):
     try:
-        # Pake fungsi /warroom lu yg udah ada
-        coin = "BTC"
-        ctx = get_ctx_data(coin)
-        if not ctx:
-            return
+        # 1. OI DELTA 5M
+        oi_now = float(info.open_interest(coin))
+        oi_delta = oi_now - OI_HISTORY.get(coin, oi_now)
+        OI_HISTORY[coin] = oi_now
+        
+        # 2. PRICE CHANGE 5M
+        candles = info.candles_snapshot(coin, "5m", 2)
+        price_now = float(candles[-1]['c'])
+        price_5m = float(candles[-2]['c'])
+        price_change_pct = ((price_now - price_5m) / price_5m) * 100
+        
+        # 3. CVD 15M
+        trades = info.recent_trades(coin)
+        cvd = 0
+        now = datetime.now()
+        for t in trades:
+            if now - datetime.fromtimestamp(t['time']/1000) <= timedelta(minutes=15):
+                vol_usd = float(t['px']) * float(t['sz'])
+                cvd += vol_usd if t['side'] == 'B' else -vol_usd
+        
+        # 4. ASK WALL
+        l2 = info.l2_snapshot(coin)
+        ask_wall = max([float(a['sz']) * float(a['px']) for a in l2['levels'][1]], default=0)
+        
+        # 5. FUNDING + OB DELTA
+        meta = info.meta_and_asset_ctxs()
+        funding, ob_delta = 0, 0
+        for asset in meta[1]:
+            if asset['name'] == coin:
+                funding = float(asset['funding']) * 100
+                ob_delta = float(asset.get('ob_delta_1m', 0))
+                break
+        
+        return {
+            'oi_delta': oi_delta,
+            'price_change': price_change_pct,
+            'cvd': cvd,
+            'ask_wall': ask_wall,
+            'funding': funding,
+            'ob_delta': ob_delta
+        }
+    except Exception as e:
+        print(f"Error get data {coin}: {e}")
+        return None
 
-        mark = float(ctx.get("markPx", 0))
-        funding = get_funding_pct(ctx)
-        ob_delta = get_ob_delta(coin)
-        bid_wall = get_bid_wall(coin)
-
-        teks = f"🔔 <b>AUTO WARROOM BTC</b>\n"
-        teks += f"⏰ {get_wib()} WIB\n"
-        teks += f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"💰 Harga : ${mark:.4f}\n"
-        teks += f"💸 Funding: {funding:.4f}%\n"
-        teks += f"📡 OB Delta: {ob_delta:+.1f}%\n"
-        teks += f"🐋 Bid Wall: ${bid_wall/1e6:.2f}M\n"
-        teks += f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"/warroom BTC /entry BTC"
-
-        bot.send_message(chat_id, teks, parse_mode='HTML')
+def job_insane_radar(chat_id):
+    """Job INSANE RADAR tiap X menit"""
+    try:
+        COINS = ["BTC", "ETH", "SOL", "ARB", "OP", "WIF", "TIA", "JUP", "BONK", "PEPE"] # Ganti ALL_156 kalo mau
+        hasil_anomali = []
+        
+        for coin in COINS:
+            d = get_anomaly_data(coin)
+            if not d:
+                continue
+            
+            # ANOMALI 1: OI↑ Price↓ = Short akumulasi?
+            if d['oi_delta'] > 3_000_000 and d['price_change'] < -1.5:
+                hasil_anomali.append(f"{coin}: OI+${d['oi_delta']/1e6:.0f}M vs Price{d['price_change']:.1f}% → Short akumulasi?")
+            
+            # ANOMALI 2: CVD↑ AskWall↑ = TP sembunyi2?
+            elif d['cvd'] > 5_000_000 and d['ask_wall'] > 1_000_000:
+                hasil_anomali.append(f"{coin}: CVD+${d['cvd']/1e6:.0f}M vs AskWall${d['ask_wall']/1e6:.0f}M → TP sembunyi2?")
+            
+            # ANOMALI 3: Fund+ OB↑↑ = Squeeze setup?
+            elif d['funding'] > 0 and d['ob_delta'] > 100:
+                hasil_anomali.append(f"{coin}: Fund+{d['funding']:.3f}% vs OB+{d['ob_delta']:.0f}% → Squeeze setup?")
+            
+            # ANOMALI 4: OI↓ Price↑ = Short squeeze
+            elif d['oi_delta'] < -3_000_000 and d['price_change'] > 1.5:
+                hasil_anomali.append(f"{coin}: OI-${abs(d['oi_delta'])/1e6:.0f}M vs Price+{d['price_change']:.1f}% → Short squeeze?")
+        
+        # KIRIM NOTIF CUMA KALO ADA ANOMALI
+        if hasil_anomali:
+            teks = f"🤯 <b>INSANE 10M</b> | {get_wib()} WIB\n"
+            teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+            for i, line in enumerate(hasil_anomali[:5], 1): # Max 5 biar ga spam
+                teks += f"{i}. {line}\n"
+            teks += "━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            bot.send_message(chat_id, teks, parse_mode='HTML')
+            
     except Exception as e:
         print(f"Schedule error: {e}")
 
@@ -1931,27 +1991,26 @@ def set_schedule(message):
     chat_id = message.chat.id
     try:
         parts = message.text.split()
-        if len(parts)!= 2:
-            bot.reply_to(message, "Format: /schedule 60\nContoh: /schedule 30 = notif tiap 30 menit\n/stopschedule = matiin")
+        if len(parts) < 3:
+            bot.reply_to(message, "Format: /schedule 10 insane\nContoh: /schedule 10 insane")
             return
-
-        menit = int(parts[1])
-        if menit < 5:
-            bot.reply_to(message, "Minimal 5 menit bro. Kasian servernya 😅")
-            return
-
-        # Stop job lama kalo ada
+            
+        interval = int(parts[1])
+        mode = parts[2].lower()
+        
+        # Stop job lama
         if chat_id in schedule_jobs:
             schedule.cancel_job(schedule_jobs[chat_id])
-
-        # Bikin job baru
-        job = schedule.every(menit).minutes.do(job_warroom_btc, chat_id=chat_id)
-        schedule_jobs[chat_id] = job
-
-        bot.reply_to(message, f"✅ Auto Warroom ON\nNotif tiap {menit} menit\n\nKetik /stopschedule buat matiin")
-
-    except ValueError:
-        bot.reply_to(message, "Angkanya harus angka bro. Contoh: /schedule 60")
+        
+        if mode == 'insane':
+            job = schedule.every(interval).minutes.do(job_insane_radar, chat_id=chat_id)
+            schedule_jobs[chat_id] = job
+            bot.reply_to(message, f"✅ INSANE RADAR ON\nTiap {interval} menit scan anomali whale. Diam kalo market normal.")
+        else:
+            bot.reply_to(message, "Mode belum ada bro. Pake: insane")
+            
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
 
 @bot.message_handler(commands=['stopschedule'])
 def stop_schedule(message):
@@ -1959,13 +2018,14 @@ def stop_schedule(message):
     if chat_id in schedule_jobs:
         schedule.cancel_job(schedule_jobs[chat_id])
         del schedule_jobs[chat_id]
-        bot.reply_to(message, "🔕 Auto Warroom OFF")
+        bot.reply_to(message, "🛑 INSANE RADAR dimatikan")
     else:
-        bot.reply_to(message, "Udah OFF dari tadi bro 😴")
+        bot.reply_to(message, "Ga ada schedule yg jalan")
 
-# Jalanin scheduler di background
-scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-scheduler_thread.start()
+# JALANIN SCHEDULER DI BACKGROUND
+threading.Thread(target=run_scheduler, daemon=True).start()
+# ===== AUTO SCHEDULE END =====
+
 # ===== AUTO SCHEDULE END =====
 
 @bot.message_handler(commands=['status'])
