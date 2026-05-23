@@ -2098,27 +2098,24 @@ def status_cmd(message):
 
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
-    # 4. HITUNG UPTIME
-    uptime_str = str(timedelta(seconds=int(time.time() - START_TIME))).split('.')[0]
+    try:
+        uptime_str = str(timedelta(seconds=int(time.time() - START_TIME))).split('.')[0]
 
-    # 5. RENDER TEXT
-    teks = f"""
+        teks = f"""
 ⚙️ SYSTEM STATUS
 ____________________
 Bot : ✅ ONLINE
 Uptime : {uptime_str}
 Sniper : {'✅ ON' if globals().get('SNIPER_ALL_COIN', False) else '❌ OFF'}
 Temen : {'✅ ON' if globals().get('TEMEN_MODE', False) else '❌ OFF'}
-Schedule: {'✅ ON' if globals().get('schedule_state', {}).get('active') else '❌ OFF'}
-  ├ Mode : INSANE
-  ├ Tiap : 10 minute
-  └ Next :...
-Session : {get_sesi()}
-WIB : {get_wib()}
+Session: {get_sesi()}
+Jam : {get_wib()}
 ____________________
 ✅ Semua sistem normal
 """
-    bot.send_message(message.chat.id, teks, parse_mode='HTML')
+        bot.reply_to(message, teks)
+    except Exception as e:
+        bot.reply_to(message, f"Error status: {e}") # Biar ketauan errornya apa
 
 # ===== ULTIMATE SNIPER ALL COIN ====
 # ===== ULTIMATE SNIPER ALL COIN =====
