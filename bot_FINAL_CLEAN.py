@@ -6,7 +6,7 @@
 # - Duplicate handlers
 # - TEMEN MODE
 # - Scheduler logging
-# - Cleaner section structure
+# - Cleaner section structure 
 # - Better readability
 # ==========================================================
 
