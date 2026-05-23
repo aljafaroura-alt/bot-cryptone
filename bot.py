@@ -2133,11 +2133,11 @@ def sniper_on(message):
     global SNIPER_ALL_COIN, SNIPER_MODE
     SNIPER_ALL_COIN = True
     cfg = SNIPER_CONFIG[SNIPER_MODE]
-    
+
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
-    
+
     bot.send_message(message.chat.id,
         f"🐋 <b>SNIPER {SNIPER_MODE} - ON</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -2167,7 +2167,7 @@ def sniper_insane(message):
 def callback_stop_sniper(call):
     global SNIPER_ALL_COIN
     SNIPER_ALL_COIN = False
-    bot.edit_message_text("🔕 <b>SNIPER ALL COIN - OFF</b>\nUdah dimatiin. Ga bakal ada notif entry lagi.", 
+    bot.edit_message_text("🔕 <b>SNIPER ALL COIN - OFF</b>\nUdah dimatiin. Ga bakal ada notif entry lagi.",
                          call.message.chat.id, call.message.message_id, parse_mode='HTML')
 
 @bot.message_handler(commands=['stopsniper'])
@@ -2191,33 +2191,33 @@ def run_scheduler():
                 all_mids = info.all_mids()
                 coins = [c for c in all_mids.keys() if c.endswith("-PERP")]
                 print(f"Update list: {len(coins)} perps Hyperliquid")
-                
+
                 for coin in coins:
                     symbol = coin.replace("-PERP", "")
-                    
+
                     try:
                         # Skip kalo chaos - PAKE THRESHOLD SESUAI MODE
-                        if is_market_chaos(symbol, cfg['chaos_pct']): 
+                        if is_market_chaos(symbol, cfg['chaos_pct']):
                             continue
-                        
+
                         # FIX: Pake get_ctx yang bener, return 2 value
                         ctx, mark = get_ctx(symbol)
                         if not ctx: continue
-                        
+
                         wall = get_bid_wall(symbol)
                         delta = get_ob_delta(symbol)
                         funding = get_funding_pct(ctx)
                         price = float(all_mids) # FIX: ambil harga koin yang bener
-                        
+
                         # SYARAT PAKE CONFIG SESUAI MODE
                         if wall >= cfg['wall_min'] and delta >= cfg['delta_min'] and funding <= cfg['funding_max']:
-                            
+
                             # Cek cooldown per koin
                             now = time.time()
                             if symbol in last_entry_time:
                                 if now - last_entry_time[symbol] < cfg['cooldown']:
                                     continue
-                            
+
                             alert = f"""🐋 <b>SMART MONEY ENTRY {symbol}</b> [{SNIPER_MODE}]
 ⏰ {datetime.now(timezone(timedelta(hours=7))).strftime('%d/%m %H:%M')} WIB
 ━━━━━━━━━━━━━━━━━━━━━━━
@@ -2231,13 +2231,13 @@ def run_scheduler():
                             print(f"ALERT SENT: {symbol} [{SNIPER_MODE}]")
                             last_entry_time[symbol] = now
                             time.sleep(3) # jeda 3 detik/koin
-                            
+
                     except Exception as e:
                         print(f"Error scan {symbol}: {e}")
                         continue
-            
+
             time.sleep(5) # Cek tiap 5 detik biar schedule + sniper jalan bareng
-            
+
         except Exception as e:
             print(f"Scanner error: {e}")
             time.sleep(60)
