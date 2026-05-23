@@ -219,61 +219,6 @@ print("✅ PART 3/7 LOADED")
 # COMMANDS: START, TEMEN, STATUS, SCHEDULE
 # ==========================================================
 
-@bot.message_handler(commands=['start', 'help'])
-def start(message):
-    sesi = get_sesi()
-    waktu = get_wib()
-    user = message.from_user.first_name
-    
-    teks = f"""
-<b>🧬 HL TERMINAL BOT</b>
-<i>Hyperliquid Tools</i>
-
-Hi {user} 👋
-<b>📡 Sesi:</b> {sesi}
-<b>⏰</b> {waktu}
-━━━━━━━━━━━━━━━━━━
-<b>⚡ POWER TOOLS</b>
-/warroom BTC — Full intel
-/screener — Scan token
-/session BTC — Analisa waktu
-/entry BTC — Entry + TP/SL
-/squeeze BTC — Squeeze
-/temen — Toggle Temen Mode
-/sniper — Toggle Sniper Mode
-
-<b>📊 MARKET DATA</b>
-/price /funding /oi /spark
-/gainers /losers /nuke
-/heatmap /narrative
-
-<b>🔍 ANALISIS PRO</b>
-/delta BTC — Orderbook
-/trap BTC — Stop hunt
-/cluster BTC — Liq heatmap
-/liqmap BTC — Liq zones
-/correlation SOL — Beta BTC
-/sentiment BTC — Market
-
-<b>🐳 WHALE INTEL</b>
-/whale /whalescan /whalewall
-/entrywhale /liquidations
-
-<b>👤 TRACKER</b>
-/positions 0xABC
-/pnl 0xABC
-
-<b>⏰ AUTO REPORT</b>
-/schedule 10 — Auto 10 menit
-/stopschedule — Stop
-/report — Manual
-
-/status
-━━━━━━━━━━━━━━━━━━
-<i>⚠️ DYOR — Not financial advice</i>
-"""
-    bot.send_message(message.chat.id, teks, parse_mode='HTML')
-
 @bot.message_handler(commands=['temen'])
 def temen_on(message):
     global TEMEN_MODE
