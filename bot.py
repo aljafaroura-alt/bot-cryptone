@@ -2096,29 +2096,29 @@ def status_cmd(message):
     # 3. CEK SESSION
     session_text = get_sesi()
 
+@bot.message_handler(commands=['status'])
+def status_cmd(message):
     # 4. HITUNG UPTIME
-    uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
+    uptime_str = str(timedelta(seconds=int(time.time() - START_TIME))).split('.')[0]
 
     # 5. RENDER TEXT
-# Di dalam fungsi status:
-# ...
-teks = f"""
+    teks = f"""
 ⚙️ SYSTEM STATUS
-━━━━━━━━━━━━━━━━━━━━━━━
-Bot     : ✅ ONLINE
-Uptime : {uptime}
-Sniper  : {'✅ ON' if SNIPER_ALL_COIN else '❌ OFF'}
-Temen   : {'✅ ON' if TEMEN_MODE else '❌ OFF'}
-Schedule: {'✅ ON' if schedule_state['active'] else '❌ OFF'}
-   ├ Mode   : INSANE
-   ├ Tiap   : 10 minute
-   └ Next   : ...
+____________________
+Bot : ✅ ONLINE
+Uptime : {uptime_str}
+Sniper : {'✅ ON' if globals().get('SNIPER_ALL_COIN', False) else '❌ OFF'}
+Temen : {'✅ ON' if globals().get('TEMEN_MODE', False) else '❌ OFF'}
+Schedule: {'✅ ON' if globals().get('schedule_state', {}).get('active') else '❌ OFF'}
+  ├ Mode : INSANE
+  ├ Tiap : 10 minute
+  └ Next :...
 Session : {get_sesi()}
-WIB     : {get_wib()}
-━━━━━━━━━━━━━━━━━━━━━━━
+WIB : {get_wib()}
+____________________
 ✅ Semua sistem normal
 """
-bot.send_message(message.chat.id, teks, parse_mode='HTML')
+    bot.send_message(message.chat.id, teks, parse_mode='HTML')
 
 # ===== ULTIMATE SNIPER ALL COIN ====
 # ===== ULTIMATE SNIPER ALL COIN =====
