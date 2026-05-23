@@ -2097,7 +2097,7 @@ def status_cmd(message):
     session_text = get_sesi()
 
     # 4. HITUNG UPTIME
-    uptime_str = str(timedelta(seconds=int(time.time() - START_TIME)))
+    uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
 
     # 5. RENDER TEXT
 # Di dalam fungsi status:
@@ -2106,7 +2106,7 @@ teks = f"""
 ⚙️ SYSTEM STATUS
 ━━━━━━━━━━━━━━━━━━━━━━━
 Bot     : ✅ ONLINE
-Uptime : {uptime_str}
+Uptime : {uptime}
 Sniper  : {'✅ ON' if SNIPER_ALL_COIN else '❌ OFF'}
 Temen   : {'✅ ON' if TEMEN_MODE else '❌ OFF'}
 Schedule: {'✅ ON' if schedule_state['active'] else '❌ OFF'}
