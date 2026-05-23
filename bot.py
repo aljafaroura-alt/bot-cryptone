@@ -2097,7 +2097,7 @@ def status_cmd(message):
     session_text = get_sesi()
 
     # 4. HITUNG UPTIME
-    uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
+    uptime_str = str(timedelta(seconds=int(time.time() - START_TIME)))
 
     # 5. RENDER TEXT
 # Di dalam fungsi status:
