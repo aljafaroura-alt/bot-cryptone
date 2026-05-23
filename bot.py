@@ -16,7 +16,16 @@ import concurrent.futures
 import schedule
 
 # ========== TOKEN & BOT INIT ==========
+
+# ========== TOKEN & BOT INIT ==========
 TOKEN = os.environ.get('TOKEN')
+print(f"TOKEN loaded: {'YES' if TOKEN else 'NO'}")  # CEK APAKAH TOKEN KEBACA
+
+if not TOKEN:
+    print("❌ ERROR: TOKEN TIDAK DITEMUKAN!")
+    print("   Set environment variable TOKEN di platform lo")
+    exit(1)
+
 bot = telebot.TeleBot(TOKEN)
 info = Info(constants.MAINNET_API_URL)
 START_TIME = time.time()
