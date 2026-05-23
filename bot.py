@@ -1892,6 +1892,7 @@ def report(message):
         bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
 
 # ===== AUTO SCHEDULE START =====
+# ===== AUTO SCHEDULE START =====
 schedule_jobs = {} # Simpen job biar bisa di-stop
 OI_HISTORY = {} # Buat simpen OI 5 menit lalu
 
@@ -1900,25 +1901,26 @@ def get_narrative_coins():
     all_coins = []
     for sector_coins in NARRATIVES.values():
         all_coins.extend(sector_coins)
-    return list(set(all_coins)) # Hilangin duplicate, dapet ~100 coin
+    return list(set(all_coins))
 
 def get_anomaly_data(coin, meta_cache):
     """Ambil semua data mentah buat deteksi anomali"""
-    global OI_HISTORY # WAJIB BIAR OI_HISTORY KE-UPDATE
+    global OI_HISTORY
     try:
         # 1. OI NOW + DELTA 5M - PAKE CACHE
         oi_now = 0
-        for asset in meta_cache[1]:
+        for asset, ctx in zip(meta_cache[0]['universe'], meta_cache[1]):
             if asset['name'] == coin:
-                oi_now = float(asset['openInterest']) * float(asset['markPx'])
+                oi_now = float(ctx.get('openInterest', 0)) * float(ctx.get('markPx', 0))
                 break
 
-        oi_last = OI_HISTORY.get(coin)
-        oi_delta = oi_now - oi_last if oi_last else 0
-        OI_HISTORY = oi_now
+        oi_last = OI_HISTORY.get(coin, oi_now) # Default ke oi_now kalo belum ada
+        oi_delta = oi_now - oi_last
+        OI_HISTORY = oi_now # FIX: Update dict, bukan timpa variabel
 
         # 2. PRICE 5M AGO
         candles = info.candles_snapshot(coin, "5m", 2)
+        if len(candles) < 2: return None
         price_now = float(candles[-1]['c'])
         price_5m = float(candles[-2]['c'])
         price_change_pct = ((price_now - price_5m) / price_5m) * 100
@@ -1926,23 +1928,25 @@ def get_anomaly_data(coin, meta_cache):
         # 3. CVD 15M
         trades = info.recent_trades(coin)
         cvd = 0
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for t in trades:
-            if now - datetime.fromtimestamp(t['time']/1000) <= timedelta(minutes=15):
+            trade_time = datetime.fromtimestamp(t['time']/1000, timezone.utc)
+            if now - trade_time <= timedelta(minutes=15):
                 vol_usd = float(t['px']) * float(t['sz'])
                 cvd += vol_usd if t['side'] == 'B' else -vol_usd
 
         # 4. ASK WALL
         l2 = info.l2_snapshot(coin)
-        ask_wall = max([float(a['sz']) * float(a['px']) for a in l2['levels'][1]], default=0)
+        ask_wall = max([float(a['sz']) * float(a['px']) for a in l2['levels'][1][:10]], default=0)
 
-        # 5. FUNDING + OB DELTA - PAKE CACHE
-        funding, ob_delta = 0, 0
-        for asset in meta_cache[1]:
+        # 5. FUNDING + OB DELTA - FIX OB_DELTA
+        funding = 0
+        for asset, ctx in zip(meta_cache[0]['universe'], meta_cache[1]):
             if asset['name'] == coin:
-                funding = float(asset['funding']) * 100
-                ob_delta = float(asset.get('ob_delta_1m', 0))
+                funding = float(ctx.get('funding', 0)) * 100
                 break
+        
+        ob_delta = get_ob_delta(coin) # FIX: Panggil fungsi langsung, bukan dari cache
 
         return {
             'oi_delta': oi_delta,
@@ -1950,7 +1954,8 @@ def get_anomaly_data(coin, meta_cache):
             'cvd': cvd,
             'ask_wall': ask_wall,
             'funding': funding,
-            'ob_delta': ob_delta
+            'ob_delta': ob_delta,
+            'price': price_now
         }
     except Exception as e:
         print(f"Error get data {coin}: {e}")
@@ -1971,9 +1976,9 @@ def job_insane_radar(chat_id):
             try:
                 # SKIP COIN VOLUME KECIL < $1M BIAR CEPET
                 skip = False
-                for asset in meta_cache[1]:
+                for asset, ctx in zip(meta_cache[0]['universe'], meta_cache[1]):
                     if asset['name'] == coin:
-                        if float(asset['dayNtlVlm']) < 1_000_000:
+                        if float(ctx.get('dayNtlVlm', 0)) < 1_000_000:
                             skip = True
                         break
                 if skip:
@@ -1992,7 +1997,7 @@ def job_insane_radar(chat_id):
                     hasil_anomali.append(f"{coin}: CVD+${d['cvd']/1e6:.0f}M vs AskWall${d['ask_wall']/1e6:.0f}M → TP sembunyi2?")
 
                 # ANOMALI 3: Fund+ OB↑↑ = Squeeze setup?
-                elif d['funding'] > 0 and d['ob_delta'] > 100:
+                elif d['funding'] > 0.01 and d['ob_delta'] > 50: # Turunin dari 100 ke 50 biar lebih sensitif
                     hasil_anomali.append(f"{coin}: Fund+{d['funding']:.3f}% vs OB+{d['ob_delta']:.0f}% → Squeeze setup?")
 
                 # ANOMALI 4: OI↓ Price↑ = Short squeeze
@@ -2023,11 +2028,10 @@ def job_insane_radar(chat_id):
         print(f"Schedule error: {e}")
         bot.send_message(chat_id, f"❌ INSANE RADAR ERROR: {e}")
 
-def run_scheduler():
-    """Loop buat jalanin schedule di background"""
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+# PENTING: run_scheduler() HARUS CUMA ADA 1 DI SELURUH FILE
+# Kalo lo udah pake versi SNIPER AGGRO dari chat sebelumnya, 
+# PASTIIN run_scheduler() isinya udah gabungan schedule.run_pending() + sniper
+# Jangan sampe ada 2 definisi run_scheduler()
 
 @bot.message_handler(commands=['schedule'])
 def set_schedule(message):
@@ -2045,7 +2049,6 @@ def set_schedule(message):
             bot.reply_to(message, "❌ Interval minimal 1 menit bro")
             return
 
-        # Stop job lama kalo ada
         if chat_id in schedule_jobs:
             schedule.cancel_job(schedule_jobs[chat_id])
 
@@ -2118,84 +2121,104 @@ def status_cmd(message):
     bot.send_message(chat_id, teks, parse_mode='HTML')
 
 # ===== ULTIMATE SNIPER ALL COIN =====
+# ===== ULTIMATE SNIPER ALL COIN =====
+SNIPER_MODE = "AGGRO" # DEFAULT AGGRO
+SNIPER_CONFIG = {
+    "INSANE": {"wall_min": 150000, "delta_min": 30, "funding_max": -0.01, "chaos_pct": 1.5, "cooldown": 600},
+    "AGGRO": {"wall_min": 40000, "delta_min": 12, "funding_max": 0, "chaos_pct": 3.0, "cooldown": 180}
+}
+
 @bot.message_handler(commands=['sniper'])
 def sniper_on(message):
-    global SNIPER_ALL_COIN
+    global SNIPER_ALL_COIN, SNIPER_MODE
     SNIPER_ALL_COIN = True
+    cfg = SNIPER_CONFIG[SNIPER_MODE]
     
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
     
     bot.send_message(message.chat.id,
-        "🐋 **ULTIMATE SNIPER ALL COIN - ON**\n"
+        f"🐋 <b>SNIPER {SNIPER_MODE} - ON</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Jagain 156 koin Hyperliquid:\n"
-        "1. 🛡️ Bid Wall > $150k\n"
-        "2. 📡 OB Delta > +30%\n"
-        "3. 💸 Funding < -0.01%\n"
-        "Kalo 3 syarat kena di koin manapun = auto notif masuk.\n"
-        "Cooldown 3 detik/koin biar ga spam.\n"
+        f"Jagain semua koin Hyperliquid:\n"
+        f"1. 🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n"
+        f"2. 📡 OB Delta > +{cfg['delta_min']}%\n"
+        f"3. 💸 Funding < {cfg['funding_max']}%\n"
+        f"Kalo 3 syarat kena = auto notif masuk.\n"
+        f"Cooldown {cfg['cooldown']//60} menit/koin biar ga spam.\n"
         "Ketik /stopsniper buat matiin.",
-        reply_markup=markup
+        reply_markup=markup, parse_mode='HTML'
     )
+
+@bot.message_handler(commands=['sniperaggro'])
+def sniper_aggro(message):
+    global SNIPER_MODE
+    SNIPER_MODE = "AGGRO"
+    bot.reply_to(message, "✅ Sniper mode: <b>AGGRO</b>\nThreshold: Bid $40k | Delta +12% | Fund < 0% | Cooldown 3m", parse_mode='HTML')
+
+@bot.message_handler(commands=['sniperinsane'])
+def sniper_insane(message):
+    global SNIPER_MODE
+    SNIPER_MODE = "INSANE"
+    bot.reply_to(message, "✅ Sniper mode: <b>INSANE</b>\nThreshold: Bid $150k | Delta +30% | Fund < -0.01% | Cooldown 10m", parse_mode='HTML')
 
 @bot.callback_query_handler(func=lambda call: call.data == "stopsniper")
 def callback_stop_sniper(call):
     global SNIPER_ALL_COIN
     SNIPER_ALL_COIN = False
-    bot.edit_message_text("🔕 **SNIPER ALL COIN - OFF**\nUdah dimatiin. Ga bakal ada notif entry lagi.", 
-                         call.message.chat.id, call.message.message_id)
+    bot.edit_message_text("🔕 <b>SNIPER ALL COIN - OFF</b>\nUdah dimatiin. Ga bakal ada notif entry lagi.", 
+                         call.message.chat.id, call.message.message_id, parse_mode='HTML')
 
 @bot.message_handler(commands=['stopsniper'])
 def handle_stop_sniper(message):
     global SNIPER_ALL_COIN
     SNIPER_ALL_COIN = False
-    bot.reply_to(message, "🔕 **SNIPER ALL COIN - OFF**\nUdah dimatiin. Ga bakal ada notif entry lagi.")
+    bot.reply_to(message, "🔕 <b>SNIPER ALL COIN - OFF</b>\nUdah dimatiin. Ga bakal ada notif entry lagi.", parse_mode='HTML')
 
-# GANTI FUNGSI run_scheduler() LU JADI INI
+# ===== GANTI RUN_SCHEDULER LAMA LU PAKE INI =====
 def run_scheduler():
     global SNIPER_ALL_COIN
     while True:
         try:
-            print("Running Smart Money scan...")
-            all_mids = info.all_mids()
-            coins = [c for c in all_mids.keys() if c.endswith("-PERP")]
-            print(f"Update list: {len(coins)} perps Hyperliquid")
-            
-            for coin in coins:
-                symbol = coin.replace("-PERP", "")
+            # 1. JALANIN SCHEDULE JOBS - FIX /schedule 10 insane
+            schedule.run_pending()
+
+            # 2. JALANIN SNIPER KALO ON
+            if SNIPER_ALL_COIN:
+                cfg = SNIPER_CONFIG[SNIPER_MODE]
+                print(f"Running Sniper scan {SNIPER_MODE}...")
+                all_mids = info.all_mids()
+                coins = [c for c in all_mids.keys() if c.endswith("-PERP")]
+                print(f"Update list: {len(coins)} perps Hyperliquid")
                 
-                try:
-                    # Skip kalo chaos
-                    if is_market_chaos(symbol): 
-                        continue
+                for coin in coins:
+                    symbol = coin.replace("-PERP", "")
                     
-                    # Pake fungsi lu yg udah ada
-                    ctx = get_ctx_data(symbol)
-                    if not ctx: continue
-                    
-                    wall = get_bid_wall(symbol) # fungsi lu
-                    delta = get_ob_delta(symbol) # fungsi lu 
-                    funding = get_funding_pct(ctx) # fungsi lu
-                    price = float(all_mids[coin])
-                    
-                    # SYARAT SMART MONEY ENTRY - ALL COIN
-                    wall_min = 150000 
-                    delta_min = 30 
-                    funding_max = -0.01 
-                    
-                    # CUMA KIRIM KALO SNIPER NYALA
-                    if SNIPER_ALL_COIN and wall >= wall_min and delta >= delta_min and funding <= funding_max:
+                    try:
+                        # Skip kalo chaos - PAKE THRESHOLD SESUAI MODE
+                        if is_market_chaos(symbol, cfg['chaos_pct']): 
+                            continue
                         
-                        # Cek cooldown per koin biar ga spam
-                        now = time.time()
-                        if symbol in last_entry_time:
-                            if now - last_entry_time[symbol] < 600: # 10 menit cooldown
-                                continue
+                        # Pake fungsi lu yg udah ada
+                        ctx = get_ctx_data(symbol)
+                        if not ctx: continue
                         
-                        alert = f"""
-🐋 **SMART MONEY ENTRY {symbol}-PERP**
+                        wall = get_bid_wall(symbol)
+                        delta = get_ob_delta(symbol)
+                        funding = get_funding_pct(ctx)
+                        price = float(all_mids)
+                        
+                        # SYARAT PAKE CONFIG SESUAI MODE
+                        if wall >= cfg['wall_min'] and delta >= cfg['delta_min'] and funding <= cfg['funding_max']:
+                            
+                            # Cek cooldown per koin
+                            now = time.time()
+                            if symbol in last_entry_time:
+                                if now - last_entry_time[symbol] < cfg['cooldown']:
+                                    continue
+                            
+                            alert = f"""🐋 <b>SMART MONEY ENTRY {symbol}</b> [{SNIPER_MODE}]
 ⏰ {datetime.now(timezone(timedelta(hours=7))).strftime('%d/%m %H:%M')} WIB
 ━━━━━━━━━━━━━━━━━━━━━━━
 💰 Harga : ${price:.4f}
@@ -2203,22 +2226,22 @@ def run_scheduler():
 📡 OB Delta: {delta:.1f}%
 🐋 Bid Wall: ${wall/1e6:.2f}M
 ━━━━━━━━━━━━━━━━━━━━━━━
-/warroom {symbol} /entry {symbol}
-"""
-                        bot.send_message(USER_ID, alert, parse_mode='Markdown')
-                        print(f"ALERT SENT: {symbol}")
-                        last_entry_time[symbol] = now
-                        time.sleep(3) # jeda 3 detik/koin
-                        
-                except Exception as e:
-                    print(f"Error scan {symbol}: {e}")
-                    continue
+/warroom {symbol} /entry {symbol}"""
+                            bot.send_message(USER_ID, alert, parse_mode='HTML')
+                            print(f"ALERT SENT: {symbol} [{SNIPER_MODE}]")
+                            last_entry_time[symbol] = now
+                            time.sleep(3) # jeda 3 detik/koin
+                            
+                    except Exception as e:
+                        print(f"Error scan {symbol}: {e}")
+                        continue
             
-            time.sleep(300) # Scan tiap 5 menit
+            time.sleep(5) # Cek tiap 5 detik biar schedule + sniper jalan bareng
             
         except Exception as e:
             print(f"Scanner error: {e}")
             time.sleep(60)
+# ===== ULTIMATE SNIPER END =====
 # ===== ULTIMATE SNIPER END =====
 
 # ═══════════════════════════════════════════════════════════
