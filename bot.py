@@ -227,16 +227,17 @@ TEMEN_COOLDOWN = {}
 # SENSITIVITY CONFIG
 # ═══════════════════════════════════════════════════════════
 
-INSANE_DELTA_THRESHOLD = 4
-INSANE_WALL_THRESHOLD = 15000
-INSANE_PRICE_MOVE = 0.5
+# Ubah ke angka lebih rendah agar lebih sensitif (lebih sering trigger)
+INSANE_DELTA_THRESHOLD = 2  # Sebelumnya 4
+INSANE_WALL_THRESHOLD = 8000  # Sebelumnya 15000
+INSANE_PRICE_MOVE = 0.3    # Sebelumnya 0.5
 
-SNIPER_DELTA_THRESHOLD = 8
-SNIPER_WALL_THRESHOLD = 25000
+SNIPER_DELTA_THRESHOLD = 5  # Sebelumnya 8
+SNIPER_WALL_THRESHOLD = 15000 # Sebelumnya 25000
 
-TEMEN_DELTA_THRESHOLD = 3
-TEMEN_WALL_THRESHOLD = 12000
-TEMEN_PRICE_MOVE = 0.4
+TEMEN_DELTA_THRESHOLD = 1.5 # Sebelumnya 3
+TEMEN_WALL_THRESHOLD = 5000 # Sebelumnya 12000
+TEMEN_PRICE_MOVE = 0.2     # Sebelumnya 0.4
 
 
 # ===== END TEMEN MODE =====
@@ -278,7 +279,6 @@ def temen_off(message):
 # ═══════════════════════════════════════════════════════════
 # /start
 # ═══════════════════════════════════════════════════════════
-
 @bot.message_handler(commands=['start', 'help'])
 def start(message):
     sesi = get_sesi()
@@ -299,6 +299,8 @@ Hi {user} 👋
 /session BTC — Analisa waktu
 /entry BTC — Entry + TP/SL
 /squeeze BTC — Squeeze
+/temen — Toggle Temen Mode
+/sniper — Toggle Sniper Mode
 
 <b>📊 MARKET DATA</b>
 /price /funding /oi /spark
@@ -322,7 +324,7 @@ Hi {user} 👋
 /pnl 0xABC /history
 
 <b>⏰ AUTO REPORT</b>
-/schedule 60 — Auto 1 jam
+/schedule 10 — Auto 10 menit
 /stopschedule — Stop
 /report — Manual
 
@@ -331,9 +333,8 @@ Hi {user} 👋
 <i>⚠️ DYOR — Not financial advice</i>
 <i>🔧 Bot by ONE</i>
 """
-    
     bot.send_message(message.chat.id, teks, parse_mode='HTML')
-
+  
 # ═══════════════════════════════════════════════════════════
 # /session — SESSION ANALYSIS (NEW)
 # ═══════════════════════════════════════════════════════════
@@ -2099,18 +2100,25 @@ def status_cmd(message):
     uptime = str(timedelta(seconds=int(time.time() - START_TIME)))
 
     # 5. RENDER TEXT
-    teks = f"⚙️ <b>SYSTEM STATUS</b>\n"
-    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
-    teks += f"Bot     : ✅ ONLINE\n"
-    teks += f"Uptime  : {uptime}\n"
-    teks += f"Sniper  : {sniper_text}\n"
-    teks += f"Schedule: {schedule_text}\n"
-    teks += f"Session : {session_text}\n"
-    teks += f"WIB     : {get_wib()}\n"
-    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
-    teks += "✅ Semua sistem normal"
-
-    bot.send_message(chat_id, teks, parse_mode='HTML')
+# Di dalam fungsi status:
+# ...
+teks = f"""
+⚙️ SYSTEM STATUS
+━━━━━━━━━━━━━━━━━━━━━━━
+Bot     : ✅ ONLINE
+Uptime  : {uptime_str}
+Sniper  : {'✅ ON' if SNIPER_ALL_COIN else '❌ OFF'}
+Temen   : {'✅ ON' if TEMEN_MODE else '❌ OFF'}
+Schedule: {'✅ ON' if schedule_state['active'] else '❌ OFF'}
+   ├ Mode   : INSANE
+   ├ Tiap   : 10 minute
+   └ Next   : ...
+Session : {get_sesi()}
+WIB     : {get_wib()}
+━━━━━━━━━━━━━━━━━━━━━━━
+✅ Semua sistem normal
+"""
+bot.send_message(message.chat.id, teks, parse_mode='HTML')
 
 # ===== ULTIMATE SNIPER ALL COIN ====
 # ===== ULTIMATE SNIPER ALL COIN =====
