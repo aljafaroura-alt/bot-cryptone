@@ -2133,22 +2133,22 @@ def sniper_on(message):
     global SNIPER_ALL_COIN, SNIPER_MODE
     SNIPER_ALL_COIN = True
     cfg = SNIPER_CONFIG[SNIPER_MODE]
-
+    
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
-
-    bot.send_message(message.chat.id,
-        f"🐋 <b>SNIPER {SNIPER_MODE} - ON</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Jagain semua koin Hyperliquid:\n"
-        f"1. 🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n"
-        f"2. 📡 OB Delta > +{cfg['delta_min']}%\n"
-        f"3. 💸 Funding < {cfg['funding_max']}%\n"
-        f"Kalo 3 syarat kena = auto notif masuk.\n"
-        f"Cooldown {cfg['cooldown']//60} menit/koin biar ga spam.\n"
-        "Ketik /stopsniper buat matiin.",
-        reply_markup=markup, parse_mode='HTML'
+    
+    text = f"🐋 <b>SNIPER {SNIPER_MODE} - ON</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    text += f"Jagain semua koin Hyperliquid:\n"
+    text += f"1. 🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n"
+    text += f"2. 📡 OB Delta > +{cfg['delta_min']}%\n"
+    text += f"3. 💸 Funding < {cfg['funding_max']}%\n"
+    text += f"Kalo 3 syarat kena = auto notif masuk.\n"
+    text += f"Cooldown {cfg['cooldown']//60} menit/koin biar ga spam.\n"
+    text += "Ketik /stopsniper buat matiin."
+    
+    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode='HTML')
     )
 
 @bot.message_handler(commands=['sniperaggro'])
