@@ -17,7 +17,7 @@ bot = telebot.TeleBot(TOKEN)
 info = Info(constants.MAINNET_API_URL)
 START_TIME = time.time()
 
-
+ 
 # GLOBAL SWITCH
 SNIPER_ALL_COIN = False  # Default mati
 USER_ID = 8347576377
