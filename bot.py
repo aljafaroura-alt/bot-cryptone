@@ -2120,7 +2120,7 @@ def status_cmd(message):
 
     bot.send_message(chat_id, teks, parse_mode='HTML')
 
-# ===== ULTIMATE SNIPER ALL COIN =====
+# ===== ULTIMATE SNIPER ALL COIN ====
 # ===== ULTIMATE SNIPER ALL COIN =====
 SNIPER_MODE = "AGGRO" # DEFAULT AGGRO
 SNIPER_CONFIG = {
@@ -2200,14 +2200,14 @@ def run_scheduler():
                         if is_market_chaos(symbol, cfg['chaos_pct']): 
                             continue
                         
-                        # Pake fungsi lu yg udah ada
-                        ctx = get_ctx_data(symbol)
+                        # FIX: Pake get_ctx yang bener
+                        ctx, mark = get_ctx(symbol)
                         if not ctx: continue
                         
                         wall = get_bid_wall(symbol)
                         delta = get_ob_delta(symbol)
                         funding = get_funding_pct(ctx)
-                        price = float(all_mids)
+                        price = float(all_mids) # FIX: ambil harga koin yang bener
                         
                         # SYARAT PAKE CONFIG SESUAI MODE
                         if wall >= cfg['wall_min'] and delta >= cfg['delta_min'] and funding <= cfg['funding_max']:
