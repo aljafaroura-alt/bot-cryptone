@@ -2259,14 +2259,12 @@ if __name__ == "__main__":
     print("🤖 HL Terminal Bot MONSTER - ONLINE")
     while True:
         try:
+            print("🚀 Bot started")
+            print(f"🔥 INSANE sensitivity: delta>{INSANE_DELTA_THRESHOLD} | wall>${INSANE_WALL_THRESHOLD}")
+            print(f"🎯 SNIPER sensitivity: delta>{SNIPER_DELTA_THRESHOLD} | wall>${SNIPER_WALL_THRESHOLD}")
+            print(f"👥 TEMEN sensitivity: delta>{TEMEN_DELTA_THRESHOLD} | wall>${TEMEN_WALL_THRESHOLD}")
             
-print("🚀 Bot started")
-print(f"🔥 INSANE sensitivity: delta>{INSANE_DELTA_THRESHOLD} | wall>${INSANE_WALL_THRESHOLD}")
-print(f"🐋 SNIPER sensitivity: delta>{SNIPER_DELTA_THRESHOLD} | wall>${SNIPER_WALL_THRESHOLD}")
-print(f"👥 TEMEN sensitivity: delta>{TEMEN_DELTA_THRESHOLD} | wall>${TEMEN_WALL_THRESHOLD}")
-
-bot.infinity_polling(timeout=20, long_polling_timeout=20)
+            bot.infinity_polling(timeout=20, long_polling_timeout=20)
         except Exception as e:
             print(f"Polling error: {e}")
             time.sleep(15)
-
