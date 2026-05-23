@@ -2106,7 +2106,7 @@ teks = f"""
 ⚙️ SYSTEM STATUS
 ━━━━━━━━━━━━━━━━━━━━━━━
 Bot     : ✅ ONLINE
-Uptime : {uptime} ← Pake nama yg udah dibikin
+Uptime : {uptime_str}
 Sniper  : {'✅ ON' if SNIPER_ALL_COIN else '❌ OFF'}
 Temen   : {'✅ ON' if TEMEN_MODE else '❌ OFF'}
 Schedule: {'✅ ON' if schedule_state['active'] else '❌ OFF'}
