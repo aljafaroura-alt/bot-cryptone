@@ -2148,8 +2148,7 @@ def sniper_on(message):
     text += f"Cooldown {cfg['cooldown']//60} menit/koin biar ga spam.\n"
     text += "Ketik /stopsniper buat matiin."
     
-    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode='HTML')
-    )
+    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode='HTML') 
 
 @bot.message_handler(commands=['sniperaggro'])
 def sniper_aggro(message):
