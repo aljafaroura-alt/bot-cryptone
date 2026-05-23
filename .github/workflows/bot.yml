@@ -2,29 +2,31 @@ name: Bot Cryptone 24/7
 
 concurrency:
   group: bot-cryptone
-  cancel-in-progress: true # Matikan job lama kalo ada job baru, biar ga dobel
+  cancel-in-progress: true
 
 on:
   push:
-    branches: [ main ] # Auto restart kalo lu push kode baru
-  workflow_dispatch: # Tombol Run workflow manual
+    branches: [ main ]
+  workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *' # CEK TIAP 5 MENIT. Kalo bot mati, nyala lagi
+    - cron: '*/5 * * * *'
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 355 # 5j 55m. Github max 6 jam. Kasih buffer dikit
+    timeout-minutes: 355
     
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }} # ← INI YG DITAMBAHIN
       
       - name: Setup Python 3.11
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: 'pip' # Cache biar install cepet
+          cache: 'pip'
       
       - name: Install dependencies
         run: pip install -r requirements.txt
