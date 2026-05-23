@@ -2133,12 +2133,12 @@ def sniper_on(message):
     global SNIPER_ALL_COIN, SNIPER_MODE
     SNIPER_ALL_COIN = True
     cfg = SNIPER_CONFIG[SNIPER_MODE]
-    
+
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
-    
-    text = f"🐋 <b>SNIPER {SNIPER_MODE} - ON</b>\n"
+
+    text = f"🐋 SNIPER {SNIPER_MODE} - ON\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━\n"
     text += f"Jagain semua koin Hyperliquid:\n"
     text += f"1. 🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n"
@@ -2147,33 +2147,33 @@ def sniper_on(message):
     text += f"Kalo 3 syarat kena = auto notif masuk.\n"
     text += f"Cooldown {cfg['cooldown']//60} menit/koin biar ga spam.\n"
     text += "Ketik /stopsniper buat matiin."
-    
-    bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode='HTML') 
+
+    bot.send_message(message.chat.id, text, reply_markup=markup)
 
 @bot.message_handler(commands=['sniperaggro'])
 def sniper_aggro(message):
     global SNIPER_MODE
     SNIPER_MODE = "AGGRO"
-    bot.reply_to(message, "✅ Sniper mode: <b>AGGRO</b>\nThreshold: Bid $40k | Delta +12% | Fund < 0% | Cooldown 3m", parse_mode='HTML')
+    bot.reply_to(message, "✅ Sniper mode: AGGRO\nThreshold: Bid $40k | Delta +12% | Fund < 0% | Cooldown 3m")
 
 @bot.message_handler(commands=['sniperinsane'])
 def sniper_insane(message):
     global SNIPER_MODE
     SNIPER_MODE = "INSANE"
-    bot.reply_to(message, "✅ Sniper mode: <b>INSANE</b>\nThreshold: Bid $150k | Delta +30% | Fund < -0.01% | Cooldown 10m", parse_mode='HTML')
+    bot.reply_to(message, "✅ Sniper mode: INSANE\nThreshold: Bid $150k | Delta +30% | Fund < -0.01% | Cooldown 10m")
 
 @bot.callback_query_handler(func=lambda call: call.data == "stopsniper")
 def callback_stop_sniper(call):
     global SNIPER_ALL_COIN
     SNIPER_ALL_COIN = False
-    bot.edit_message_text("🔕 <b>SNIPER ALL COIN - OFF</b>\nUdah dimatiin. Ga bakal ada notif entry lagi.",
-                         call.message.chat.id, call.message.message_id, parse_mode='HTML')
+    bot.edit_message_text("🔕 SNIPER ALL COIN - OFF\nUdah dimatiin. Ga bakal ada notif entry lagi.",
+                         call.message.chat.id, call.message.message_id)
 
 @bot.message_handler(commands=['stopsniper'])
 def handle_stop_sniper(message):
     global SNIPER_ALL_COIN
     SNIPER_ALL_COIN = False
-    bot.reply_to(message, "🔕 <b>SNIPER ALL COIN - OFF</b>\nUdah dimatiin. Ga bakal ada notif entry lagi.", parse_mode='HTML')
+    bot.reply_to(message, "🔕 SNIPER ALL COIN - OFF\nUdah dimatiin. Ga bakal ada notif entry lagi.")
 
 # ===== GANTI RUN_SCHEDULER LAMA LU PAKE INI =====
 def run_scheduler():
@@ -2217,7 +2217,7 @@ def run_scheduler():
                                 if now - last_entry_time[symbol] < cfg['cooldown']:
                                     continue
 
-                            alert = f"""🐋 <b>SMART MONEY ENTRY {symbol}</b> [{SNIPER_MODE}]
+                            alert = f"""🐋 SMART MONEY ENTRY {symbol} [{SNIPER_MODE}]
 ⏰ {datetime.now(timezone(timedelta(hours=7))).strftime('%d/%m %H:%M')} WIB
 ━━━━━━━━━━━━━━━━━━━━━━━
 💰 Harga : ${price:.4f}
@@ -2226,7 +2226,7 @@ def run_scheduler():
 🐋 Bid Wall: ${wall/1e6:.2f}M
 ━━━━━━━━━━━━━━━━━━━━━━━
 /warroom {symbol} /entry {symbol}"""
-                            bot.send_message(USER_ID, alert, parse_mode='HTML')
+                            bot.send_message(USER_ID, alert)
                             print(f"ALERT SENT: {symbol} [{SNIPER_MODE}]")
                             last_entry_time[symbol] = now
                             time.sleep(3) # jeda 3 detik/koin
@@ -2241,6 +2241,7 @@ def run_scheduler():
             print(f"Scanner error: {e}")
             time.sleep(60)
 # ===== ULTIMATE SNIPER END =====
+
 # ===== ULTIMATE SNIPER END =====
 
 # ═══════════════════════════════════════════════════════════
