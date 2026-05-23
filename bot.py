@@ -2200,7 +2200,7 @@ def run_scheduler():
                         if is_market_chaos(symbol, cfg['chaos_pct']): 
                             continue
                         
-                        # FIX: Pake get_ctx yang bener
+                        # FIX: Pake get_ctx yang bener, return 2 value
                         ctx, mark = get_ctx(symbol)
                         if not ctx: continue
                         
