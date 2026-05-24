@@ -702,7 +702,6 @@ def stop_hunt_trap(message):
 
 #==========================================================================
         
-                    
 @bot.message_handler(commands=['warroom'])
 def warroom(message):
     try:
@@ -732,22 +731,6 @@ def warroom(message):
         ob_delta = get_ob_delta(coin)
         bid_wall = get_bid_wall(coin)
 
-        # Simpan OB spike
-        OB_FILE = '/tmp/last_ob.json'
-        last_ob = {}
-        if os.path.exists(OB_FILE):
-            try:
-                with open(OB_FILE) as f:
-                    loaded = json.load(f)
-                    if isinstance(loaded, dict): last_ob = loaded
-            except: pass
-        prev_ob = float(last_ob.get(coin, ob_delta))
-        ob_spike_text = f"⚠️ OB SPIKE: {prev_ob:+.0f}% → {ob_delta:+.0f}%" if abs(ob_delta - prev_ob) > 20 else ""
-        last_ob[coin] = ob_delta
-        try:
-            with open(OB_FILE, 'w') as f: json.dump(last_ob, f)
-        except: pass
-
         # Scoring
         long_score, short_score = 0, 0
         if ob_delta > 15: long_score += 30
@@ -759,50 +742,51 @@ def warroom(message):
 
         total_score = long_score + short_score
         if long_score > short_score:
-            bias, emoji, direction = "LONG", "🟢", "LONG"
+            bias, emoji = "LONG", "🟢"
         else:
-            bias, emoji, direction = "SHORT", "🔴", "SHORT"
+            bias, emoji = "SHORT", "🔴"
 
         persen = int(long_score / total_score * 100) if total_score > 0 else 50
-        conviction = "STRONG" if total_score >= 75 else "WEAK"
+        conviction = "STRONG ✅" if total_score >= 75 else "WEAK ⚠️"
 
-        # Format rapi dengan lebar tetap
-        teks = f"🧠 WARROOM • {coin} • {get_wib()}\n"
-        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"💰 Harga   : {fmt_price(mark).rjust(12)}   📊 OI     : ${oi_usd:,.2f}M\n"
-        teks += f"📈 Δ24h    : {change:+.2f}%{' ' * (10 - len(f'{change:+.2f}%'))}   📦 Vol    : ${vol:,.0f}M\n"
-        teks += f"💸 Funding : {funding:.4f}%{' ' * (10 - len(f'{funding:.4f}%'))}   📡 OB     : {ob_delta:+.1f}%\n"
-        if ob_spike_text:
-            teks += f"⚠️ {ob_spike_text}\n"
-        teks += f"🐋 Bid Wall: ${bid_wall/1e6:.2f}M\n"
-        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        # Format SEDERHANA - baris per baris
+        teks = f"🧠 WARROOM • {coin}\n"
+        teks += f"⏰ {get_wib()} | {get_sesi()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💰 Harga: {fmt_price(mark)}\n"
+        teks += f"📈 24h : {change:+.2f}%\n"
+        teks += f"📊 OI  : ${oi_usd:.2f}M\n"
+        teks += f"📦 Vol : ${vol:.0f}M\n"
+        teks += f"💸 Fund: {funding:.4f}%\n"
+        teks += f"📡 OB  : {ob_delta:+.1f}%\n"
+        teks += f"🐋 Wall: ${bid_wall/1e6:.2f}M\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
         # Fake bid check
         if bid_wall < 100000 and abs(ob_delta) > 15:
-            teks += f"🟡 SKIP — FAKE BID DETECTED\n"
+            teks += f"🟡 SKIP — FAKE BID\n"
             teks += f"📊 Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
-            teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             teks += f"⛔ SETUP DITOLAK\nOB gerak tapi tembok tipis"
             bot.send_message(message.chat.id, teks)
             return
 
-        teks += f"{emoji} {bias} | Conviction: {conviction}\n"
-        teks += f"📊 Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
-        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"{emoji} {bias} | {conviction}\n"
+        teks += f"📊 Score: {persen}% ({long_score}/{short_score})\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
-        if conviction == "STRONG":
-            teks += f"🎯 SETUP READY\nEntry valid di atas harga sekarang"
+        if conviction == "STRONG ✅":
+            teks += f"🎯 READY — Entry di atas harga sekarang"
         else:
-            teks += f"⚠️ SETUP LEMAH\nTunggu konfirmasi OB / Bid Wall"
+            teks += f"⚠️ LEMAH — Tunggu konfirmasi OB"
 
-        teks += f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🔍 /squeeze {coin} | /entry {coin} | /session {coin}"
+        teks += f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🔍 /squeeze {coin} | /entry {coin}"
 
         bot.send_message(message.chat.id, teks)
 
     except Exception as e:
-        bot.reply_to(message, f"❌ Error warroom: {e}")
-            
+        bot.reply_to(message, f"❌ Error: {e}")
 
 #=================================≠==============================
         
