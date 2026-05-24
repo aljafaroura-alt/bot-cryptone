@@ -67,6 +67,10 @@ _candle_cache_4h = {}
 _candle_cache_1h = {}
 _candle_cache_time = 0
 
+# ========== OB DELTA CACHE ==========
+_ob_cache = {}
+_ob_cache_time = {}
+
 WIB = timezone(timedelta(hours=7))
 
 def get_wib():
@@ -169,14 +173,24 @@ def get_bid_wall(coin):
         top_bid = l2['levels'][0][0]
         return float(top_bid['px']) * float(top_bid['sz'])
     except: return 0
-
+        
 def get_ob_delta(coin):
+    global _ob_cache, _ob_cache_time
+    now = time.time()
+    
+    # Cache 3 detik biar konsisten
+    if coin in _ob_cache and now - _ob_cache_time.get(coin, 0) < 3:
+        return _ob_cache[coin]
+    
     try:
         l2 = info.l2_snapshot(coin)
         bids = sum(float(b['sz'])*float(b['px']) for b in l2['levels'][0][:5])
         asks = sum(float(a['sz'])*float(a['px']) for a in l2['levels'][1][:5])
         if bids + asks == 0: return 0
-        return (bids - asks) / (bids + asks) * 100
+        delta = (bids - asks) / (bids + asks) * 100
+        _ob_cache[coin] = delta
+        _ob_cache_time[coin] = now
+        return delta
     except:
         return 0
 
