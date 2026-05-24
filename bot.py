@@ -2628,20 +2628,385 @@ def start_liquidation_scanner():
 # start_liquidation_scanner()
 
 print("✅ LIQUIDATION ALERT LOADED")
-# run_scheduler duplikat dihapus - sudah ada di atas
+
+# ==========================================================
+# SMART MONEY CONFLUENCE SCANNER (DAY TRADER EDITION)
+# ==========================================================
+
+# KONFIGURASI DAY TRADER (GOLDILOCKS - GA SPAM GA SEPI)
+CONFLUENCE_CONFIG = {
+    # Volume filter
+    "min_volume_24h": 2_000_000,        # $2M minimal
+    
+    # OI Change (deteksi akumulasi 1-4 jam)
+    "min_oi_change_1h": 5,              # 5% mulai gerak
+    "max_oi_change_1h": 20,             # 20% masih ok
+    "min_oi_change_4h": 8,              # 8% konfirmasi trend
+    
+    # Funding (hindari crowded)
+    "min_funding": -0.03,               # -0.03% minimal
+    "max_funding": 0.03,                # 0.03% maks
+    
+    # Price change (gerakan 1-4 jam)
+    "min_price_change_1h": 2,           # 2% mulai menarik
+    "max_price_change_1h": 10,          # 10% masih ok
+    
+    # Volume spike
+    "min_volume_spike": 2,              # 2x normal
+    "max_volume_spike": 15,             # 15x masih ok
+    
+    # OB Delta untuk validasi
+    "min_ob_delta_long": 10,            # Minimal +10% untuk LONG
+    "min_ob_delta_short": -10,          # Minimal -10% untuk SHORT
+    
+    # Timeframe
+    "zone_timeframe": "4h",
+    "fvg_timeframe": "1h",
+    "scan_interval": 5,                 # Scan tiap 5 menit
+}
+
+# Cache candle (update tiap 1 jam)
+_candle_cache_4h = {}
+_candle_cache_1h = {}
+_candle_cache_time = 0
+
+def get_candles_cached(coin, timeframe, limit=50):
+    """Ambil candles dengan cache (update tiap 1 jam)"""
+    global _candle_cache_4h, _candle_cache_1h, _candle_cache_time
+    
+    now = time.time()
+    
+    # Refresh cache tiap 1 jam
+    if now - _candle_cache_time > 3600:
+        _candle_cache_4h = {}
+        _candle_cache_1h = {}
+        _candle_cache_time = now
+    
+    cache = _candle_cache_4h if timeframe == "4h" else _candle_cache_1h
+    
+    if coin in cache:
+        return cache[coin]
+    
+    try:
+        end_time = int(time.time() * 1000)
+        start_time = end_time - (limit * 4 * 60 * 60 * 1000) if timeframe == "4h" else end_time - (limit * 60 * 60 * 1000)
+        
+        candles = info.candles_snapshot(coin, timeframe, start_time, end_time)
+        cache[coin] = candles
+        return candles
+    except:
+        return []
+
+def find_demand_zone(coin):
+    """Cari demand zone (support) dari 4H candle"""
+    candles = get_candles_cached(coin, "4h", 50)
+    if len(candles) < 10:
+        return None
+    
+    for i in range(len(candles)-1, 5, -1):
+        c = candles[i]
+        prev = candles[i-1]
+        
+        # Reversal: candle turun (prev close < open) lalu candle i naik (close > open)
+        if prev['c'] < prev['o'] and c['c'] > c['o']:
+            if float(c['v']) > 500_000:  # Minimal volume $500k
+                low = float(c['l'])
+                high = max(float(candles[i-2]['h']), float(candles[i-1]['h']))
+                return {"low": low, "high": high, "type": "demand"}
+    
+    return None
+
+def find_supply_zone(coin):
+    """Cari supply zone (resistance) dari 4H candle"""
+    candles = get_candles_cached(coin, "4h", 50)
+    if len(candles) < 10:
+        return None
+    
+    for i in range(len(candles)-1, 5, -1):
+        c = candles[i]
+        prev = candles[i-1]
+        
+        # Reversal: candle naik (prev close > open) lalu candle i turun (close < open)
+        if prev['c'] > prev['o'] and c['c'] < c['o']:
+            if float(c['v']) > 500_000:
+                high = float(c['h'])
+                low = min(float(candles[i-2]['l']), float(candles[i-1]['l']))
+                return {"low": low, "high": high, "type": "supply"}
+    
+    return None
+
+def find_fvg(coin):
+    """Cari Fair Value Gap dari 1H candle"""
+    candles = get_candles_cached(coin, "1h", 50)
+    if len(candles) < 5:
+        return None
+    
+    for i in range(len(candles)-2, 2, -1):
+        c1 = candles[i-2]  # candle pertama
+        c2 = candles[i-1]  # candle kedua (gap)
+        c3 = candles[i]    # candle ketiga
+        
+        c1_low = float(c1['l'])
+        c1_high = float(c1['h'])
+        c3_low = float(c3['l'])
+        c3_high = float(c3['h'])
+        
+        # Bullish FVG: candle1 low > candle3 high (gap ke bawah)
+        if c1_low > c3_high:
+            gap_low = c3_high
+            gap_high = c1_low
+            if (gap_high - gap_low) / gap_low * 100 > 0.3:  # Gap >0.3%
+                return {"low": gap_low, "high": gap_high, "type": "bullish"}
+        
+        # Bearish FVG: candle1 high < candle3 low (gap ke atas)
+        if c1_high < c3_low:
+            gap_low = c1_high
+            gap_high = c3_low
+            if (gap_high - gap_low) / gap_low * 100 > 0.3:
+                return {"low": gap_low, "high": gap_high, "type": "bearish"}
+    
+    return None
+
+def calculate_rr(entry, sl, tp):
+    """Hitung Risk Reward ratio"""
+    risk = abs(entry - sl) / entry * 100
+    reward = abs(tp - entry) / entry * 100
+    rr = reward / risk if risk > 0 else 0
+    return risk, reward, rr
+
+# Cache alert (biar ga spam coin yang sama)
+_last_confluence_alert = {}
+_last_early_warning = {}
+
+def run_confluence_scanner():
+    """Scanner confluence untuk day trader"""
+    print("[CONFLUENCE] Scanner started")
+    
+    while True:
+        try:
+            all_mids = info.all_mids()
+            coins = list(all_mids.keys())[:60]  # Batasi 60 coin per scan
+            
+            for coin in coins:
+                try:
+                    now = time.time()
+                    
+                    # Cooldown 10 menit per coin (biar ga spam)
+                    if coin in _last_confluence_alert and now - _last_confluence_alert[coin] < 600:
+                        continue
+                    
+                    ctx, mark = get_ctx(coin)
+                    if not ctx or mark == 0:
+                        continue
+                    
+                    # Ambil data
+                    oi_usd = get_oi_usd(ctx, mark)
+                    oi_change_1h = 0  # Bisa dihitung dari cache OI
+                    funding = get_funding_pct(ctx)
+                    ob_delta = get_ob_delta(coin)
+                    volume = float(ctx.get("dayNtlVlm") or 0)
+                    price_change = get_change(ctx)
+                    
+                    # Filter awal: volume cukup, OI naik, harga mulai gerak
+                    if volume < CONFLUENCE_CONFIG["min_volume_24h"]:
+                        continue
+                    if abs(price_change) < CONFLUENCE_CONFIG["min_price_change_1h"]:
+                        continue
+                    
+                    # Cari zone dan FVG
+                    demand = find_demand_zone(coin)
+                    supply = find_supply_zone(coin)
+                    fvg = find_fvg(coin)
+                    
+                    # Tentukan posisi harga terhadap zone
+                    is_in_zone = False
+                    zone_type = None
+                    zone_range = None
+                    
+                    if demand and mark >= demand['low'] and mark <= demand['high']:
+                        is_in_zone = True
+                        zone_type = "demand"
+                        zone_range = f"${demand['low']:.4f} - ${demand['high']:.4f}"
+                    elif supply and mark >= supply['low'] and mark <= supply['high']:
+                        is_in_zone = True
+                        zone_type = "supply"
+                        zone_range = f"${supply['low']:.4f} - ${supply['high']:.4f}"
+                    
+                    is_in_fvg = fvg and mark >= fvg['low'] and mark <= fvg['high']
+                    
+                    # ========== EARLY WARNING (1-2 jam sebelum setup) ==========
+                    oi_signal = oi_change_1h >= CONFLUENCE_CONFIG["min_oi_change_1h"]
+                    volume_signal = volume >= CONFLUENCE_CONFIG["min_volume_24h"]
+                    price_signal = abs(price_change) >= CONFLUENCE_CONFIG["min_price_change_1h"]
+                    
+                    if oi_signal and volume_signal and price_signal:
+                        if coin not in _last_early_warning or now - _last_early_warning[coin] > 3600:
+                            _last_early_warning[coin] = now
+                            
+                            # Tentukan arah potensial dari OB Delta
+                            if ob_delta > 5:
+                                potensi = "LONG"
+                                emoji = "🔍"
+                            elif ob_delta < -5:
+                                potensi = "SHORT"
+                                emoji = "🔍"
+                            else:
+                                potensi = "NETRAL"
+                                emoji = "⏳"
+                            
+                            teks = f"""{emoji} EARLY WARNING | {coin}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📈 OI mulai naik +{oi_change_1h:.0f}%
+💰 Harga: ${mark:.4f} ({price_change:+.1f}%)
+📊 Volume: ${volume/1e6:.1f}M
+
+📍 Zone: {zone_range if zone_range else 'Belum terdeteksi'}
+📍 FVG: ${fvg['low']:.4f} - ${fvg['high']:.4f} ({fvg['type']}) if fvg else 'Belum terdeteksi'
+
+💡 Potensi {potensi} dalam 1-2 jam!
+⏰ Pantau! Harga akan retrace ke zone."""
+                            
+                            bot.send_message(USER_ID, teks, parse_mode='HTML')
+                            print(f"[CONFLUENCE] Early warning: {coin} - {potensi}")
+                            time.sleep(1)
+                    
+                    # ========== CONFLUENCE ALERT (pas setup valid) ==========
+                    # VALIDASI LONG
+                    if (is_in_zone and zone_type == "demand") or (is_in_fvg and fvg and fvg['type'] == "bullish"):
+                        # Cek fake pump
+                        if ob_delta < -15 and price_change > 3:
+                            continue
+                        
+                        # Cek stop hunt
+                        if demand and mark < demand['low']:
+                            continue
+                        
+                        # Syarat valid long
+                        if oi_change_1h < CONFLUENCE_CONFIG["min_oi_change_1h"]:
+                            continue
+                        if ob_delta < CONFLUENCE_CONFIG["min_ob_delta_long"]:
+                            continue
+                        if funding < CONFLUENCE_CONFIG["min_funding"] or funding > CONFLUENCE_CONFIG["max_funding"]:
+                            continue
+                        
+                        # Hitung R:R
+                        entry = mark
+                        if demand:
+                            sl = demand['low'] * 0.995
+                        elif fvg:
+                            sl = fvg['low'] * 0.995
+                        else:
+                            sl = mark * 0.98
+                        
+                        tp = mark * 1.04  # Target 4% untuk day trader
+                        risk, reward, rr = calculate_rr(entry, sl, tp)
+                        
+                        if rr >= 1.5:
+                            teks = f"""🔥 LONG CONFLUENCE | {coin}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 Harga: ${mark:.4f} ✅ MASUK ZONE!
+📈 OI: +{oi_change_1h:.0f}% | Volume: ${volume/1e6:.1f}M
+📡 OB Delta: {ob_delta:+.0f}% {"💚" if ob_delta > 0 else "❤️"}
+
+📍 Zone: {zone_range if zone_range else '-'}
+📍 FVG: ${fvg['low']:.4f} - ${fvg['high']:.4f} ({fvg['type']}) ✅
+
+🎯 ENTRY: ${entry:.4f}
+🛑 SL: ${sl:.4f} (-{risk:.1f}%)
+🎯 TP: ${tp:.4f} (+{reward:.1f}%)
+🔥 R:R = 1:{rr:.1f}
+
+💡 Smart money accumulation detected! Gas entry.
+⏰ Hold time: 2-4 jam"""
+                            
+                            bot.send_message(USER_ID, teks, parse_mode='HTML')
+                            _last_confluence_alert[coin] = now
+                            print(f"[CONFLUENCE] LONG alert: {coin}")
+                            time.sleep(2)
+                    
+                    # VALIDASI SHORT
+                    if (is_in_zone and zone_type == "supply") or (is_in_fvg and fvg and fvg['type'] == "bearish"):
+                        # Cek fake dump
+                        if ob_delta > 15 and price_change < -3:
+                            continue
+                        
+                        # Cek stop hunt
+                        if supply and mark > supply['high']:
+                            continue
+                        
+                        # Syarat valid short
+                        if oi_change_1h < CONFLUENCE_CONFIG["min_oi_change_1h"]:
+                            continue
+                        if ob_delta > CONFLUENCE_CONFIG["min_ob_delta_short"]:
+                            continue
+                        if funding < CONFLUENCE_CONFIG["min_funding"] or funding > CONFLUENCE_CONFIG["max_funding"]:
+                            continue
+                        
+                        # Hitung R:R
+                        entry = mark
+                        if supply:
+                            sl = supply['high'] * 1.005
+                        elif fvg:
+                            sl = fvg['high'] * 1.005
+                        else:
+                            sl = mark * 1.02
+                        
+                        tp = mark * 0.96  # Target -4% untuk day trader
+                        risk, reward, rr = calculate_rr(entry, sl, tp)
+                        
+                        if rr >= 1.5:
+                            teks = f"""💀 SHORT CONFLUENCE | {coin}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 Harga: ${mark:.4f} ✅ MASUK ZONE!
+📉 OI: +{oi_change_1h:.0f}% | Volume: ${volume/1e6:.1f}M
+📡 OB Delta: {ob_delta:+.0f}% {"💚" if ob_delta > 0 else "❤️"}
+
+📍 Zone: {zone_range if zone_range else '-'}
+📍 FVG: ${fvg['low']:.4f} - ${fvg['high']:.4f} ({fvg['type']}) ✅
+
+🎯 ENTRY: ${entry:.4f}
+🛑 SL: ${sl:.4f} (+{risk:.1f}%)
+🎯 TP: ${tp:.4f} (-{reward:.1f}%)
+🔥 R:R = 1:{rr:.1f}
+
+💡 Smart money distribution detected! Gas short.
+⏰ Hold time: 2-4 jam"""
+                            
+                            bot.send_message(USER_ID, teks, parse_mode='HTML')
+                            _last_confluence_alert[coin] = now
+                            print(f"[CONFLUENCE] SHORT alert: {coin}")
+                            time.sleep(2)
+                    
+                except Exception as e:
+                    continue
+            
+            time.sleep(CONFLUENCE_CONFIG["scan_interval"] * 60)
+            
+        except Exception as e:
+            print(f"[CONFLUENCE] Error: {e}")
+            time.sleep(60)
+
+def start_confluence_scanner():
+    """Start confluence scanner di thread terpisah"""
+    conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
+    conf_thread.start()
+    print("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
+
+print("✅ SMART MONEY CONFLUENCE LOADED")
+
 
 if __name__ == "__main__":
     bot.remove_webhook()
     time.sleep(2)
     
-    # 1. Start scheduler (buat temen, insane, mood)
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
     
-    # 2. Start liquidation scanner (TAMBAHKAN INI!)
     start_liquidation_scanner()
     
-    # 3. Start bot polling
+    # TAMBAHKAN INI!
+    start_confluence_scanner()
+    
     print("🤖 HL Terminal Bot MONSTER - ONLINE")
     while True:
         try:
