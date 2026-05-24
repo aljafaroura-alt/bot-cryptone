@@ -702,6 +702,7 @@ def stop_hunt_trap(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
 
+
 @bot.message_handler(commands=['entry'])
 def entry(message):
     try:
@@ -804,7 +805,7 @@ def entry(message):
         # Hitung SL dan TP berdasarkan bias
         if bias == "SHORT" and score >= 50:
             sl_p = max(long_liq['price'], bid_wall_px) * 0.998 if bid_wall_px > 0 else long_liq['price'] * 0.998
-            tp_p = mark * 0.98  # SHORT: target 2% di bawah entry
+            tp_p = mark * 0.98
             risk_pct = abs(mark - sl_p) / mark * 100
             reward_pct = abs(mark - tp_p) / mark * 100
             rr = reward_pct / risk_pct if risk_pct > 0 else 0
@@ -817,7 +818,7 @@ def entry(message):
             
         elif bias == "LONG" and score >= 50:
             sl_p = min(short_liq['price'], ask_wall_px) * 1.002 if ask_wall_px > 0 else short_liq['price'] * 1.002
-            tp_p = mark * 1.02  # LONG: target 2% di atas entry
+            tp_p = mark * 1.02
             risk_pct = abs(sl_p - mark) / mark * 100
             reward_pct = abs(tp_p - mark) / mark * 100
             rr = reward_pct / risk_pct if risk_pct > 0 else 0
@@ -839,6 +840,7 @@ def entry(message):
         
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
 
 @bot.message_handler(commands=['entrywhale', 'whaleentry'])
 def entrywhale(message):
