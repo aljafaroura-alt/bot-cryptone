@@ -2455,19 +2455,193 @@ def run_scheduler():
             print(f"Scanner error: {e}")
             time.sleep(60)
 # ===== ULTIMATE SNIPER END =====
+# ==========================================================
+# LIQUIDATION ALERT - PER COIN (ESTIMASI)
+# ==========================================================
 
+# Konfigurasi threshold (bisa lo atur sendiri)
+LIQ_CONFIG = {
+    "min_liq_usd": 200_000,      # Minimal estimasi likuidasi untuk di-notif
+    "price_change_pct": 1.5,     # Minimal price change 1 menit (%)
+    "oi_change_pct": 8,          # Minimal OI change 5 menit (%)
+    "volume_spike": 8,           # Minimal volume spike (x normal)
+    "scan_interval": 30,         # Scan tiap 30 detik
+}
+
+# Cache buat tracking
+_liq_last_oi = {}
+_liq_last_volume = {}
+_liq_last_notif = {}
+
+def estimate_liquidation_amount(oi_change_usd, price_change_pct):
+    """Estimasi likuidasi dari OI change dan price move"""
+    # Semakin besar OI change dan price move, semakin besar estimasi liq
+    if price_change_pct > 0:
+        # Short squeeze (harga naik, short kena)
+        return oi_change_usd * (price_change_pct / 100)
+    else:
+        # Long liquidation (harga turun, long kena)
+        return oi_change_usd * (abs(price_change_pct) / 100)
+
+def check_liquidation_for_coin(coin, ctx, mark):
+    """Cek likuidasi untuk 1 coin"""
+    global _liq_last_oi, _liq_last_volume
+    
+    try:
+        # Ambil data sekarang
+        oi_usd = get_oi_usd(ctx, mark)
+        funding = get_funding_pct(ctx)
+        
+        # Candle 1m untuk price change
+        candles = info.candles_snapshot(coin, "1m", 2)
+        if len(candles) < 2:
+            return None
+        
+        price_1m_ago = float(candles[-2]['c'])
+        price_change_pct = ((mark - price_1m_ago) / price_1m_ago) * 100
+        
+        # Volume spike
+        vol_now = float(ctx.get("dayNtlVlm") or 0)
+        vol_prev = _liq_last_volume.get(coin, vol_now)
+        volume_spike = vol_now / vol_prev if vol_prev > 0 else 1
+        
+        # OI change 5m
+        oi_5m_ago = _liq_last_oi.get(coin, oi_usd)
+        oi_change_pct = ((oi_usd - oi_5m_ago) / oi_5m_ago) * 100 if oi_5m_ago > 0 else 0
+        oi_change_usd = oi_usd - oi_5m_ago
+        
+        # Update cache
+        _liq_last_oi[coin] = oi_usd
+        _liq_last_volume[coin] = vol_now
+        
+        # Cek threshold
+        is_price_move = abs(price_change_pct) > LIQ_CONFIG["price_change_pct"]
+        is_oi_drop = oi_change_pct < -LIQ_CONFIG["oi_change_pct"]
+        is_volume_spike = volume_spike > LIQ_CONFIG["volume_spike"]
+        
+        # Kalo memenuhi kriteria = potensi likuidasi
+        if is_price_move and (is_oi_drop or is_volume_spike):
+            est_liq = estimate_liquidation_amount(abs(oi_change_usd), abs(price_change_pct))
+            
+            if est_liq >= LIQ_CONFIG["min_liq_usd"]:
+                # Cek cooldown (jangan spam coin yang sama)
+                now = time.time()
+                if coin in _liq_last_notif and now - _liq_last_notif[coin] < 300:
+                    return None
+                _liq_last_notif[coin] = now
+                
+                # Tentukan arah likuidasi
+                if price_change_pct > 0:
+                    # Harga naik = short squeeze
+                    liq_type = "SHORT SQUEEZE"
+                    icon = "🔥"
+                    direction = "🟢 shorts"
+                else:
+                    # Harga turun = long liquidation
+                    liq_type = "LIQUIDATION"
+                    icon = "💀"
+                    direction = "🔴 longs"
+                
+                # Format nominal
+                if est_liq >= 1_000_000:
+                    nominal_str = f"${est_liq/1_000_000:.1f}M"
+                else:
+                    nominal_str = f"${est_liq/1_000:.0f}K"
+                
+                return {
+                    "coin": coin,
+                    "type": liq_type,
+                    "icon": icon,
+                    "nominal": nominal_str,
+                    "direction": direction,
+                    "price_change": price_change_pct,
+                    "price": mark,
+                    "volume_spike": volume_spike,
+                    "oi_change": oi_change_pct,
+                    "funding": funding
+                }
+        
+        return None
+        
+    except Exception as e:
+        return None
+
+def run_liquidation_scanner():
+    """Scan semua coin cari likuidasi"""
+    print("[LIQ] Scanner started")
+    
+    while True:
+        try:
+            # Ambil semua coin
+            all_mids = info.all_mids()
+            coins = list(all_mids.keys())
+            
+            # Batasi biar ga kecepetan (ambil 60 coin per scan)
+            # Nanti di-split biar ga kena rate limit
+            batch_size = 30
+            for i in range(0, min(len(coins), 60), batch_size):
+                batch = coins[i:i+batch_size]
+                
+                for coin in batch:
+                    try:
+                        ctx, mark = get_ctx(coin)
+                        if not ctx or mark == 0:
+                            continue
+                        
+                        result = check_liquidation_for_coin(coin, ctx, mark)
+                        if result:
+                            # Kirim notif
+                            teks = f"""{result['icon']} <b>{result['type']} | {result['coin']}</b>
+━━━━━━━━━━━━━━━━━━━━━━
+💰 {result['nominal']} {result['direction']} wiped
+📊 ${result['price']:.4f} ({result['price_change']:+.1f}%)
+📈 Volume {result['volume_spike']:.0f}x normal
+━━━━━━━━━━━━━━━━━━━━━━
+🎯 /warroom {result['coin']}"""
+                            
+                            bot.send_message(USER_ID, teks, parse_mode='HTML')
+                            print(f"[LIQ] Alert sent: {result['coin']} - {result['nominal']}")
+                            
+                            # Jeda biar ga spam
+                            time.sleep(2)
+                            
+                    except Exception as e:
+                        continue
+                
+                # Jeda antar batch
+                time.sleep(5)
+            
+            # Tunggu sebelum scan berikutnya
+            time.sleep(LIQ_CONFIG["scan_interval"])
+            
+        except Exception as e:
+            print(f"[LIQ] Error: {e}")
+            time.sleep(60)
+
+# Start liquidation scanner di thread terpisah
+def start_liquidation_scanner():
+    liq_thread = threading.Thread(target=run_liquidation_scanner, daemon=True)
+    liq_thread.start()
+    print("✅ LIQUIDATION SCANNER STARTED")
+
+# Panggil ini di main (setelah bot start)
+# start_liquidation_scanner()
+
+print("✅ LIQUIDATION ALERT LOADED")
 # run_scheduler duplikat dihapus - sudah ada di atas
 
 if __name__ == "__main__":
-    # KILL WEBHOOK BIAR GA 409 LAGI
     bot.remove_webhook()
     time.sleep(2)
     
-    # JALANIN SCANNER ALL PERPS DI BACKGROUND
+    # 1. Start scheduler (buat temen, insane, mood)
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
     
-    # JALANIN BOT TELEGRAM
+    # 2. Start liquidation scanner (TAMBAHKAN INI!)
+    start_liquidation_scanner()
+    
+    # 3. Start bot polling
     print("🤖 HL Terminal Bot MONSTER - ONLINE")
     while True:
         try:
@@ -2475,4 +2649,3 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Polling error: {e}")
             time.sleep(15)
-
