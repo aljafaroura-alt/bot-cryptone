@@ -2610,6 +2610,91 @@ def run_scheduler():
             print(f"Scanner error: {e}")
             time.sleep(60)
 
+@bot.message_handler(commands=['status'])
+def status_cmd(message):
+    chat_id = message.chat.id
+
+    # 1. CEK MULTIPLE SCHEDULES
+    schedules_text = "🔴 Tidak ada"
+    if chat_id in schedule_jobs and schedule_jobs[chat_id]:
+        jobs_info = []
+        for job in schedule_jobs[chat_id]:
+            try:
+                func_name = job.job_func.__name__
+                if 'job_insane_radar' in func_name:
+                    mode = "INSANE RADAR"
+                elif 'run_temen_scan' in func_name:
+                    mode = "TEMEN MODE"
+                elif 'send_mood_message' in func_name:
+                    mode = "MOOD MODE"
+                else:
+                    mode = "UNKNOWN"
+                
+                interval = job.interval
+                unit = job.unit[:-1] if job.unit.endswith('s') else job.unit
+                
+                next_run_utc = job.next_run
+                if next_run_utc:
+                    next_run_wib = next_run_utc + timedelta(hours=7)
+                    next_run = next_run_wib.strftime('%H:%M:%S WIB')
+                else:
+                    next_run = "N/A"
+                
+                jobs_info.append(f"   ├ {mode} | tiap {interval} {unit} | next: {next_run}")
+            except Exception as e:
+                jobs_info.append(f"   ├ [ERROR: {str(e)[:30]}]")
+        
+        if jobs_info:
+            schedules_text = "✅ AKTIF\n" + "\n".join(jobs_info)
+        else:
+            schedules_text = "⚠️ Kosong (bug?)"
+
+    # 2. CEK SNIPER AKTIF
+    sniper_text = f"✅ {SNIPER_MODE}" if globals().get('SNIPER_ALL_COIN', False) else "🔴 OFF"
+
+    # 3. CEK TEMEN MODE
+    temen_text = "✅ ON" if globals().get('TEMEN_MODE', False) else "🔴 OFF"
+
+    # 4. CEK LIQUIDATION SCANNER
+    liq_text = "✅ ON" if globals().get('_liq_scanner_running', False) else "🔴 OFF"
+
+    # 5. CEK CONFLUENCE SCANNER
+    conf_text = "✅ ON" if globals().get('_conf_scanner_running', False) else "🔴 OFF"
+
+    # 6. SESSION
+    session_text = get_sesi()
+
+    # 7. UPTIME
+    uptime = get_uptime()
+
+    # 8. RENDER TEXT
+    teks = f"⚙️ <b>SYSTEM STATUS</b>\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    teks += f"🤖 Bot       : ✅ ONLINE\n"
+    teks += f"⏱️ Uptime    : {uptime}\n"
+    teks += f"📡 Session   : {session_text}\n"
+    teks += f"🕐 WIB       : {get_wib()}\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    teks += f"🎯 SNIPER    : {sniper_text}\n"
+    teks += f"👥 TEMEN     : {temen_text}\n"
+    teks += f"💀 LIQ SCAN  : {liq_text}\n"
+    teks += f"🔍 CONFLUENCE: {conf_text}\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    teks += f"📅 SCHEDULES:\n{schedules_text}\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+
+    # Tambah quick mood
+    mood_data = get_market_mood_data()
+    if mood_data:
+        teks += f"\n{mood_data['emoji']} Mood: <b>{mood_data['mood']}</b>\n"
+        teks += f"   Funding avg: <code>{mood_data['funding']:+.4f}%</code>\n"
+        teks += f"   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    teks += "✅ Semua sistem normal"
+
+    bot.send_message(chat_id, teks, parse_mode='HTML')
+    
+
 # ========== MAIN ==========
 if __name__ == "__main__":
     bot.remove_webhook()
