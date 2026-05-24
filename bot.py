@@ -699,6 +699,8 @@ def stop_hunt_trap(message):
         bot.edit_message_text(txt, msg.chat.id, msg.message_id)
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+#==========================================================================
         
                     
 @bot.message_handler(commands=['warroom'])
@@ -740,7 +742,7 @@ def warroom(message):
                     if isinstance(loaded, dict): last_ob = loaded
             except: pass
         prev_ob = float(last_ob.get(coin, ob_delta))
-        ob_spike_text = f"\n⚠️ OB SPIKE: {prev_ob:+.0f}% → {ob_delta:+.0f}%" if abs(ob_delta - prev_ob) > 20 else ""
+        ob_spike_text = f"⚠️ OB SPIKE: {prev_ob:+.0f}% → {ob_delta:+.0f}%" if abs(ob_delta - prev_ob) > 20 else ""
         last_ob[coin] = ob_delta
         try:
             with open(OB_FILE, 'w') as f: json.dump(last_ob, f)
@@ -764,38 +766,45 @@ def warroom(message):
         persen = int(long_score / total_score * 100) if total_score > 0 else 50
         conviction = "STRONG" if total_score >= 75 else "WEAK"
 
-        # Fake bid check
-        teks = f"🧠 WARROOM • {coin} • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"Harga   : {fmt_price(mark)}      OI     : ${oi_usd:.2f}M\n"
-        teks += f"Δ24h    : {change:+.2f}%         Vol 24h: ${vol:.0f}M\n"
-        teks += f"Funding : {funding:.4f}%         OB Delta: {ob_delta:+.1f}%{ob_spike_text}\n"
-        teks += f"Bid Wall: ${bid_wall/1e6:.2f}M\n"
-        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        # Format rapi dengan lebar tetap
+        teks = f"🧠 WARROOM • {coin} • {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💰 Harga   : {fmt_price(mark).rjust(12)}   📊 OI     : ${oi_usd:,.2f}M\n"
+        teks += f"📈 Δ24h    : {change:+.2f}%{' ' * (10 - len(f'{change:+.2f}%'))}   📦 Vol    : ${vol:,.0f}M\n"
+        teks += f"💸 Funding : {funding:.4f}%{' ' * (10 - len(f'{funding:.4f}%'))}   📡 OB     : {ob_delta:+.1f}%\n"
+        if ob_spike_text:
+            teks += f"⚠️ {ob_spike_text}\n"
+        teks += f"🐋 Bid Wall: ${bid_wall/1e6:.2f}M\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
+        # Fake bid check
         if bid_wall < 100000 and abs(ob_delta) > 15:
             teks += f"🟡 SKIP — FAKE BID DETECTED\n"
-            teks += f"Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
-            teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            teks += f"📊 Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
+            teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             teks += f"⛔ SETUP DITOLAK\nOB gerak tapi tembok tipis"
             bot.send_message(message.chat.id, teks)
             return
 
         teks += f"{emoji} {bias} | Conviction: {conviction}\n"
-        teks += f"Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
-        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"📊 Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
         if conviction == "STRONG":
             teks += f"🎯 SETUP READY\nEntry valid di atas harga sekarang"
         else:
             teks += f"⚠️ SETUP LEMAH\nTunggu konfirmasi OB / Bid Wall"
 
-        teks += f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"🔍 /squeeze {coin} | /entry {coin} | /session {coin}"
 
         bot.send_message(message.chat.id, teks)
 
     except Exception as e:
         bot.reply_to(message, f"❌ Error warroom: {e}")
+            
+
+#=================================≠==============================
         
                
 def get_smart_money_signal(change, ob_delta, funding):
