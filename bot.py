@@ -914,8 +914,10 @@ def warroom(message):
         change = get_change(ctx)
         funding = get_funding_pct(ctx)
         vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
-        ob_delta = get_ob_delta(coin)
         bid_wall = get_bid_wall(coin)
+        
+        # ✅ PASTIKAN INI DIPANGGIL
+        ob_delta = get_ob_delta(coin)  # <—— JANGAN PAKE YANG LAIN
 
         # Scoring
         long_score, short_score = 0, 0
@@ -935,7 +937,6 @@ def warroom(message):
         persen = int(long_score / total_score * 100) if total_score > 0 else 50
         conviction = "STRONG ✅" if total_score >= 75 else "WEAK ⚠️"
 
-        # Format SEDERHANA - baris per baris
         teks = f"🧠 WARROOM • {coin}\n"
         teks += f"⏰ {get_wib()} | {get_sesi()}\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -944,11 +945,10 @@ def warroom(message):
         teks += f"📊 OI  : ${oi_usd:.2f}M\n"
         teks += f"📦 Vol : ${vol:.0f}M\n"
         teks += f"💸 Fund: {funding:.4f}%\n"
-        teks += f"📡 OB  : {ob_delta:+.1f}%\n"
+        teks += f"📡 OB  : {ob_delta:+.1f}%\n"  # <—— PASTIKAN INI
         teks += f"🐋 Wall: ${bid_wall/1e6:.2f}M\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
-        # Fake bid check
         if bid_wall < 100000 and abs(ob_delta) > 15:
             teks += f"🟡 SKIP — FAKE BID\n"
             teks += f"📊 Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
