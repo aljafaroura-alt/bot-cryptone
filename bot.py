@@ -1468,6 +1468,15 @@ def btc_dominance(message):
 @bot.message_handler(commands=['volatility', 'vol'])
 def volatility_scanner(message):
     try:
+        parts = message.text.split()
+        
+        # Cek apakah user kasih nama coin
+        if len(parts) > 1:
+            coin = parts[1].upper()
+            # Tampilkan detail untuk 1 coin
+            return volcheck_single(message, coin)
+        
+        # Kalo ga ada coin, tampilkan top 10 volatil 24 jam
         msg = bot.reply_to(message, "📊 Scanning volatility...")
         data = info.meta_and_asset_ctxs()
         vol_list = []
@@ -1475,17 +1484,78 @@ def volatility_scanner(message):
             mark = float(ctx.get("markPx") or 0)
             if mark == 0: continue
             change = abs(get_change(ctx))
-            if change > 3:
+            if change > 3:  # Minimal 3% biar ga terlalu rame
                 vol_list.append((asset["name"], change, get_change(ctx)))
         vol_list.sort(key=lambda x: x[1], reverse=True)
+        
         teks = f"⚡ VOLATILITY SCANNER\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏰ {get_wib()}\n\n"
         for i, (coin, vol, chg) in enumerate(vol_list[:10], 1):
             arrow = "🚀" if chg > 0 else "📉"
             teks += f"{i}. {coin} | {arrow} {chg:+.1f}%\n"
-        teks += "\n💡 Vol >5% = potensi breakout/squeeze"
+        teks += "\n💡 /volatility BTC — Cek detail 1 coin"
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
+
+
+def volcheck_single(message, coin):
+    try:
+        msg = bot.reply_to(message, f"📊 Checking volatility {coin}...")
+        
+        # Ambil candle 1 menit (10 menit terakhir)
+        end_time = int(time.time() * 1000)
+        start_time = end_time - (10 * 60 * 1000)
+        
+        candles = info.candles_snapshot(coin, "1m", start_time, end_time)
+        if len(candles) < 5:
+            return bot.edit_message_text(f"❌ Data candle {coin} kurang", msg.chat.id, msg.message_id)
+        
+        # Hitung volatilitas dari 10 candle terakhir
+        prices = [float(c['c']) for c in candles[-10:]]
+        changes = []
+        for i in range(1, len(prices)):
+            pct = abs((prices[i] - prices[i-1]) / prices[i-1] * 100)
+            changes.append(pct)
+        
+        avg_vol = sum(changes) / len(changes) if changes else 0
+        max_vol = max(changes) if changes else 0
+        latest_change = (prices[-1] - prices[-2]) / prices[-2] * 100 if len(prices) > 1 else 0
+        
+        # Status
+        if avg_vol > 0.3:
+            status = "🔥🔥 VERY HIGH"
+            advice = "Hati-hati, spread lebar, slippage tinggi"
+        elif avg_vol > 0.15:
+            status = "🔥 HIGH"
+            advice = "Volatile, cocok untuk scalping"
+        elif avg_vol > 0.08:
+            status = "🟡 MODERATE"
+            advice = "Normal, ikutin plan"
+        else:
+            status = "😴 LOW"
+            advice = "Range trading, hindari breakout"
+        
+        # Bar visual
+        bar_len = min(int(avg_vol * 20), 10)
+        bar = "█" * bar_len + "░" * (10 - bar_len)
+        
+        teks = f"⚡ VOLCHECK • {coin}\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"📊 Avg per menit: {avg_vol:.3f}%\n"
+        teks += f"📈 Max per menit: {max_vol:.3f}%\n"
+        teks += f"🕐 Latest move  : {latest_change:+.3f}%\n"
+        teks += f"{bar}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🎯 Status: {status}\n"
+        teks += f"💡 {advice}"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
 
 @bot.message_handler(commands=['summary'])
 def market_summary(message):
