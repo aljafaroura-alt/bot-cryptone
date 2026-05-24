@@ -1839,34 +1839,42 @@ def report(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
 
-
-# ===== TEMEN MODE UPGRADED =====
+# ===== TEMEN MODE UPGRADED (VERSI COMPACT) =====
 
 def get_smart_money_signal(change, ob_delta, funding):
-    """Kasih sinyal berdasarkan data market"""
+    """Kasih sinyal dalam bentuk ikon pendek"""
     signals = []
+    
+    # Whale signals dengan ikon arah
     if ob_delta > 15 and change > 1:
-        signals.append("🐋 WHALE LONG")
+        signals.append("🐋🟢")  # Whale LONG
     elif ob_delta > 15 and change < -1:
-        signals.append("💀 WHALE DUMP")
+        signals.append("💀")     # Whale DUMP
     if ob_delta < -15 and change < -1:
-        signals.append("🐋 WHALE SHORT")
+        signals.append("🐋🔴")  # Whale SHORT
     elif ob_delta < -15 and change > 1:
-        signals.append("⚠️ FAKE PUMP")
+        signals.append("⚠️⬆️")  # Fake PUMP
+    
+    # Crowded signals
     if funding > 0.05:
-        signals.append("💸 LONG CROWDED")
+        signals.append("💸🔴")  # LONG CROWDED
     elif funding < -0.05:
-        signals.append("💸 SHORT CROWDED")
+        signals.append("💸🟢")  # SHORT CROWDED
+    
+    # Stop hunt
     if abs(ob_delta) > 30 and abs(change) > 2:
-        signals.append("⚡ STOP HUNT")
+        signals.append("⚡")     # STOP HUNT
+    
+    # Smart money
     if ob_delta > 20 and funding < -0.02:
-        signals.append("🔥 SMART MONEY ENTRY")
+        signals.append("🔥🟢")  # SMART MONEY LONG
     elif ob_delta < -20 and funding > 0.02:
-        signals.append("🔥 SMART MONEY SHORT")
+        signals.append("🔥🔴")  # SMART MONEY SHORT
+    
     return signals[:2]
 
 def run_temen_scan(chat_id):
-    """Scan market dengan sinyal smart money"""
+    """Scan market dengan format compact"""
     global TEMEN_COOLDOWN
     try:
         data = info.meta_and_asset_ctxs()
@@ -1905,25 +1913,31 @@ def run_temen_scan(chat_id):
 
         alerts.sort(key=lambda x: x['score'], reverse=True)
 
-        teks  = f"👥 <b>TEMEN</b> | {get_wib()}\n"
-        teks += "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        # FORMAT COMPACT (TABEL)
+        teks  = f"👥 TEMEN | {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        
         for a in alerts[:5]:
             arrow = "🚀" if a['change'] > 0 else "📉"
-            if a['ob_delta'] > 10:
-                ob_text = f"| OB +{a['ob_delta']:.0f}% 💚"
-            elif a['ob_delta'] < -10:
-                ob_text = f"| OB {a['ob_delta']:.0f}% ❤️"
+            coin_name = a['coin'][:8].ljust(8)
+            
+            # Format OB
+            ob_val = a['ob_delta']
+            if ob_val > 0:
+                ob_str = f"OB+{ob_val:.0f}%"
             else:
-                ob_text = ""
-            teks += f"{arrow} <b>{a['coin']}</b> {a['change']:+.1f}% {ob_text}\n"
-            if abs(a['funding']) > 0.03:
-                fund_icon = "🔴" if a['funding'] > 0 else "🟢"
-                teks += f"   {fund_icon} Funding {a['funding']:+.4f}%\n"
-            for sig in a['signals']:
-                teks += f"   → {sig}\n"
+                ob_str = f"OB{ob_val:.0f}%"
+            
+            # Baris utama + sinyal
+            teks += f"{coin_name} {arrow} {a['change']:+.1f}%  {ob_str}   "
+            
+            if a['signals']:
+                teks += "".join(a['signals'])
             teks += "\n"
-        teks += "━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🎯 /warroom {alerts[0]['coin']} buat detail"
+        
+        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🎯 /warroom {alerts[0]['coin']}"
+        
         bot.send_message(chat_id, teks, parse_mode='HTML')
     except Exception as e:
         print(f"Temen scan error: {e}")
@@ -1933,13 +1947,11 @@ def temen_on(message):
     global TEMEN_MODE
     TEMEN_MODE = True
     bot.reply_to(message,
-        "👥 <b>TEMEN MODE - ON</b>\n"
+        "👥 TEMEN MODE - ON\n"
         "━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Udah nyala bro, gw bakal bacot tiap 5 menit\n"
-        "Sinyal: 🐋 Whale | ⚡ Stop Hunt | 🔥 Smart Money\n"
-        "Threshold: Harga 0.8% | OB 15% | Fund 0.03%\n"
-        "Cooldown 5m/koin biar ga spam\n"
-        "Ketik /diem buat nyuruh gw diem 🤐",
+        "Gw bakal bacot tiap 5 menit\n"
+        "Format compact: Coin | Harga | OB | Sinyal\n"
+        "Ketik /diem buat matiin.",
         parse_mode='HTML')
 
 @bot.message_handler(commands=['diem'])
