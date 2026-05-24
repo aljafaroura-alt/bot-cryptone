@@ -296,8 +296,6 @@ Hyperliquid Tools
 Hi {user} 👋
 
 📡 {sesi} • {waktu}
-
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ⚡ POWER TOOLS
