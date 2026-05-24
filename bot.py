@@ -290,11 +290,10 @@ def start(message):
     user = message.from_user.first_name
     
     teks = f"""
-🧬 Cryptone Terminal Bot
+🧬 HL TERMINAL BOT
 Hyperliquid Tools
 
 Hi {user} 👋
-
 📡 {sesi} • {waktu}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -308,7 +307,8 @@ Hi {user} 👋
 📊 MARKET DATA
 /price | /funding | /oi | /spark
 /gainers | /losers | /nuke
-/heatmap | /narrative
+/heatmap | /narrative | /topoi
+/summary | /btcdom | /volatility
 
 🔍 ANALISIS PRO
 /delta | /trap | /cluster
@@ -346,7 +346,6 @@ Hi {user} 👋
 ⚠️ DYOR — Not financial advice
 🔧 Bot by Cryptone
 """
-    
     bot.send_message(message.chat.id, teks, parse_mode='HTML')
     
     
@@ -996,6 +995,375 @@ def squeeze(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
 
+@bot.message_handler(commands=['whalewall'])
+def whalewall(message):
+    try:
+        coin = get_coin(message)
+        msg = bot.reply_to(message, f"🧱 Scanning whalewall {coin}...")
+        
+        mids = info.all_mids()
+        price = float(mids.get(coin, 0))
+        if price == 0:
+            return bot.edit_message_text(f"❌ {coin} ga ada", msg.chat.id, msg.message_id)
+        
+        l2 = info.l2_snapshot(coin)
+        bids = l2['levels'][0]
+        asks = l2['levels'][1]
+        
+        def parse_walls(levels, threshold=500_000):
+            walls = []
+            for lv in levels:
+                p = float(lv['px'])
+                sz = float(lv['sz'])
+                usd = p * sz
+                if usd > threshold:
+                    walls.append({"price": p, "usd": usd})
+            return walls
+        
+        big_bids = sorted(parse_walls(bids), key=lambda x: x['price'], reverse=True)[:3]
+        big_asks = sorted(parse_walls(asks), key=lambda x: x['price'])[:3]
+        
+        teks = f"🧱 WHALE WALL • {coin}\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💰 Harga: {fmt_price(price)}\n"
+        teks += f"🎯 Filter: > $500k\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        teks += "🔴 ASK (Resistance):\n"
+        if big_asks:
+            for w in big_asks:
+                pct = (w['price']-price)/price*100
+                teks += f"   ↑ {fmt_price(w['price'])} (+{pct:.2f}%) = ${w['usd']/1e6:.2f}M\n"
+        else:
+            teks += "   Tidak ada\n"
+        
+        teks += f"\n📍 {fmt_price(price)} ← sekarang\n\n"
+        
+        teks += "🟢 BID (Support):\n"
+        if big_bids:
+            for w in big_bids:
+                pct = (price-w['price'])/price*100
+                teks += f"   ↓ {fmt_price(w['price'])} (-{pct:.2f}%) = ${w['usd']/1e6:.2f}M\n"
+        else:
+            teks += "   Tidak ada\n"
+        
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        na = big_asks[0]['usd'] if big_asks else 0
+        nb = big_bids[0]['usd'] if big_bids else 0
+        if na > nb * 2:
+            teks += "❤️ Tembok jual tebel → Susah naik"
+        elif nb > na * 2:
+            teks += "💚 Tembok beli tebel → Whale jaga"
+        elif na > 0 and nb > 0:
+            teks += "⚖️ Imbang → Ranging"
+        else:
+            teks += "⚠️ Tipis → Rawan spike"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+
+@bot.message_handler(commands=['cluster'])
+def liquidation_cluster(message):
+    try:
+        coin = get_coin(message)
+        msg = bot.reply_to(message, f"🎯 Mapping cluster {coin}...")
+        ctx, mark = get_ctx(coin)
+        if not ctx:
+            return bot.edit_message_text(f"❌ {coin} ga ada", msg.chat.id, msg.message_id)
+        oi = float(ctx.get("openInterest") or 0)
+        oi_usd = oi * mark / 1e6
+        levels_data = [(50, 0.30), (25, 0.25), (20, 0.25), (10, 0.20)]
+        above = []
+        below = []
+        for lev, weight in levels_data:
+            long_p = mark * (1 - 0.99 / lev)
+            short_p = mark * (1 + 0.99 / lev)
+            size = oi_usd * weight * 0.5
+            above.append((short_p, size, lev))
+            below.append((long_p, size, lev))
+        above = sorted(above, key=lambda x: x[0])
+        below = sorted(below, key=lambda x: x[0], reverse=True)
+        teks = f"🎯 LIQ CLUSTER • {coin}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 Harga: {fmt_price(mark)}\n📊 OI: ${oi_usd:.2f}M\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        for p, size, lev in above[:3]:
+            pct = abs(p - mark) / mark * 100
+            teks += f"⬆️ {fmt_price(p)} (+{pct:.1f}%) | {lev}x | ${size:.1f}M\n"
+        teks += f"\n📍 {fmt_price(mark)} ← sekarang\n\n"
+        for p, size, lev in below[:3]:
+            pct = abs(p - mark) / mark * 100
+            teks += f"⬇️ {fmt_price(p)} (-{pct:.1f}%) | {lev}x | ${size:.1f}M\n"
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+@bot.message_handler(commands=['liqmap'])
+def liqmap(message):
+    try:
+        coin = get_coin(message)
+        msg = bot.reply_to(message, f"💀 Scanning liqmap {coin}...")
+        ctx, mark = get_ctx(coin)
+        if not ctx or mark == 0:
+            return bot.edit_message_text(f"❌ {coin} ga ada", msg.chat.id, msg.message_id)
+        oi_usd = get_oi_usd(ctx, mark)
+        if oi_usd <= 0:
+            return bot.edit_message_text(f"❌ OI {coin} masih 0", msg.chat.id, msg.message_id)
+        levels = []
+        for lev, weight in [(25,0.4),(20,0.3),(10,0.2),(5,0.1)]:
+            long_p = mark * (1 - 0.99/lev)
+            short_p = mark * (1 + 0.99/lev)
+            size = oi_usd * weight * 0.5
+            levels.append({"price": long_p, "size": size, "type": "LONG", "lev": lev})
+            levels.append({"price": short_p, "size": size, "type": "SHORT", "lev": lev})
+        above = sorted([l for l in levels if l["price"] > mark], key=lambda x: x["price"])
+        below = sorted([l for l in levels if l["price"] < mark], key=lambda x: x["price"], reverse=True)
+        teks = f"💀 LIQ MAP • {coin}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 Harga: {fmt_price(mark)}\n📊 OI: ${oi_usd:.2f}M\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        for l in above[:3]:
+            pct = (l["price"]-mark)/mark*100
+            teks += f"⬆️ {fmt_price(l['price'])} (+{pct:.1f}%) {l['type']} {l['lev']}x | ${l['size']:.1f}M\n"
+        teks += f"\n📍 {fmt_price(mark)} ← sekarang\n\n"
+        for l in below[:3]:
+            pct = (mark-l["price"])/mark*100
+            teks += f"⬇️ {fmt_price(l['price'])} (-{pct:.1f}%) {l['type']} {l['lev']}x | ${l['size']:.1f}M\n"
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:200]}", msg.chat.id, msg.message_id)
+
+@bot.message_handler(commands=['correlation', 'corr'])
+def correlation_analysis(message):
+    try:
+        coin = get_coin(message)
+        if coin == 'BTC':
+            return bot.reply_to(message, "😅 BTC vs BTC = 1.0")
+        
+        msg = bot.reply_to(message, f"🔗 Analyzing correlation {coin}/BTC...")
+        
+        end_time = int(datetime.now().timestamp() * 1000)
+        start_time = end_time - (100 * 5 * 60 * 1000)
+        
+        btc_c = info.candles_snapshot('BTC', '5m', start_time, end_time)
+        coin_c = info.candles_snapshot(coin, '5m', start_time, end_time)
+        
+        if len(btc_c) < 50 or len(coin_c) < 50:
+            return bot.edit_message_text(f"❌ Data candle {coin} kurang", msg.chat.id, msg.message_id)
+        
+        btc_cl = [float(c['c']) for c in btc_c[-100:]]
+        coin_cl = [float(c['c']) for c in coin_c[-100:]]
+        n = min(len(btc_cl), len(coin_cl))
+        btc_cl = btc_cl[-n:]
+        coin_cl = coin_cl[-n:]
+        
+        btc_r = [(btc_cl[i]-btc_cl[i-1])/btc_cl[i-1] for i in range(1, n)]
+        coin_r = [(coin_cl[i]-coin_cl[i-1])/coin_cl[i-1] for i in range(1, n)]
+        
+        def pearson(x, y):
+            n = len(x)
+            sx, sy = sum(x), sum(y)
+            sxy = sum(x[i]*y[i] for i in range(n))
+            sx2 = sum(xi*xi for xi in x)
+            sy2 = sum(yi*yi for yi in y)
+            num = n*sxy - sx*sy
+            den = ((n*sx2 - sx**2) * (n*sy2 - sy**2)) ** 0.5
+            return num/den if den != 0 else 0
+        
+        corr = pearson(btc_r, coin_r)
+        btc_v = (max(btc_cl) - min(btc_cl)) / min(btc_cl) * 100
+        coin_v = (max(coin_cl) - min(coin_cl)) / min(coin_cl) * 100
+        beta = coin_v / btc_v if btc_v > 0 else 1
+        
+        if corr >= 0.8:
+            status = "🔴 HIGH"
+            insight = f"{coin} ikut BTC 1:1"
+            risk = "HIGH"
+        elif corr >= 0.5:
+            status = "🟡 MEDIUM"
+            insight = "Masih ikut BTC, ada ruang alpha"
+            risk = "MEDIUM"
+        elif corr >= -0.5:
+            status = "🟢 LOW"
+            insight = f"{coin} punya narasi sendiri"
+            risk = "LOW"
+        else:
+            status = "🔵 INVERSE"
+            insight = "Naik pas BTC turun, bagus buat hedging"
+            risk = "LOW"
+        
+        teks = f"🔗 CORRELATION • {coin}/BTC\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"📊 Korelasi: {corr:.3f}\n"
+        teks += f"📈 Beta    : {beta:.2f}x\n"
+        teks += f"🎯 Status  : {status}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💡 {insight}\n"
+        teks += f"⚠️ Risk: {risk}\n\n"
+        teks += f"⏰ {get_wib()}"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+
+@bot.message_handler(commands=['sentiment', 'LSratio'])
+def sentiment(message):
+    try:
+        coin = get_coin(message)
+        ctx, mark = get_ctx(coin)
+        if not ctx:
+            return bot.reply_to(message, f"❌ {coin} tidak ada")
+        
+        funding = get_funding_pct(ctx)
+        change = get_change(ctx)
+        oi_usd = get_oi_usd(ctx, mark)
+        vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
+        
+        skor = 0
+        if funding > 0.05: skor += 2
+        elif funding > 0.01: skor += 1
+        elif funding < -0.05: skor -= 2
+        elif funding < -0.01: skor -= 1
+        
+        if change > 5: skor += 1
+        elif change < -5: skor -= 1
+        
+        if skor >= 3:    emosi = "🔥🔥 EUPHORIA"
+        elif skor >= 2:  emosi = "🔥 GREED"
+        elif skor >= 1:  emosi = "🟢 OPTIMIS"
+        elif skor <= -3: emosi = "💀 PANIC"
+        elif skor <= -2: emosi = "🔴 FEAR"
+        elif skor <= -1: emosi = "🟡 WASPADA"
+        else:            emosi = "⚪ NEUTRAL"
+        
+        teks = f"🧠 SENTIMENT • {coin}\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💰 Harga : {fmt_price(mark)} ({change:+.1f}%)\n"
+        teks += f"💸 Fund  : {funding:.4f}%\n"
+        teks += f"📊 OI    : ${oi_usd:.0f}M\n"
+        teks += f"📦 Vol   : ${vol:.0f}M\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"{emosi}\n\n"
+        teks += f"⏰ {get_wib()}"
+        
+        bot.reply_to(message, teks)
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
+
+
+@bot.message_handler(commands=['topoi'])
+def top_oi(message):
+    try:
+        data = info.meta_and_asset_ctxs()
+        oi_list = []
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            mark = float(ctx.get("markPx") or 0)
+            if mark == 0: continue
+            oi_usd = get_oi_usd(ctx, mark)
+            if oi_usd > 10:
+                oi_list.append((asset["name"], oi_usd, get_change(ctx)))
+        oi_list.sort(key=lambda x: x[1], reverse=True)
+        teks = f"📊 TOP OI\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏰ {get_wib()}\n\n"
+        for i, (coin, oi, chg) in enumerate(oi_list[:10], 1):
+            arrow = "🟢" if chg >= 0 else "🔴"
+            teks += f"{i}. {coin} | ${oi:.0f}M | {arrow} {chg:+.1f}%\n"
+        bot.reply_to(message, teks)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
+
+
+@bot.message_handler(commands=['btcdom', 'btcd'])
+def btc_dominance(message):
+    try:
+        data = info.meta_and_asset_ctxs()
+        btc_oi = 0
+        total_oi = 0
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            mark = float(ctx.get("markPx") or 0)
+            if mark == 0: continue
+            oi_usd = get_oi_usd(ctx, mark)
+            total_oi += oi_usd
+            if asset["name"] == "BTC":
+                btc_oi = oi_usd
+        dom = (btc_oi / total_oi * 100) if total_oi > 0 else 0
+        teks = f"📊 BTC DOMINANCE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💰 BTC OI : ${btc_oi:.0f}M\n"
+        teks += f"📊 Total OI: ${total_oi:.0f}M\n"
+        teks += f"🎯 Dominance: {dom:.1f}%\n\n"
+        if dom > 40:
+            teks += "💡 Altcoin season? Belum. BTC masih dominan."
+        else:
+            teks += "💡 Altcoin season! Saatnya main altcoin."
+        bot.reply_to(message, teks)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
+
+@bot.message_handler(commands=['volatility', 'vol'])
+def volatility_scanner(message):
+    try:
+        msg = bot.reply_to(message, "📊 Scanning volatility...")
+        data = info.meta_and_asset_ctxs()
+        vol_list = []
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            mark = float(ctx.get("markPx") or 0)
+            if mark == 0: continue
+            change = abs(get_change(ctx))
+            if change > 3:
+                vol_list.append((asset["name"], change, get_change(ctx)))
+        vol_list.sort(key=lambda x: x[1], reverse=True)
+        teks = f"⚡ VOLATILITY SCANNER\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏰ {get_wib()}\n\n"
+        for i, (coin, vol, chg) in enumerate(vol_list[:10], 1):
+            arrow = "🚀" if chg > 0 else "📉"
+            teks += f"{i}. {coin} | {arrow} {chg:+.1f}%\n"
+        teks += "\n💡 Vol >5% = potensi breakout/squeeze"
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
+
+@bot.message_handler(commands=['summary'])
+def market_summary(message):
+    try:
+        data = info.meta_and_asset_ctxs()
+        total_oi = 0
+        green = 0
+        red = 0
+        total_funding = 0
+        count = 0
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            mark = float(ctx.get("markPx") or 0)
+            if mark == 0: continue
+            oi_usd = get_oi_usd(ctx, mark)
+            total_oi += oi_usd
+            change = get_change(ctx)
+            if change > 0: green += 1
+            else: red += 1
+            funding = get_funding_pct(ctx)
+            total_funding += funding
+            count += 1
+        avg_funding = total_funding / count if count > 0 else 0
+        teks = f"📊 MARKET SUMMARY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"⏰ {get_wib()} | {get_sesi()}\n\n"
+        teks += f"💰 Total OI: ${total_oi:.0f}M\n"
+        teks += f"🟢 Green: {green} | 🔴 Red: {red}\n"
+        teks += f"📈 G/R Ratio: {green/red:.2f}\n"
+        teks += f"💸 Avg Funding: {avg_funding:.4f}%\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        if avg_funding > 0.02:
+            teks += "⚠️ Greedy market — Waspada long squeeze"
+        elif avg_funding < -0.02:
+            teks += "🔥 Fear market — Siap2 short squeeze"
+        else:
+            teks += "✅ Neutral — Santai trading"
+        bot.reply_to(message, teks)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
+
+
+
+#=====================================
                
 @bot.message_handler(commands=['gainers'])
 def gainers(message):
