@@ -700,6 +700,7 @@ def entry(message):
         
         funding = get_funding_pct(ctx)
         oi_usd = get_oi_usd(ctx, mark)
+        ob_delta = get_ob_delta(coin)
         
         # Ambil orderbook
         l2 = info.l2_snapshot(coin)
@@ -745,8 +746,7 @@ def entry(message):
             long_score += 10
             short_score += 10
         
-        # OB Delta (ini yang paling penting)
-        ob_delta = get_ob_delta(coin)
+        # OB Delta
         if ob_delta > 15:
             long_score += 30
         elif ob_delta < -15:
@@ -764,7 +764,7 @@ def entry(message):
         if bid_wall_usd < 2_000_000 and bid_wall_usd > 0:
             long_score += 20
         
-        # TENTUKAN BIAS (ini bagian yang diperbaiki)
+        # TENTUKAN BIAS
         if long_score > short_score:
             bias = "LONG"
             emoji = "🟢"
@@ -790,26 +790,28 @@ def entry(message):
         # Hitung SL dan TP berdasarkan bias
         if bias == "SHORT" and score >= 50:
             sl_p = max(long_liq['price'], bid_wall_px) * 0.998 if bid_wall_px > 0 else long_liq['price'] * 0.998
-            tp1_p = short_liq['price'] * 0.999
+            tp_p = mark * 0.98  # SHORT: target 2% di bawah entry
             risk_pct = abs(mark - sl_p) / mark * 100
-            rr = (tp1_p - mark) / (mark - sl_p) if mark > sl_p else 0
+            reward_pct = abs(mark - tp_p) / mark * 100
+            rr = reward_pct / risk_pct if risk_pct > 0 else 0
             
             teks += f"{emoji} SHORT SETUP • Score {score}\n\n"
             teks += f"ENTRY : {fmt_price(mark)}\n"
-            teks += f"SL    : {fmt_price(sl_p)} (-{risk_pct:.2f}%)\n"
-            teks += f"TP    : {fmt_price(tp1_p)} | RR 1:{rr:.1f}\n"
+            teks += f"SL    : {fmt_price(sl_p)} (+{risk_pct:.2f}%)\n"
+            teks += f"TP    : {fmt_price(tp_p)} (-{reward_pct:.2f}%) | RR 1:{rr:.1f}\n"
             teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         elif bias == "LONG" and score >= 50:
             sl_p = min(short_liq['price'], ask_wall_px) * 1.002 if ask_wall_px > 0 else short_liq['price'] * 1.002
-            tp1_p = long_liq['price'] * 1.001
+            tp_p = mark * 1.02  # LONG: target 2% di atas entry
             risk_pct = abs(sl_p - mark) / mark * 100
-            rr = (mark - sl_p) / (tp1_p - mark) if tp1_p > mark else 0
+            reward_pct = abs(tp_p - mark) / mark * 100
+            rr = reward_pct / risk_pct if risk_pct > 0 else 0
             
             teks += f"{emoji} LONG SETUP • Score {score}\n\n"
             teks += f"ENTRY : {fmt_price(mark)}\n"
             teks += f"SL    : {fmt_price(sl_p)} (+{risk_pct:.2f}%)\n"
-            teks += f"TP    : {fmt_price(tp1_p)} | RR 1:{rr:.1f}\n"
+            teks += f"TP    : {fmt_price(tp_p)} (+{reward_pct:.2f}%) | RR 1:{rr:.1f}\n"
             teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         else:
