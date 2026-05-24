@@ -709,13 +709,13 @@ def entry(message):
         bid_wall_usd = bid_wall_px = ask_wall_usd = ask_wall_px = 0
         for b in bids[:15]:
             usd = float(b['px']) * float(b['sz'])
-            if usd > 200_000:  # TURUNIN DARI 500k KE 200k
+            if usd > 200_000:
                 bid_wall_usd = usd
                 bid_wall_px = float(b['px'])
                 break
         for a in asks[:15]:
             usd = float(a['px']) * float(a['sz'])
-            if usd > 200_000:  # TURUNIN DARI 500k KE 200k
+            if usd > 200_000:
                 ask_wall_usd = usd
                 ask_wall_px = float(a['px'])
                 break
@@ -732,29 +732,51 @@ def entry(message):
         short_liq = above[0] if above else {"price": mark * 1.05, "size": 0}
         long_liq = below[0] if below else {"price": mark * 0.95, "size": 0}
         
-        # SCORING YANG LEBIH MUDAH
-        short_score = long_score = 0
+        # SCORING
+        long_score = 0
+        short_score = 0
         
-        # Funding (dilonggarkan)
-        if funding > 0.02:  # TURUNIN DARI 0.05 KE 0.02
+        # Funding
+        if funding > 0.02:
             short_score += 30
-        elif funding < -0.02:  # TURUNIN DARI -0.05 KE -0.02
+        elif funding < -0.02:
             long_score += 30
         else:
-            short_score += 10
             long_score += 10
+            short_score += 10
         
-        # Liquidation (dilonggarkan)
-        if short_liq['size'] > 20:  # TURUNIN DARI 50 KE 20
+        # OB Delta (ini yang paling penting)
+        ob_delta = get_ob_delta(coin)
+        if ob_delta > 15:
+            long_score += 30
+        elif ob_delta < -15:
+            short_score += 30
+        
+        # Liquidation
+        if short_liq['size'] > 20:
             short_score += 20
-        if long_liq['size'] > 20:   # TURUNIN DARI 50 KE 20
+        if long_liq['size'] > 20:
             long_score += 20
         
-        # Whale wall (dilonggarkan)
-        if ask_wall_usd < 2_000_000 and ask_wall_usd > 0:  # NAIKIN DARI 1M KE 2M
+        # Whale wall
+        if ask_wall_usd < 2_000_000 and ask_wall_usd > 0:
             short_score += 20
-        if bid_wall_usd < 2_000_000 and bid_wall_usd > 0:  # NAIKIN DARI 1M KE 2M
+        if bid_wall_usd < 2_000_000 and bid_wall_usd > 0:
             long_score += 20
+        
+        # TENTUKAN BIAS (ini bagian yang diperbaiki)
+        if long_score > short_score:
+            bias = "LONG"
+            emoji = "🟢"
+            score = long_score
+        elif short_score > long_score:
+            bias = "SHORT"
+            emoji = "🔴"
+            score = short_score
+        else:
+            bias = "NEUTRAL"
+            emoji = "⚪"
+            score = long_score
         
         teks = f"🎯 ENTRY • {coin}\n"
         teks += f"⏰ {get_wib()}\n"
@@ -762,35 +784,39 @@ def entry(message):
         teks += f"💰 Harga : {fmt_price(mark)}\n"
         teks += f"💸 Fund  : {funding:.4f}%\n"
         teks += f"📊 OI    : ${oi_usd:.0f}M\n"
+        teks += f"📡 OB    : {ob_delta:+.1f}%\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         
-        if short_score >= 50:  # TURUNIN DARI 70 KE 50
+        # Hitung SL dan TP berdasarkan bias
+        if bias == "SHORT" and score >= 50:
             sl_p = max(long_liq['price'], bid_wall_px) * 0.998 if bid_wall_px > 0 else long_liq['price'] * 0.998
             tp1_p = short_liq['price'] * 0.999
             risk_pct = abs(mark - sl_p) / mark * 100
             rr = (tp1_p - mark) / (mark - sl_p) if mark > sl_p else 0
             
-            teks += f"🔴 SHORT SETUP • Score {short_score}\n\n"
+            teks += f"{emoji} SHORT SETUP • Score {score}\n\n"
             teks += f"ENTRY : {fmt_price(mark)}\n"
             teks += f"SL    : {fmt_price(sl_p)} (-{risk_pct:.2f}%)\n"
             teks += f"TP    : {fmt_price(tp1_p)} | RR 1:{rr:.1f}\n"
+            teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
-        elif long_score >= 50:  # TURUNIN DARI 70 KE 50
+        elif bias == "LONG" and score >= 50:
             sl_p = min(short_liq['price'], ask_wall_px) * 1.002 if ask_wall_px > 0 else short_liq['price'] * 1.002
             tp1_p = long_liq['price'] * 1.001
             risk_pct = abs(sl_p - mark) / mark * 100
             rr = (mark - sl_p) / (tp1_p - mark) if tp1_p > mark else 0
             
-            teks += f"🟢 LONG SETUP • Score {long_score}\n\n"
+            teks += f"{emoji} LONG SETUP • Score {score}\n\n"
             teks += f"ENTRY : {fmt_price(mark)}\n"
             teks += f"SL    : {fmt_price(sl_p)} (+{risk_pct:.2f}%)\n"
             teks += f"TP    : {fmt_price(tp1_p)} | RR 1:{rr:.1f}\n"
+            teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         else:
-            teks += f"😴 NO SETUP\nShort {short_score} | Long {long_score}\n"
-            teks += f"Minimal score 50 buat entry"
+            teks += f"{emoji} {bias} • Score {score}\n"
+            teks += f"Minimal score 50 untuk entry"
         
-        teks += f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"🔍 /squeeze {coin} | /warroom {coin}"
         
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
