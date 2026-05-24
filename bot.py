@@ -432,15 +432,15 @@ def session_cmd(message):
 
     except Exception as e:
         bot.reply_to(message, f"❌ Error session: {str(e)[:100]}")
-        
-   
+
+
 @bot.message_handler(commands=['screener', 'scan'])
 def screener(message):
     global last_scan, cached_results
     now = time.time()
 
     if cached_results and (now - last_scan < 10):
-        bot.send_message(message.chat.id, cached_results, parse_mode='HTML')
+        bot.send_message(message.chat.id, cached_results)
         return
 
     msg = bot.send_message(message.chat.id, "🔍 Scanning token...")
@@ -484,24 +484,15 @@ def screener(message):
 
                 if long_score > short_score:
                     bias, emoji = "LONG", "🟢"
-                    entry, sl, tp = mark, mark*0.975, mark*1.05
                 else:
                     bias, emoji = "SHORT", "🔴"
-                    entry, sl, tp = mark, mark*1.025, mark*0.95
 
-                tier = "S" if total_score >= 100 else "A" if total_score >= 75 else "B"
-                warning = ""
-                if ob_delta > 15 and funding > 0.01 and bias == "LONG":
-                    warning = "⚠️ Funding ekstrim"
-                elif ob_delta < -15 and funding < -0.001 and bias == "SHORT":
-                    warning = "⚠️ Funding oversold"
-                if bid_wall < 10000 and abs(ob_delta) > 10:
-                    warning = "⚠️ FAKE BID"
+                warning = "⚠️" if (bid_wall < 10000 and abs(ob_delta) > 10) else ""
 
                 return {
-                    'coin':coin,'tier':tier,'bias':bias,'emoji':emoji,'score':total_score,
-                    'oi':oi_usd,'ob':ob_delta,'change':change,'funding':funding,
-                    'entry':entry,'tp':tp,'sl':sl,'warning':warning
+                    'coin': coin, 'bias': bias, 'emoji': emoji, 'score': total_score,
+                    'oi': oi_usd, 'ob': ob_delta, 'change': change, 'funding': funding,
+                    'warning': warning
                 }
             except: return None
 
@@ -511,31 +502,29 @@ def screener(message):
         results = [r for r in results if r is not None]
         results.sort(key=lambda x: x['score'], reverse=True)
 
-        teks = f"🔥 SCREENER • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"Session: {get_sesi()}\n"
-        teks += f"Scan {len(assets)} → {len(results)} lolos\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-        if not results:
-            teks += "❌ Tidak ada token lolos filter"
-        else:
-            medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-            for i, r in enumerate(results[:5], 1):
-                medal = medals[i-1] if i <= 5 else f"{i}."
-                warning = f" {r['warning']}" if r['warning'] else ""
-                teks += f"{medal} {r['coin']}   {r['bias']}   Score {r['score']}{warning}\n"
-                teks += f"   OI ${r['oi']:.0f}M | OB {r['ob']:+.0f}% | Δ {r['change']:+.1f}%\n"
-                teks += f"   Fund {r['funding']:.4f}%\n"
-                teks += f"   Entry ${r['entry']:.4f} | TP ${r['tp']:.4f} | SL ${r['sl']:.4f}\n\n"
-
-        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🎯 /warroom {results[0]['coin'] if results else 'BTC'}"
-
+        teks = f"🔥 SCREENER • {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+        
+        for i, r in enumerate(results[:5]):
+            medal = medals[i] if i < 5 else f"{i+1}."
+            arrow = "🚀" if r['change'] > 0 else "📉"
+            fund_str = f"{r['funding']:+.4f}%".replace("+", "")
+            ob_str = f"OB{r['ob']:+.0f}%"
+            warning_str = f" {r['warning']}" if r['warning'] else ""
+            
+            teks += f"{medal} {r['coin']:<6} {r['emoji']} {arrow} {r['change']:+.1f}%  {ob_str:<7} Fund {fund_str}{warning_str}\n"
+        
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🎯 /warroom {results[0]['coin']}" if results else "❌ Tidak ada token lolos filter"
+        
         cached_results = teks
         last_scan = now
-        bot.edit_message_text(teks, message.chat.id, msg.message_id, parse_mode='HTML')
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
 
     except Exception as e:
-        bot.edit_message_text(f"❌ Error: {e}", message.chat.id, msg.message_id)
+        bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
         
         
 
@@ -699,6 +688,176 @@ def stop_hunt_trap(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
 
+@bot.message_handler(commands=['entry'])
+def entry(message):
+    try:
+        coin = get_coin(message)
+        msg = bot.reply_to(message, f"🎯 Calculating entry {coin}...")
+        
+        ctx, mark = get_ctx(coin)
+        if not ctx:
+            return bot.edit_message_text(f"❌ {coin} ga ada", msg.chat.id, msg.message_id)
+        
+        funding = get_funding_pct(ctx)
+        oi_usd = get_oi_usd(ctx, mark)
+        
+        # Ambil orderbook
+        l2 = info.l2_snapshot(coin)
+        bids = l2['levels'][0]
+        asks = l2['levels'][1]
+        
+        bid_wall_usd = bid_wall_px = ask_wall_usd = ask_wall_px = 0
+        for b in bids[:15]:
+            usd = float(b['px']) * float(b['sz'])
+            if usd > 200_000:  # TURUNIN DARI 500k KE 200k
+                bid_wall_usd = usd
+                bid_wall_px = float(b['px'])
+                break
+        for a in asks[:15]:
+            usd = float(a['px']) * float(a['sz'])
+            if usd > 200_000:  # TURUNIN DARI 500k KE 200k
+                ask_wall_usd = usd
+                ask_wall_px = float(a['px'])
+                break
+        
+        # Estimasi liquidation levels
+        levels = []
+        for lev, w in [(20, 0.5), (10, 0.3), (5, 0.2)]:
+            levels.append({"price": mark * (1 - 0.99/lev), "size": oi_usd * w * 0.5, "type": "Long"})
+            levels.append({"price": mark * (1 + 0.99/lev), "size": oi_usd * w * 0.5, "type": "Short"})
+        
+        above = sorted([l for l in levels if l['price'] > mark], key=lambda x: x['price'])
+        below = sorted([l for l in levels if l['price'] < mark], key=lambda x: x['price'], reverse=True)
+        
+        short_liq = above[0] if above else {"price": mark * 1.05, "size": 0}
+        long_liq = below[0] if below else {"price": mark * 0.95, "size": 0}
+        
+        # SCORING YANG LEBIH MUDAH
+        short_score = long_score = 0
+        
+        # Funding (dilonggarkan)
+        if funding > 0.02:  # TURUNIN DARI 0.05 KE 0.02
+            short_score += 30
+        elif funding < -0.02:  # TURUNIN DARI -0.05 KE -0.02
+            long_score += 30
+        else:
+            short_score += 10
+            long_score += 10
+        
+        # Liquidation (dilonggarkan)
+        if short_liq['size'] > 20:  # TURUNIN DARI 50 KE 20
+            short_score += 20
+        if long_liq['size'] > 20:   # TURUNIN DARI 50 KE 20
+            long_score += 20
+        
+        # Whale wall (dilonggarkan)
+        if ask_wall_usd < 2_000_000 and ask_wall_usd > 0:  # NAIKIN DARI 1M KE 2M
+            short_score += 20
+        if bid_wall_usd < 2_000_000 and bid_wall_usd > 0:  # NAIKIN DARI 1M KE 2M
+            long_score += 20
+        
+        teks = f"🎯 ENTRY • {coin}\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💰 Harga : {fmt_price(mark)}\n"
+        teks += f"💸 Fund  : {funding:.4f}%\n"
+        teks += f"📊 OI    : ${oi_usd:.0f}M\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        if short_score >= 50:  # TURUNIN DARI 70 KE 50
+            sl_p = max(long_liq['price'], bid_wall_px) * 0.998 if bid_wall_px > 0 else long_liq['price'] * 0.998
+            tp1_p = short_liq['price'] * 0.999
+            risk_pct = abs(mark - sl_p) / mark * 100
+            rr = (tp1_p - mark) / (mark - sl_p) if mark > sl_p else 0
+            
+            teks += f"🔴 SHORT SETUP • Score {short_score}\n\n"
+            teks += f"ENTRY : {fmt_price(mark)}\n"
+            teks += f"SL    : {fmt_price(sl_p)} (-{risk_pct:.2f}%)\n"
+            teks += f"TP    : {fmt_price(tp1_p)} | RR 1:{rr:.1f}\n"
+            
+        elif long_score >= 50:  # TURUNIN DARI 70 KE 50
+            sl_p = min(short_liq['price'], ask_wall_px) * 1.002 if ask_wall_px > 0 else short_liq['price'] * 1.002
+            tp1_p = long_liq['price'] * 1.001
+            risk_pct = abs(sl_p - mark) / mark * 100
+            rr = (mark - sl_p) / (tp1_p - mark) if tp1_p > mark else 0
+            
+            teks += f"🟢 LONG SETUP • Score {long_score}\n\n"
+            teks += f"ENTRY : {fmt_price(mark)}\n"
+            teks += f"SL    : {fmt_price(sl_p)} (+{risk_pct:.2f}%)\n"
+            teks += f"TP    : {fmt_price(tp1_p)} | RR 1:{rr:.1f}\n"
+            
+        else:
+            teks += f"😴 NO SETUP\nShort {short_score} | Long {long_score}\n"
+            teks += f"Minimal score 50 buat entry"
+        
+        teks += f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🔍 /squeeze {coin} | /warroom {coin}"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+@bot.message_handler(commands=['entrywhale', 'whaleentry'])
+def entrywhale(message):
+    try:
+        msg = bot.reply_to(message, "🐋 Scanning whale entry...")
+        
+        meta_ctxs = info.meta_and_asset_ctxs()
+        coins_meta = meta_ctxs[0]['universe']
+        coins_data = meta_ctxs[1]
+        whale_entries = []
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        
+        for i, coin_data in enumerate(coins_meta[:50]):  # BATASI 50 COIN BIAR CEPET
+            coin = coin_data['name']
+            ctx = coins_data[i]
+            oi = float(ctx.get('openInterest') or 0)
+            vol = float(ctx.get('dayNtlVlm') or 0)
+            if oi < 100_000 or vol < 500_000:  # TURUNIN DARI 500k/2M
+                continue
+            try:
+                trades = info.recent_trades(coin)
+                if not trades:
+                    continue
+                for trade in trades[:5]:
+                    size_usd = float(trade['px']) * float(trade['sz'])
+                    trade_time = int(trade['time'])
+                    if size_usd > 10_000 and (now_ms - trade_time) < 300_000:  # TURUNIN DARI 30k KE 10k, DARI 3 MENIT KE 5 MENIT
+                        side = "LONG" if trade['side'] == 'B' else "SHORT"
+                        emoji = "🟢" if trade['side'] == 'B' else "🔴"
+                        whale_entries.append({
+                            'coin': coin, 'side': side, 'emoji': emoji,
+                            'size': size_usd, 'price': float(trade['px']),
+                            'time': int((now_ms - trade_time) / 1000)
+                        })
+                        break
+            except:
+                continue
+        
+        if not whale_entries:
+            teks = f"🐋 WHALE ENTRY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            teks += f"😴 Ga ada whale entry >$10k dalam 5 menit terakhir.\n\n⏰ {get_wib()}"
+            return bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+        whale_entries.sort(key=lambda x: x['size'], reverse=True)
+        
+        teks = f"🐋 WHALE ENTRY\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"⏰ {get_wib()}\n\n"
+        
+        for w in whale_entries[:7]:  # DARI 5 JADI 7
+            teks += f"{w['emoji']} {w['side']} {w['coin']}\n"
+            teks += f"   💰 ${w['size']:,.0f} | {fmt_price(w['price'])}\n"
+            teks += f"   ⏱️ {w['time']}s ago\n\n"
+        
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🎯 /warroom {whale_entries[0]['coin']}"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
 #==========================================================================
         
 @bot.message_handler(commands=['warroom'])
@@ -788,29 +947,6 @@ def warroom(message):
         bot.reply_to(message, f"❌ Error: {e}")
 
 #=================================≠==============================
-        
-               
-def get_smart_money_signal(change, ob_delta, funding):
-    signals = []
-    if ob_delta > 15 and change > 1:
-        signals.append("🐋🟢")
-    elif ob_delta > 15 and change < -1:
-        signals.append("💀")
-    if ob_delta < -15 and change < -1:
-        signals.append("🐋🔴")
-    elif ob_delta < -15 and change > 1:
-        signals.append("⚠️⬆️")
-    if funding > 0.05:
-        signals.append("💸🔴")
-    elif funding < -0.05:
-        signals.append("💸🟢")
-    if abs(ob_delta) > 30 and abs(change) > 2:
-        signals.append("⚡")
-    if ob_delta > 20 and funding < -0.02:
-        signals.append("🔥🟢")
-    elif ob_delta < -20 and funding > 0.02:
-        signals.append("🔥🔴")
-    return signals[:2]
 
 def run_temen_scan(chat_id):
     global TEMEN_COOLDOWN
@@ -852,42 +988,26 @@ def run_temen_scan(chat_id):
 
         alerts.sort(key=lambda x: x['score'], reverse=True)
 
-        teks = f"👥 TEMEN • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        # Format output simpel tanpa ranking
+        teks = ""
         
-        medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-        for i, a in enumerate(alerts[:5], 1):
-            medal = medals[i-1] if i <= 5 else f"{i}."
+        for a in alerts[:10]:
             arrow = "🚀" if a['change'] > 0 else "📉"
-            ob_str = f"OB {a['ob_delta']:+.0f}%"
-            signals_str = "".join(a['signals']) if a['signals'] else "-"
+            coin_name = a['coin'][:8].ljust(8)
+            change_str = f"{arrow} {a['change']:+.1f}%".ljust(10)
+            ob_str = f"OB{a['ob_delta']:+.0f}%".ljust(8)
+            signals_str = "".join(a['signals']) if a['signals'] else ""
             
-            # Penjelasan sinyal
-            explanation = ""
-            if "🐋🟢" in signals_str:
-                explanation = " → Whale LONG"
-            elif "🔥🟢" in signals_str:
-                explanation = " → SMART MONEY LONG"
-            elif "⚠️⬆️" in signals_str:
-                explanation = " → FAKE PUMP"
-            elif "🐋🔴" in signals_str:
-                explanation = " → Whale SHORT"
-            elif "💀" in signals_str:
-                explanation = " → Whale DUMP"
-            elif "💸🔴" in signals_str:
-                explanation = " → LONG CROWDED"
-            elif "💸🟢" in signals_str:
-                explanation = " → SHORT CROWDED"
-            elif "⚡" in signals_str:
-                explanation = " → STOP HUNT"
-            
-            teks += f"{medal} {a['coin']}   {arrow} {a['change']:+.1f}%   {ob_str}   {signals_str}{explanation}\n"
+            teks += f"{coin_name} {change_str} {ob_str} {signals_str}\n"
         
-        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🎯 /warroom {alerts[0]['coin']}"
-
+        teks += f"\n🎯 /warroom {alerts[0]['coin']}"
+        
         bot.send_message(chat_id, teks)
+        
     except Exception as e:
         print(f"Temen scan error: {e}")
+
+
 
 @bot.message_handler(commands=['temen'])
 def temen_on(message):
