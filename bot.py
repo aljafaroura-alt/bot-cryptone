@@ -915,7 +915,87 @@ def temen_status(message):
         f"Scan    : tiap 5 menit\n"
         f"Trigger : Harga >0.8% | OB >15% | Fund >0.03%\n"
         f"Sinyal  : Whale | Stop Hunt | Smart Money")
+
+@bot.message_handler(commands=['squeeze'])
+def squeeze(message):
+    try:
+        coin = get_coin(message)
+        msg = bot.reply_to(message, f"⚡ Scanning squeeze {coin}...")
         
+        ctx, mark = get_ctx(coin)
+        if not ctx:
+            return bot.edit_message_text(f"❌ {coin} ga ada", msg.chat.id, msg.message_id)
+        
+        funding = get_funding_pct(ctx)
+        oi_usd = get_oi_usd(ctx, mark)
+        
+        # Ambil orderbook
+        l2 = info.l2_snapshot(coin)
+        bids = l2['levels'][0]
+        asks = l2['levels'][1]
+        big_bid = next((float(b['px'])*float(b['sz']) for b in bids[:10] if float(b['px'])*float(b['sz']) > 500_000), 0)
+        big_ask = next((float(a['px'])*float(a['sz']) for a in asks[:10] if float(a['px'])*float(a['sz']) > 500_000), 0)
+        
+        # Estimasi liquidation levels
+        levels = []
+        for lev, w in [(20,0.5),(10,0.3),(5,0.2)]:
+            levels.append({"price": mark*(1-0.99/lev), "size": oi_usd*w*0.5, "type":"Long"})
+            levels.append({"price": mark*(1+0.99/lev), "size": oi_usd*w*0.5, "type":"Short"})
+        
+        above = sorted([l for l in levels if l['price'] > mark], key=lambda x: x['price'])
+        below = sorted([l for l in levels if l['price'] < mark], key=lambda x: x['price'], reverse=True)
+        short_liq = above[0] if above else {"price": 0, "size": 0}
+        long_liq = below[0] if below else {"price": 0, "size": 0}
+        
+        # Scoring
+        short_score = long_score = 0
+        if funding > 0.05:
+            short_score += 40
+        elif funding < -0.05:
+            long_score += 40
+        
+        if short_liq['size'] > 50:
+            short_score += 30
+        if long_liq['size'] > 50:
+            long_score += 30
+        
+        if big_ask < 1_000_000 and big_ask > 0:
+            short_score += 30
+        if big_bid < 1_000_000 and big_bid > 0:
+            long_score += 30
+        
+        # Format output
+        teks = f"⚡ SQUEEZE SCAN • {coin}\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💰 Harga: {fmt_price(mark)}\n"
+        teks += f"💸 Fund : {funding:.4f}%\n"
+        teks += f"📊 OI   : ${oi_usd:.0f}M\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        if short_score >= 70:
+            pct = (short_liq['price']/mark - 1)*100
+            teks += f"🚨 SHORT SQUEEZE ALERT\n"
+            teks += f"🎯 Target: {fmt_price(short_liq['price'])} (+{pct:.1f}%)\n"
+            teks += f"🛑 SL: di bawah {fmt_price(long_liq['price'])}\n"
+            teks += f"📊 Score: {short_score}%"
+        elif long_score >= 70:
+            pct = (long_liq['price']/mark - 1)*100
+            teks += f"🚨 LONG SQUEEZE ALERT\n"
+            teks += f"🎯 Target: {fmt_price(long_liq['price'])} ({pct:.1f}%)\n"
+            teks += f"🛑 SL: di atas {fmt_price(short_liq['price'])}\n"
+            teks += f"📊 Score: {long_score}%"
+        else:
+            teks += f"😴 NO SETUP\nShort {short_score}% | Long {long_score}%\nTunggu funding ekstrem"
+        
+        teks += f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🎯 /entry {coin} | /warroom {coin}"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
                
 @bot.message_handler(commands=['gainers'])
 def gainers(message):
