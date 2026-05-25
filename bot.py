@@ -215,18 +215,37 @@ def is_market_chaos(symbol, chaos_pct=1.5):
 
 # ========== SMART MONEY SIGNAL ==========
 def get_smart_money_signal(change, ob_delta, funding):
-    """Generate sinyal trading berdasarkan parameter"""
     signals = []
-    if abs(change) > 1.5:
-        signals.append(f"🚀 Move {change:+.1f}%")
-    if abs(ob_delta) > 15:
-        signals.append(f"📡 OB {ob_delta:+.0f}%")
-    if abs(funding) > 0.05:
-        signals.append(f"💰 Funding {funding:.4f}%")
-    if len(signals) == 0:
-        signals.append("Monitor")
-    return signals
     
+    if ob_delta > 15 and funding < 0:
+        signals.append("🐋 WHALE LONG")
+    elif ob_delta < -15 and funding > 0:
+        signals.append("🐋 WHALE SHORT")
+    
+    if ob_delta > 10 and change > 1:
+        signals.append("💎 SMART LONG")
+    elif ob_delta < -10 and change < -1:
+        signals.append("💎 SMART SHORT")
+    
+    if change > 0.8 and ob_delta > 5:
+        signals.append("🟢 LONG")
+    elif change < -0.8 and ob_delta < -5:
+        signals.append("🔴 SHORT")
+    
+    if change > 2:
+        signals.append("⚡ MOMENTUM UP")
+    elif change < -2:
+        signals.append("⚡ MOMENTUM DOWN")
+    
+    if funding > 0.05:
+        signals.append("💰 FUNDING HOT")
+    elif funding < -0.05:
+        signals.append("💰 FUNDING COLD")
+    
+    if len(signals) == 0:
+        signals.append("📊 MONITOR")
+    
+    return signals
 #sessions and market status
 # ========== SESSION DATA ==========
 SESSION_DATA = {
@@ -2201,89 +2220,76 @@ def oi_history_cmd(message):
 #Temen mode dan auto schedule
 # ========== TEMEN MODE SCAN ==========
 def run_temen_scan(chat_id):
-    """Temen mode scanner dengan cooldown per coin"""
     global TEMEN_COOLDOWN
     try:
         data = info.meta_and_asset_ctxs()
         now = time.time()
-        candidates = []
+        alerts = []
 
         for asset, ctx in zip(data[0]["universe"], data[1]):
             try:
                 coin = asset["name"]
-                mark = float(ctx.get("markPx") or 0)
-                if mark == 0: continue
-                vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
-                if vol < 5: continue
-                change = get_change(ctx)
-                funding = get_funding_pct(ctx)
-                is_moving = abs(change) > 0.8
-                is_fund = abs(funding) > 0.03
-                if is_moving or is_fund:
-                    candidates.append({
-                        'coin': coin, 'mark': mark,
-                        'change': change, 'funding': funding, 'vol': vol,
-                        'pre_score': abs(change)*10 + abs(funding)*100
-                    })
-            except: continue
-
-        candidates.sort(key=lambda x: x['pre_score'], reverse=True)
-        alerts = []
-
-        for c in candidates[:20]:
-            try:
-                coin = c['coin']
                 if coin in TEMEN_COOLDOWN and now - TEMEN_COOLDOWN[coin] < 300:
                     continue
+                mark = float(ctx.get("markPx") or 0)
+                if mark == 0:
+                    continue
+                vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
+                if vol < 5:
+                    continue
+                change = get_change(ctx)
+                funding = get_funding_pct(ctx)
                 ob_delta = get_ob_delta(coin)
-                if abs(c['change']) > 0.8 or abs(ob_delta) > 15 or abs(c['funding']) > 0.03:
-                    signals = get_smart_money_signal(c['change'], ob_delta, c['funding'])
+
+                if abs(change) > 0.8 or abs(ob_delta) > 15 or abs(funding) > 0.03:
+                    signals = get_smart_money_signal(change, ob_delta, funding)
                     alerts.append({
-                        'coin': coin, 'mark': c['mark'],
-                        'change': c['change'], 'ob_delta': ob_delta,
-                        'funding': c['funding'], 'vol': c['vol'],
+                        'coin': coin,
+                        'change': change,
+                        'ob_delta': ob_delta,
+                        'funding': funding,
                         'signals': signals,
-                        'score': abs(c['change'])*10 + abs(ob_delta) + abs(c['funding'])*100
+                        'score': abs(change)*10 + abs(ob_delta) + abs(funding)*100
                     })
-            except: continue
+                    TEMEN_COOLDOWN[coin] = now
+            except:
+                continue
 
         if not alerts:
-            n = len(candidates)
-            bot.send_message(chat_id,
-                f"😴 <b>TEMEN</b> • {get_wib()}\n"
-                f"Scan {n} coins liquid — ga ada yang trigger.\n"
-                f"<i>Threshold: Δ>0.8% | OB>15% | Fund>0.03%</i>",
-                parse_mode='HTML')
+            bot.send_message(chat_id, f"😴 TEMEN • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\nNo trigger.\nThreshold: Δ>0.8% | OB>15% | Fund>0.03%")
             return
 
         alerts.sort(key=lambda x: x['score'], reverse=True)
 
-        teks = f"🔥 <b>TEMEN</b> • {get_wib()}\n"
-        teks += "─────────────────────────────────\n\n"
-
-        for a in alerts[:8]:
+        waktu = get_wib()
+        teks = f"🔥 TEMEN • {waktu}\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        # ⬇️ INI YANG DIUBAH - HANYA 1 COIN TERATAS ⬇️
+        for a in alerts[:1]:
             arrow = "🚀" if a['change'] > 0 else "📉"
-            ob_icon = "💚" if a['ob_delta'] > 10 else ("❤️" if a['ob_delta'] < -10 else "⚪")
-            teks += f"{arrow} <b>{a['coin']}</b> {a['change']:+.1f}%"
-            if abs(a['ob_delta']) > 5:
-                teks += f" | OB{a['ob_delta']:+.0f}% {ob_icon}"
-            teks += "\n"
+            
+            # BARIS UTAMA
+            teks += f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
+            
             if abs(a['funding']) > 0.03:
-                fi = "🔴" if a['funding'] > 0 else "🟢"
-                teks += f"   {fi} Funding {a['funding']:+.4f}%\n"
-            for sig in a['signals']:
-                teks += f"   → {sig}\n"
+                fund_icon = "🔴" if a['funding'] > 0 else "🟢"
+                teks += f" | {fund_icon}{a['funding']:+.2f}%"
+            
             teks += "\n"
-            TEMEN_COOLDOWN[a['coin']] = now
-
-        teks += "─────────────────────────────────\n"
+            
+            # SINYAL PER COIN (PISAH PER BARIS)
+            for sig in a['signals']:
+                teks += f"   └ {sig}\n"
+        
+        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"🎯 /warroom {alerts[0]['coin']}"
-        bot.send_message(chat_id, teks, parse_mode='HTML')
-
+        
+        bot.send_message(chat_id, teks)
+        
     except Exception as e:
-        print(f"Temen scan error: {e}")
-        bot.send_message(chat_id, f"❌ Temen error: {str(e)[:100]}")
-
+        print(f"Temen error: {e}")
+        bot.send_message(chat_id, f"❌ Error: {str(e)[:100]}")
+                        
 @bot.message_handler(commands=['temen'])
 def temen_on(message):
     global TEMEN_MODE
