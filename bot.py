@@ -2225,7 +2225,7 @@ def run_temen_scan(chat_id):
     try:
         data = info.meta_and_asset_ctxs()
         now = time.time()
-        alerts = [:3]
+        alerts = alerts[:3]   #SETTING-----------------
 
         for asset, ctx in zip(data[0]["universe"], data[1]):
             try:
