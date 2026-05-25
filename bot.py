@@ -11,6 +11,7 @@ from hyperliquid.utils import constants
 import concurrent.futures
 import schedule
 import json
+import re
 
 # ========== KONFIGURASI ==========
 TOKEN = os.environ.get('TOKEN')
@@ -2340,6 +2341,7 @@ def oi_history_cmd(message):
         bot.edit_message_text(f"❌ Error: {str(e)[:200]}", msg.chat.id, msg.message_id)
 
 # ========== NEWS ==========
+# ========== NEWS ==========
 @bot.message_handler(commands=['news'])
 def crypto_news(message):
     try:
@@ -2348,25 +2350,25 @@ def crypto_news(message):
         
         msg = bot.reply_to(message, "📰 Fetching crypto news..." if not query else f"📰 Searching news for {query}...")
         
-        import requests
-        import re
-        
         if query:
             url = f"https://news.google.com/rss/search?q={query}+crypto&hl=en&gl=US&ceid=US:en"
         else:
             url = "https://news.google.com/rss/search?q=cryptocurrency&hl=en&gl=US&ceid=US:en"
         
-        response = requests.get(url, timeout=15)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        response = requests.get(url, timeout=15, headers=headers)
         
         if response.status_code != 200:
             bot.edit_message_text("❌ Gagal ambil berita. Coba lagi nanti.", 
                                  msg.chat.id, msg.message_id)
             return
         
-        # Parse RSS manual (biar ga perlu library tambahan)
         content = response.text
         
-        # Extract items pake regex
+        # Parse RSS pake regex
         items = []
         item_pattern = r'<item>(.*?)</item>'
         title_pattern = r'<title><!\[CDATA\[(.*?)\]\]></title>'
@@ -2383,14 +2385,10 @@ def crypto_news(message):
                 link = link_match.group(1)
                 pub_date = pub_match.group(1) if pub_match else ""
                 
-                # Format waktu simple
+                title = title.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+                
                 if pub_date:
-                    # Ambil tanggal dan jam dari format RSS
-                    pub_date = pub_date.replace(",", "").split()
-                    if len(pub_date) >= 5:
-                        pub_date = f"{pub_date[2]} {pub_date[3]}"
-                    else:
-                        pub_date = pub_date[0] if pub_date else ""
+                    pub_date = pub_date[:16] if len(pub_date) > 16 else pub_date
                 
                 items.append({
                     "title": title,
@@ -2410,7 +2408,6 @@ def crypto_news(message):
             link = item['link']
             pub_date = item['pub_date']
             
-            # Potong judul kalo kepanjangan
             if len(title) > 70:
                 title = title[:67] + "..."
             
