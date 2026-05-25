@@ -2774,21 +2774,21 @@ def start_liquidation_scanner():
 
 # ========== CONFLUENCE SCANNER ==========
 CONFLUENCE_CONFIG = {
-    "min_volume_24h": 1_000_000,
-    "min_oi_change_1h": 3,
-    "max_oi_change_1h": 30,
-    "min_oi_change_4h": 5,
-    "min_funding": -0.05,
-    "max_funding": 0.05,
-    "min_price_change_1h": 1,
-    "max_price_change_1h": 15,
-    "min_volume_spike": 1.5,
-    "max_volume_spike": 20,
-    "min_ob_delta_long": 5,
-    "min_ob_delta_short": -5,
+    "min_volume_24h": 500_000,       # Turun dari 1jt (jadi lebih banyak coin)
+    "min_oi_change_1h": 2,           # Turun dari 3
+    "max_oi_change_1h": 30,          # Tetap
+    "min_oi_change_4h": 3,           # Turun dari 5
+    "min_funding": -0.08,            # Longgarin dari -0.05
+    "max_funding": 0.08,             # Longgarin dari 0.05
+    "min_price_change_1h": 0.8,      # Turun dari 1% (jadi lebih sensitif)
+    "max_price_change_1h": 20,       # Naikin dari 15
+    "min_volume_spike": 1.2,         # Turun dari 1.5
+    "max_volume_spike": 25,          # Naikin dari 20
+    "min_ob_delta_long": 3,          # Turun dari 5 (jadi lebih gampang LONG)
+    "min_ob_delta_short": -3,        # Turun dari -5 (jadi lebih gampang SHORT)
     "zone_timeframe": "4h",
     "fvg_timeframe": "1h",
-    "scan_interval": 10,
+    "scan_interval": 10,             # Tetap 10 menit
 }
 
 def get_candles_cached(coin, timeframe, limit=50):
@@ -2811,55 +2811,134 @@ def get_candles_cached(coin, timeframe, limit=50):
         return []
 
 def find_demand_zone(coin):
+    """Cari demand zone (support) dari struktur candle H4"""
     candles = get_candles_cached(coin, "4h", 50)
     if len(candles) < 10:
         return None
+    
     for i in range(len(candles)-1, 5, -1):
         c = candles[i]
         prev = candles[i-1]
+        prev2 = candles[i-2] if i-2 >= 0 else None
+        
+        # Deteksi demand zone: Ada support yang terbentuk
+        # Kondisi: Harga turun lalu naik dengan volume
+        is_support = False
+        
+        # Cara 1: Bullish reversal candle
         if prev['c'] < prev['o'] and c['c'] > c['o']:
-            if float(c['v']) > 500_000:
+            is_support = True
+        
+        # Cara 2: Hammer / long lower wick
+        body = abs(c['c'] - c['o'])
+        lower_wick = min(c['o'], c['c']) - c['l']
+        if lower_wick > body * 1.5 and c['c'] > c['o']:
+            is_support = True
+        
+        # Cara 3: Double bottom / support teruji
+        if prev2 and abs(prev2['l'] - c['l']) / c['l'] * 100 < 0.5:
+            is_support = True
+        
+        if is_support:
+            # Volume minimal 200k (lebih longgar)
+            if float(c['v']) > 200_000:
                 low = float(c['l'])
-                high = max(float(candles[i-2]['h']), float(candles[i-1]['h']))
-                return {"low": low, "high": high, "type": "demand"}
+                high = float(c['c']) if c['c'] > c['o'] else float(c['o'])
+                return {
+                    "low": low, 
+                    "high": high, 
+                    "type": "demand",
+                    "strength": "weak" if float(c['v']) < 500_000 else "strong"
+                }
+    
     return None
-
+    
 def find_supply_zone(coin):
+    """Cari supply zone (resistance) dari struktur candle H4"""
     candles = get_candles_cached(coin, "4h", 50)
     if len(candles) < 10:
         return None
+    
     for i in range(len(candles)-1, 5, -1):
         c = candles[i]
         prev = candles[i-1]
+        prev2 = candles[i-2] if i-2 >= 0 else None
+        
+        # Deteksi supply zone: Ada resistance yang terbentuk
+        is_resistance = False
+        
+        # Cara 1: Bearish reversal candle
         if prev['c'] > prev['o'] and c['c'] < c['o']:
-            if float(c['v']) > 500_000:
+            is_resistance = True
+        
+        # Cara 2: Shooting star / long upper wick
+        body = abs(c['c'] - c['o'])
+        upper_wick = c['h'] - max(c['o'], c['c'])
+        if upper_wick > body * 1.5 and c['c'] < c['o']:
+            is_resistance = True
+        
+        # Cara 3: Double top / resistance teruji
+        if prev2 and abs(prev2['h'] - c['h']) / c['h'] * 100 < 0.5:
+            is_resistance = True
+        
+        if is_resistance:
+            if float(c['v']) > 200_000:
                 high = float(c['h'])
-                low = min(float(candles[i-2]['l']), float(candles[i-1]['l']))
-                return {"low": low, "high": high, "type": "supply"}
+                low = float(c['c']) if c['c'] < c['o'] else float(c['o'])
+                return {
+                    "low": low, 
+                    "high": high, 
+                    "type": "supply",
+                    "strength": "weak" if float(c['v']) < 500_000 else "strong"
+                }
+    
     return None
 
 def find_fvg(coin):
+    """Cari Fair Value Gap (FVG) dari candle H1"""
     candles = get_candles_cached(coin, "1h", 50)
     if len(candles) < 5:
         return None
+    
     for i in range(len(candles)-2, 2, -1):
-        c1 = candles[i-2]
-        c2 = candles[i-1]
-        c3 = candles[i]
+        c1 = candles[i-2]  # Candle 2 periode lalu
+        c2 = candles[i-1]  # Candle 1 periode lalu
+        c3 = candles[i]    # Candle sekarang
+        
         c1_low = float(c1['l'])
         c1_high = float(c1['h'])
         c3_low = float(c3['l'])
         c3_high = float(c3['h'])
+        
+        # Bullish FVG: Gap ke atas (candle 1 low > candle 3 high)
         if c1_low > c3_high:
             gap_low = c3_high
             gap_high = c1_low
-            if (gap_high - gap_low) / gap_low * 100 > 0.3:
-                return {"low": gap_low, "high": gap_high, "type": "bullish"}
+            gap_pct = (gap_high - gap_low) / gap_low * 100
+            
+            # Minimal gap 0.15% (lebih longgar dari 0.3%)
+            if gap_pct > 0.15:
+                return {
+                    "low": gap_low, 
+                    "high": gap_high, 
+                    "type": "bullish",
+                    "gap_pct": gap_pct
+                }
+        
+        # Bearish FVG: Gap ke bawah (candle 1 high < candle 3 low)
         if c1_high < c3_low:
             gap_low = c1_high
             gap_high = c3_low
-            if (gap_high - gap_low) / gap_low * 100 > 0.3:
-                return {"low": gap_low, "high": gap_high, "type": "bearish"}
+            gap_pct = (gap_high - gap_low) / gap_low * 100
+            
+            if gap_pct > 0.15:
+                return {
+                    "low": gap_low, 
+                    "high": gap_high, 
+                    "type": "bearish",
+                    "gap_pct": gap_pct
+                }
+    
     return None
 
 def calculate_rr(entry, sl, tp):
