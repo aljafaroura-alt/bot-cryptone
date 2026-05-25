@@ -2225,7 +2225,7 @@ def run_temen_scan(chat_id):
     try:
         data = info.meta_and_asset_ctxs()
         now = time.time()
-        alerts = alerts[:3]   #SETTING-----------------
+        alerts = []  # INISIALISASI LIST KOSONG
 
         for asset, ctx in zip(data[0]["universe"], data[1]):
             try:
@@ -2262,14 +2262,14 @@ def run_temen_scan(chat_id):
 
         alerts.sort(key=lambda x: x['score'], reverse=True)
 
-        waktu = get_wib()
-        teks = f"🔥 TEMEN • {waktu}\n━━━━━━━━━━━━━━━━━━━━━━\n"
-        
-        # ⬇️ INI YANG DIUBAH - HANYA 1 COIN TERATAS ⬇️
-        for a in alerts[:1]:
+        # ✅ AMBIL TOP 3 COIN
+        top_alerts = alerts[:3]
+
+        # ✅ KIRIM PESAN TERPISAH PER COIN
+        for a in top_alerts:
             arrow = "🚀" if a['change'] > 0 else "📉"
             
-            # BARIS UTAMA
+            teks = f"🔥 TEMEN • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n"
             teks += f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
             
             if abs(a['funding']) > 0.03:
@@ -2278,14 +2278,14 @@ def run_temen_scan(chat_id):
             
             teks += "\n"
             
-            # SINYAL PER COIN (PISAH PER BARIS)
             for sig in a['signals']:
                 teks += f"   └ {sig}\n"
-        
-        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🎯 /warroom {alerts[0]['coin']}"
-        
-        bot.send_message(chat_id, teks)
+            
+            teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+            teks += f"🎯 /warroom {a['coin']}"
+            
+            bot.send_message(chat_id, teks)
+            time.sleep(0.5)  # Jeda 0.5 detik biar ga ke spam
         
     except Exception as e:
         print(f"Temen error: {e}")
