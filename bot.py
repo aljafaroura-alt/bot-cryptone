@@ -2471,7 +2471,6 @@ def get_oi_history(coin, hours=24):
         
         # Ambil data OI dari snapshot berkala
         # Karena Hyperliquid ga punya OI history langsung, kita hitung dari candles + OI snapshot
-        import requests
         
         url = "https://api.hyperliquid.xyz/info"
         
@@ -3813,7 +3812,6 @@ def run_scheduler():
             if now - last_casual_report >= 14400:
                 casual_session_report()
                 last_casual_report = now
-            
             # Evaluasi tiap 4 jam juga, 2 jam setelah report (biar ga bareng)
             if now - last_evaluation >= 14400 and (now - last_casual_report) > 7200:
                 evaluate_predictions()
@@ -3829,6 +3827,7 @@ def run_scheduler():
                         TEMEN_LAST_RUN = now
                     except Exception as e:
                         print(f"Temen error: {e}")
+                        
             if SNIPER_ALL_COIN:
                 cfg = SNIPER_CONFIG[SNIPER_MODE]
                 all_mids = info.all_mids()
