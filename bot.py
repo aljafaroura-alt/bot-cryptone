@@ -252,6 +252,71 @@ def get_strength_and_action(score, bias):
     else:
         return "SKIP ❌", "🚫 Tidak direkomendasikan"
 
+# ========== DIVERGENCE ALERT ==========
+def check_divergence():
+    """Deteksi divergensi antara harga dan OI"""
+    try:
+        data = info.meta_and_asset_ctxs()
+        alerts = []
+        
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            try:
+                coin = asset["name"]
+                mark = float(ctx.get("markPx") or 0)
+                if mark == 0:
+                    continue
+                
+                # Harga sekarang vs kemarin
+                prev = float(ctx.get("prevDayPx") or mark)
+                price_change = ((mark - prev) / prev * 100) if prev > 0 else 0
+                
+                # OI sekarang vs kemarin
+                oi_usd = get_oi_usd(ctx, mark)
+                oi_prev = OI_HISTORY.get(coin, oi_usd)
+                oi_change = ((oi_usd - oi_prev) / oi_prev * 100) if oi_prev > 0 else 0
+                
+                # Simpan OI untuk next check
+                OI_HISTORY[coin] = oi_usd
+                
+                # Deteksi divergensi
+                # Harga naik (+2%) tapi OI turun (-15%)
+                if price_change > 2 and oi_change < -15:
+                    alerts.append({
+                        'coin': coin,
+                        'price_change': price_change,
+                        'oi_change': oi_change,
+                        'type': 'DIVERGENCE'
+                    })
+                # Harga turun (-2%) tapi OI naik (+15%)
+                elif price_change < -2 and oi_change > 15:
+                    alerts.append({
+                        'coin': coin,
+                        'price_change': price_change,
+                        'oi_change': oi_change,
+                        'type': 'DIVERGENCE'
+                    })
+            except:
+                continue
+        
+        # Kirim alert
+        for a in alerts:
+            if a['price_change'] > 0:
+                teks = f"""💀 DIVERGENCE ALERT
+━━━━━━━━━━━━━━━━━━━━━━
+{a['coin']}: Price +{a['price_change']:.0f}% but OI {a['oi_change']:.0f}%
+⚠️ POTENTIAL REVERSAL!"""
+            else:
+                teks = f"""💀 DIVERGENCE ALERT
+━━━━━━━━━━━━━━━━━━━━━━
+{a['coin']}: Price {a['price_change']:.0f}% but OI +{a['oi_change']:.0f}%
+⚠️ POTENTIAL REVERSAL!"""
+            
+            bot.send_message(USER_ID, teks)
+            time.sleep(1)
+            
+    except Exception as e:
+        print(f"Divergence error: {e}")
+
 # ========== ORDERBOOK FUNCTIONS ==========
 def get_bid_wall(coin):
     try:
@@ -3267,9 +3332,17 @@ def start_confluence_scanner():
 # ========== MAIN SCHEDULER ==========
 def run_scheduler():
     global SNIPER_ALL_COIN, TEMEN_MODE, TEMEN_LAST_RUN
+    last_divergence_check = 0
+    
     while True:
         try:
             schedule.run_pending()
+            
+            # Divergence check tiap 30 menit
+            now = time.time()
+            if now - last_divergence_check >= 1800:
+                check_divergence()
+                last_divergence_check = now
             if TEMEN_MODE:
                 now = time.time()
                 if now - TEMEN_LAST_RUN >= 300:
@@ -3329,6 +3402,7 @@ def run_scheduler():
         except Exception as e:
             print(f"Scanner error: {e}")
             time.sleep(60)
+
 
 # ========== STATUS COMMAND ==========
 @bot.message_handler(commands=['status'])
