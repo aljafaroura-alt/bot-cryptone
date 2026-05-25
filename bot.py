@@ -2716,25 +2716,25 @@ def run_temen_scan(chat_id):
 
         alerts.sort(key=lambda x: x['score'], reverse=True)
 
-# ✅ AMBIL TOP 3 COIN
-top_alerts = alerts[:3]
+        # ✅ AMBIL TOP 3 COIN (masih dalam try block)
+        top_alerts = alerts[:3]
 
-for a in top_alerts:
-    arrow = "🚀" if a['change'] > 0 else "📉"
-    
-    teks = f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
-    
-    if abs(a['funding']) > 0.03:
-        fund_icon = "🔴" if a['funding'] > 0 else "🟢"
-        teks += f" | {fund_icon}{a['funding']:+.2f}%"
-    
-    teks += "\n"
-    
-    for sig in a['signals']:
-        teks += f"   └ {sig}\n"
-    
-    bot.send_message(chat_id, teks)
-    time.sleep(0.5)
+        for a in top_alerts:
+            arrow = "🚀" if a['change'] > 0 else "📉"
+            
+            teks = f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
+            
+            if abs(a['funding']) > 0.03:
+                fund_icon = "🔴" if a['funding'] > 0 else "🟢"
+                teks += f" | {fund_icon}{a['funding']:+.2f}%"
+            
+            teks += "\n"
+            
+            for sig in a['signals']:
+                teks += f"   └ {sig}\n"
+            
+            bot.send_message(chat_id, teks)
+            time.sleep(0.5)
         
     except Exception as e:
         print(f"Temen error: {e}")
