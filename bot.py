@@ -486,6 +486,10 @@ Hi {user} 👋
 /summary | /btcdom | /volatility
 /oihistory 
 
+📰 NEWS
+/news — Berita crypto terbaru
+/news BTC — Cari berita tentang BTC
+
 🔍 ANALISIS PRO
 /delta | /trap | /cluster
 /liqmap | /correlation | /sentiment
@@ -2334,7 +2338,60 @@ def oi_history_cmd(message):
         
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:200]}", msg.chat.id, msg.message_id)
+
+# ========== NEWS ==========
+@bot.message_handler(commands=['news'])
+def crypto_news(message):
+    try:
+        # Cek apakah ada keyword (misal /news BTC)
+        parts = message.text.split()
+        query = parts[1].upper() if len(parts) > 1 else None
+        
+        msg = bot.reply_to(message, "📰 Fetching crypto news..." if not query else f"📰 Searching news for {query}...")
+        
+        import requests
+        
+        if query:
+            # Cari berita spesifik coin
+            url = f"https://cryptocurrency.cv/api/search?q={query}&limit=5"
+        else:
+            # Berita umum
+            url = "https://cryptocurrency.cv/api/news?limit=5"
+        
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        # Cek apakah ada artikel
+        articles = data.get("articles") or data.get("results") or []
+        
+        if not articles:
+            bot.edit_message_text(f"❌ Tidak ada berita untuk {query}" if query else "❌ Gagal ambil berita", 
+                                 msg.chat.id, msg.message_id)
+            return
+        
+        teks = f"📰 CRYPTO NEWS{f' - {query}' if query else ''}\n━━━━━━━━━━━━━━━━━━━━━━\n⏰ {get_wib()}\n\n"
+        
+        for i, article in enumerate(articles[:5], 1):
+            title = article.get("title", "No title")
+            source = article.get("source", {}).get("name", article.get("source_name", "Unknown"))
+            url_news = article.get("url", "#")
+            published = article.get("published_at", article.get("created_at", ""))
             
+            # Format waktu
+            if published and "T" in published:
+                published = published[:16].replace("T", " ")
+            
+            teks += f"{i}. {title}\n"
+            teks += f"   📍 {source} | 🕐 {published}\n"
+            teks += f"   🔗 {url_news}\n\n"
+        
+        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💡 /news BTC — Cari berita tentang BTC"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
 
 
 #Temen mode dan auto schedule
