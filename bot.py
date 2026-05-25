@@ -627,8 +627,9 @@ def start(message):
     
     teks = f"""
 🧬 HYPERLIQUID TERMINAL BOT
-GM! {user} 🧑🏽‍🏭
-📡 {sesi} • {waktu}
+GM/GN🥂{user}  🧑🏽‍🔧
+
+📡 {sesi}•{waktu}
 ─────────────────────────────────
 
 ⚡ POWER TOOLS
@@ -2660,8 +2661,8 @@ def crypto_news(message):
                 title = title[:67] + "..."
             
             teks += f"{i}. {title}\n"
-            teks += f"   🕐 {pub_date}\n"
-            teks += f"   🔗 {link}\n\n"
+            teks += f"  🕐 {pub_date}\n"
+            teks += f"  🔗 {link}\n\n"
         
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"💡 /news BTC — Cari berita tentang BTC"
@@ -2722,7 +2723,7 @@ def run_temen_scan(chat_id):
         for a in top_alerts:
             arrow = "🚀" if a['change'] > 0 else "📉"
             
-            teks =f"{arrow}{a['coin']:<8}{a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
+            teks = f"{arrow}{a['coin']:<8}{a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
             
             if abs(a['funding']) > 0.03:
                 fund_icon = "🔴" if a['funding'] > 0 else "🟢"
@@ -2746,7 +2747,7 @@ def temen_on(message):
     TEMEN_MODE = True
     bot.reply_to(message,
         "👽 TEMEN MODE • ON\n─────────────────────────────────\n"
-        "Gw bakal bacot tiap 5 menit\n"
+        "Gw bakal kasi clue tiap 5 menit\n"
         "Format: Coin | Δ% | OB | Sinyal\n"
         "Ketik /diem buat matiin")
 
@@ -2754,7 +2755,7 @@ def temen_on(message):
 def temen_off(message):
     global TEMEN_MODE
     TEMEN_MODE = False
-    bot.reply_to(message, "🤐 Sure, gw diem dulu... /temen kalo kangen")
+    bot.reply_to(message, "🤐 Sure, gw diem dulu... /temen again")
 
 @bot.message_handler(commands=['temenstatus'])
 def temen_status(message):
@@ -2919,7 +2920,7 @@ def sniper_on(message):
     text += f"3. 💰 Funding < {cfg['funding_max']}%\n"
     text += f"Kalo 3 syarat kena = auto notif\n"
     text += f"Cooldown {cfg['cooldown']//60} menit/koin\n"
-    text += "Ketik /stopsniper buat matiin"
+    text += "choose /sniperaggro/sniperinsane"
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
 @bot.message_handler(commands=['sniperaggro'])
@@ -3200,9 +3201,9 @@ def casual_session_report():
             ob_text = f"OB {ob_delta:.0f}% (seimbang)"
         
         # Bangun teks output
-        teks = f"📊 {opening} • {get_wib()}\n"
+        teks = f"{opening}|{get_wib()}\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"{session_emoji} {situation}\n\n"
+        teks += f"{session_emoji}{situation}\n\n"
         teks += "📡 Kondisi BTC sekarang:\n"
         teks += f"Harga: ${price:,.0f}\n"
         teks += f"Funding: {funding_text}\n"
