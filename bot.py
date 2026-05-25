@@ -18,8 +18,7 @@ TOKEN = os.environ.get('TOKEN')
 if not TOKEN:
     raise ValueError("❌ TOKEN env variable ga ada! Jalanin: export TOKEN=xxx")
 
-USER_ID = 8347576377  # Bisa diganti atau pake env var
-
+USER_ID = 8347576377  
 bot = telebot.TeleBot(TOKEN)
 info = Info(constants.MAINNET_API_URL)
 
@@ -628,8 +627,7 @@ def start(message):
     
     teks = f"""
 🧬 HYPERLIQUID TERMINAL BOT
-
-Hi {user} 👋
+GM! {user} 🧑🏽‍🏭
 📡 {sesi} • {waktu}
 ─────────────────────────────────
 
@@ -676,7 +674,7 @@ Hi {user} 👋
 /sniperinsane — INSANE mode
 /stopsniper — Stop sniper
 
-🔥 TEMEN MODE
+👽 TEMEN MODE
 /temen — Bacot ON
 /diem — Bacot OFF
 /temenstatus — Status
@@ -686,6 +684,7 @@ Hi {user} 👋
 /prediksi — Statistik akurasi prediksi
 /report — Manual report
 
+🦾 UTILS
 /status — System status
 /ping — Cek status bot
 
