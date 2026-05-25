@@ -523,6 +523,7 @@ Hi {user} 👋
 
 /report — Manual report
 /status — System status
+/ping — Cek status bot
 
 ─────────────────────────────────
 ⚠️ DYOR — Not financial advice
@@ -613,7 +614,51 @@ def session_cmd(message):
 
     except Exception as e:
         bot.reply_to(message, f"❌ Error session: {str(e)[:100]}")
+
+# ========== PING ==========
+@bot.message_handler(commands=['ping'])
+def ping(message):
+    try:
+        start_time = time.time()
         
+        # Kirim pesan awal
+        msg = bot.reply_to(message, "🏓 Pinging...")
+        
+        # Hitung response time
+        response_ms = (time.time() - start_time) * 1000
+        
+        # Cek koneksi ke Hyperliquid
+        hl_status = "✅ Connected"
+        try:
+            info.all_mids()  # Test API
+        except:
+            hl_status = "❌ Error"
+        
+        # Cek koneksi ke Telegram
+        tg_status = "✅ Connected"
+        
+        # Hitung uptime
+        uptime = get_uptime()
+        
+        # Waktu sekarang
+        now = get_wib()
+        
+        teks = f"""🏓 PONG!
+━━━━━━━━━━━━━━━━━━━━━━
+📡 Status     : ✅ ONLINE
+⚡ Response   : {response_ms:.0f}ms
+🕐 WIB        : {now}
+⏱️ Uptime     : {uptime}
+━━━━━━━━━━━━━━━━━━━━━━
+🔗 Telegram   : {tg_status}
+🔗 Hyperliquid: {hl_status}
+━━━━━━━━━━━━━━━━━━━━━━
+💡 Bot sehat, siap membantu! 🚀"""
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 #screener and market data command
 # ========== SCREENER ==========
 @bot.message_handler(commands=['screener', 'scan'])
