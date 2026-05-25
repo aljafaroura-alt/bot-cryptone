@@ -2350,13 +2350,16 @@ def crypto_news(message):
         
         msg = bot.reply_to(message, "📰 Fetching crypto news..." if not query else f"📰 Searching news for {query}...")
         
+        # PAKE BING NEWS (lebih stabil dari Google News)
         if query:
-            url = f"https://news.google.com/rss/search?q={query}+crypto&hl=en&gl=US&ceid=US:en"
+            url = f"https://www.bing.com/news/search?q={query}+crypto&format=rss"
         else:
-            url = "https://news.google.com/rss/search?q=cryptocurrency&hl=en&gl=US&ceid=US:en"
+            url = "https://www.bing.com/news/search?q=cryptocurrency&format=rss"
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/rss+xml, application/xml, text/xml, */*",
+            "Accept-Language": "en-US,en;q=0.9",
         }
         
         response = requests.get(url, timeout=15, headers=headers)
@@ -2368,33 +2371,71 @@ def crypto_news(message):
         
         content = response.text
         
-        # Parse RSS pake regex
+        # Parse RSS pake regex (support CDATA dan non-CDATA)
         items = []
+        
+        # Cari semua item
         item_pattern = r'<item>(.*?)</item>'
-        title_pattern = r'<title><!\[CDATA\[(.*?)\]\]></title>'
-        link_pattern = r'<link>(.*?)</link>'
-        pub_pattern = r'<pubDate>(.*?)</pubDate>'
         
         for item_match in re.findall(item_pattern, content, re.DOTALL):
-            title_match = re.search(title_pattern, item_match)
-            link_match = re.search(link_pattern, item_match)
-            pub_match = re.search(pub_pattern, item_match)
+            # Cari title (support CDATA atau biasa)
+            title_match = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', item_match, re.DOTALL)
+            # Cari link
+            link_match = re.search(r'<link>(.*?)</link>', item_match)
+            # Cari pubDate
+            pub_match = re.search(r'<pubDate>(.*?)</pubDate>', item_match)
             
             if title_match and link_match:
-                title = title_match.group(1)
-                link = link_match.group(1)
-                pub_date = pub_match.group(1) if pub_match else ""
+                title = title_match.group(1).strip()
+                link = link_match.group(1).strip()
+                pub_date = pub_match.group(1).strip() if pub_match else ""
                 
-                title = title.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+                # Bersihin HTML entities
+                title = title.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&#39;', "'").replace('&quot;', '"')
                 
+                # Format waktu simple
                 if pub_date:
-                    pub_date = pub_date[:16] if len(pub_date) > 16 else pub_date
+                    # Ambil format: "Thu, 25 May 2025 14:30:00 GMT" -> "25 May 2025"
+                    pub_parts = pub_date.split()
+                    if len(pub_parts) >= 5:
+                        pub_date = f"{pub_parts[2]} {pub_parts[3]} {pub_parts[4][:4]}"
+                    else:
+                        pub_date = pub_date[:16] if len(pub_date) > 16 else pub_date
+                else:
+                    pub_date = "Baru"
                 
+                # Skip judul yang terlalu pendek atau tidak relevan
+                if len(title) < 10:
+                    continue
+                    
                 items.append({
                     "title": title,
                     "link": link,
                     "pub_date": pub_date
                 })
+        
+        if not items:
+            # Fallback ke Google News
+            if query:
+                url2 = f"https://news.google.com/rss/search?q={query}+crypto&hl=en&gl=US&ceid=US:en"
+            else:
+                url2 = "https://news.google.com/rss/search?q=cryptocurrency&hl=en&gl=US&ceid=US:en"
+            
+            response2 = requests.get(url2, timeout=15, headers=headers)
+            if response2.status_code == 200:
+                content2 = response2.text
+                for item_match in re.findall(r'<item>(.*?)</item>', content2, re.DOTALL):
+                    title_match = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', item_match, re.DOTALL)
+                    link_match = re.search(r'<link>(.*?)</link>', item_match)
+                    if title_match and link_match:
+                        title = title_match.group(1).strip()
+                        link = link_match.group(1).strip()
+                        if len(title) > 10 and 'http' in link:
+                            items.append({
+                                "title": title[:100],
+                                "link": link,
+                                "pub_date": "Baru"
+                            })
         
         if not items:
             bot.edit_message_text(f"❌ Tidak ada berita untuk {query}" if query else "❌ Tidak ada berita", 
@@ -2412,7 +2453,7 @@ def crypto_news(message):
                 title = title[:67] + "..."
             
             teks += f"{i}. {title}\n"
-            teks += f"   🕐 {pub_date if pub_date else 'Baru'}\n"
+            teks += f"   🕐 {pub_date}\n"
             teks += f"   🔗 {link}\n\n"
         
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
