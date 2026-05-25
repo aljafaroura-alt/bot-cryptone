@@ -2343,57 +2343,90 @@ def oi_history_cmd(message):
 @bot.message_handler(commands=['news'])
 def crypto_news(message):
     try:
-        # Cek apakah ada keyword (misal /news BTC)
         parts = message.text.split()
         query = parts[1].upper() if len(parts) > 1 else None
         
         msg = bot.reply_to(message, "📰 Fetching crypto news..." if not query else f"📰 Searching news for {query}...")
         
         import requests
+        import re
         
         if query:
-            # Cari berita spesifik coin
-            url = f"https://cryptocurrency.cv/api/search?q={query}&limit=5"
+            url = f"https://news.google.com/rss/search?q={query}+crypto&hl=en&gl=US&ceid=US:en"
         else:
-            # Berita umum
-            url = "https://cryptocurrency.cv/api/news?limit=5"
+            url = "https://news.google.com/rss/search?q=cryptocurrency&hl=en&gl=US&ceid=US:en"
         
-        response = requests.get(url, timeout=10)
-        data = response.json()
+        response = requests.get(url, timeout=15)
         
-        # Cek apakah ada artikel
-        articles = data.get("articles") or data.get("results") or []
+        if response.status_code != 200:
+            bot.edit_message_text("❌ Gagal ambil berita. Coba lagi nanti.", 
+                                 msg.chat.id, msg.message_id)
+            return
         
-        if not articles:
-            bot.edit_message_text(f"❌ Tidak ada berita untuk {query}" if query else "❌ Gagal ambil berita", 
+        # Parse RSS manual (biar ga perlu library tambahan)
+        content = response.text
+        
+        # Extract items pake regex
+        items = []
+        item_pattern = r'<item>(.*?)</item>'
+        title_pattern = r'<title><!\[CDATA\[(.*?)\]\]></title>'
+        link_pattern = r'<link>(.*?)</link>'
+        pub_pattern = r'<pubDate>(.*?)</pubDate>'
+        
+        for item_match in re.findall(item_pattern, content, re.DOTALL):
+            title_match = re.search(title_pattern, item_match)
+            link_match = re.search(link_pattern, item_match)
+            pub_match = re.search(pub_pattern, item_match)
+            
+            if title_match and link_match:
+                title = title_match.group(1)
+                link = link_match.group(1)
+                pub_date = pub_match.group(1) if pub_match else ""
+                
+                # Format waktu simple
+                if pub_date:
+                    # Ambil tanggal dan jam dari format RSS
+                    pub_date = pub_date.replace(",", "").split()
+                    if len(pub_date) >= 5:
+                        pub_date = f"{pub_date[2]} {pub_date[3]}"
+                    else:
+                        pub_date = pub_date[0] if pub_date else ""
+                
+                items.append({
+                    "title": title,
+                    "link": link,
+                    "pub_date": pub_date
+                })
+        
+        if not items:
+            bot.edit_message_text(f"❌ Tidak ada berita untuk {query}" if query else "❌ Tidak ada berita", 
                                  msg.chat.id, msg.message_id)
             return
         
         teks = f"📰 CRYPTO NEWS{f' - {query}' if query else ''}\n━━━━━━━━━━━━━━━━━━━━━━\n⏰ {get_wib()}\n\n"
         
-        for i, article in enumerate(articles[:5], 1):
-            title = article.get("title", "No title")
-            source = article.get("source", {}).get("name", article.get("source_name", "Unknown"))
-            url_news = article.get("url", "#")
-            published = article.get("published_at", article.get("created_at", ""))
+        for i, item in enumerate(items[:5], 1):
+            title = item['title']
+            link = item['link']
+            pub_date = item['pub_date']
             
-            # Format waktu
-            if published and "T" in published:
-                published = published[:16].replace("T", " ")
+            # Potong judul kalo kepanjangan
+            if len(title) > 70:
+                title = title[:67] + "..."
             
             teks += f"{i}. {title}\n"
-            teks += f"   📍 {source} | 🕐 {published}\n"
-            teks += f"   🔗 {url_news}\n\n"
+            teks += f"   🕐 {pub_date if pub_date else 'Baru'}\n"
+            teks += f"   🔗 {link}\n\n"
         
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"💡 /news BTC — Cari berita tentang BTC"
         
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
         
+    except requests.exceptions.Timeout:
+        bot.edit_message_text("❌ Timeout: Server lambat. Coba lagi nanti.", msg.chat.id, msg.message_id)
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
-
-
 #Temen mode dan auto schedule
 # ========== TEMEN MODE SCAN ==========
 def run_temen_scan(chat_id):
