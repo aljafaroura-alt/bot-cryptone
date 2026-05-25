@@ -3166,11 +3166,11 @@ def casual_session_report():
         
         # Format funding
         if funding > 0.03:
-            funding_text = f"funding +{funding:.3f}% (mulai panas 🔥)"
+            funding_text = f"+{funding:.3f}% (mulai panas 🔥)"
         elif funding < -0.03:
-            funding_text = f"funding {funding:.3f}% (dingin ❄️)"
+            funding_text = f"{funding:.3f}% (dingin ❄️)"
         else:
-            funding_text = f"funding {funding:.3f}% (normal)"
+            funding_text = f"{funding:.3f}% (normal)"
         
         # Format OB Delta
         if ob_delta > 15:
@@ -3883,7 +3883,6 @@ def run_scheduler():
 
 
 # ========== STATUS COMMAND ==========
-
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
     chat_id = message.chat.id
@@ -3932,11 +3931,13 @@ def status_cmd(message):
 🕐 WIB       : {get_wib()}
 ─────────────────────────────────
 🎯 SNIPER    : {sniper_text}
-🔥 TEMEN     : {temen_text}
-💀 LIQ SCAN  : {liq_text}
+👽 TEMEN     : {temen_text}
+☠️ LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
+🧠 CASUAL    : ✅ ON (tiap 4 jam)
+📊 PREDIKSI  : ✅ ON
 ─────────────────────────────────
 📅 SCHEDULES:{schedules_text}
 ─────────────────────────────────"""
@@ -3947,6 +3948,7 @@ def status_cmd(message):
         teks += f"   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
     teks += "─────────────────────────────────\n✅ Semua sistem normal"
     bot.send_message(chat_id, teks)
+
 
 # ========== CLUSTER ==========
 @bot.message_handler(commands=['cluster'])
