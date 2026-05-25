@@ -627,9 +627,9 @@ def start(message):
     
     teks = f"""
 🧬 HYPERLIQUID TERMINAL BOT
-GM/GN🥂{user}  🧑🏽‍🔧
+GM/GN 🥂 {user}  
 
-📡 {sesi}•{waktu}
+{sesi}•{waktu}
 ─────────────────────────────────
 
 ⚡ POWER TOOLS
