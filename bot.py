@@ -381,8 +381,7 @@ def start(message):
     user = message.from_user.first_name
     
     teks = f"""
-🧬 HL TERMINAL BOT
-Hyperliquid Tools
+🧬 HYPERLIQUID TERMINAL BOT
 
 Hi {user} 👋
 📡 {sesi} • {waktu}
@@ -400,6 +399,7 @@ Hi {user} 👋
 /gainers | /losers | /nuke
 /heatmap | /narrative | /topoi
 /summary | /btcdom | /volatility
+/oihistory 
 
 🔍 ANALISIS PRO
 /delta | /trap | /cluster
@@ -410,7 +410,8 @@ Hi {user} 👋
 /entrywhale | /liquidations
 
 👤 TRACKER
-/positions 0xABC | /pnl 0xABC
+/positions 0xABC | /pnl 0xABC 
+/history 0xABC 
 
 🎭 MOOD & RADAR
 /mood — Market mood
