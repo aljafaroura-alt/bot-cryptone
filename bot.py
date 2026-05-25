@@ -2719,11 +2719,10 @@ def run_temen_scan(chat_id):
         # ✅ AMBIL TOP 3 COIN
         top_alerts = alerts[:3]
 
-        # ✅ KIRIM PESAN TERPISAH PER COIN
-        for a in top_alerts:
-    arrow = "🚀" if a['change'] > 0 else "📉"
+   for a in top_alerts:
+    arrow = "🚀" if a['change'] > 0 else "📉"  # ← harus ada indentasi di depan
     
-    teks = f"{arrow} {a['coin']} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
+    teks = f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
     
     if abs(a['funding']) > 0.03:
         fund_icon = "🔴" if a['funding'] > 0 else "🟢"
@@ -2733,7 +2732,6 @@ def run_temen_scan(chat_id):
     
     for sig in a['signals']:
         teks += f"   └ {sig}\n"
-        
     bot.send_message(chat_id, teks)
     time.sleep(0.5)
         
