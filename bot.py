@@ -2722,7 +2722,7 @@ def run_temen_scan(chat_id):
         for a in top_alerts:
             arrow = "🚀" if a['change'] > 0 else "📉"
             
-            teks = f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
+            teks =f"{arrow}{a['coin']:<8}{a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
             
             if abs(a['funding']) > 0.03:
                 fund_icon = "🔴" if a['funding'] > 0 else "🟢"
@@ -2981,34 +2981,48 @@ def report(message):
 
 # ========== CASUAL REPORT + PREDIKSI + EVALUASI ==========
 
+# ==========   UNIX    ==========
+
 # File buat nyimpen history prediksi
 PREDICTION_FILE = "predictions.json"
 
-# Bank kalimat casual
-OPENINGS = [
-    "Pagi-pagi", "Sore-sore", "Malam-malam", "Lagi pada ngopi nih",
-    "Waktunya update", "Cek kondisi dulu yuk", "Laporan dari gw",
-    "Yo, ini kondisi terbaru", "📢 Peringatan dulu", "Langsung aja"
-]
+# Bank kalimat per session (SUDAH SESUAI JAM)
+OPENINGS_BY_SESSION = {
+    "ASIA": [
+        "🌅 Pagi-pagi", "Lagi sarapan nih", "Masih pada ngopi", 
+        "Cek pagi hari", "Pagi yang cerah", "GM!🦾"
+    ],
+    "LONDON": [
+        "🌇 Sore-sore", "Lagi maghriban", "Cek sore hari", 
+        "Sore mulai rame", "Udah sore nih", "Lets fvcking go!"
+    ],
+    "NY": [
+        "🌙 Malam-malam", "Lagi larut malam", "Cek tengah malem",
+        "Udah malem", "Waktunya whale bermain", "GN!🌚"
+    ]
+}
 
 SITUATIONS = {
     "ASIA": [
-        "Masih pada sarapan ini mah. Volume tipis.",
+        "Baru bangun btw. Volume tipis.",
         "Market masih ngantuk. Gerakannya lambat.",
         "Jam segini suka tipu-tipu. Hati-hati ya.",
-        "Sepi kayak pasar minggu sore."
+        "Sepi kayak perasaan gw.",
+        "Pelannya minta ampun."
     ],
     "LONDON": [
         "Mulai rame nih. Trader Eropa pada bangun.",
         "Udah sore, mulai ada yang gerak.",
         "Volume naik, mulai panas.",
-        "Ini jamnya breakout- breakoutan."
+        "Ini jamnya breakout-breakoutan.",
+        "Mulai hidup marketnya."
     ],
     "NY": [
         "Wah, ini dia waktunya mainan gede!",
         "Volume gila-gilaan, semua pada aksi.",
-        "Market paling liar, siap-siap kaget.",
-        "Udah malem, ini waktunya whale bermain."
+        "Market paling liar, pegangan!",
+        "Udah malem, ini waktunya whale bermain.",
+        "Liquidity lagi gede-gedenya kek punya gw."
     ]
 }
 
@@ -3109,7 +3123,7 @@ def casual_session_report():
     try:
         jam = get_wib_hour()
         
-        # Tentukan session
+        # Tentukan session berdasarkan jam (GAK BAKAL SALAH)
         if 8 <= jam < 15:
             session = "ASIA"
             session_emoji = "🌏"
@@ -3120,44 +3134,56 @@ def casual_session_report():
             session = "NY"
             session_emoji = "🇺🇸"
         
+        # Ambil opening random sesuai session (OTOMATIS SORE UNTUK LONDON, MALEM UNTUK NY)
+        opening = random.choice(OPENINGS_BY_SESSION[session])
+        
+        # Ambil situasi random sesuai session
+        situation = random.choice(SITUATIONS[session])
+        
         # Ambil data BTC untuk prediksi
         pred_data, oi_change = get_casual_prediction("BTC")
         if not pred_data:
+            bot.send_message(USER_ID, "❌ Gagal ambil data untuk prediksi")
             return
         
-        # Ambil variasi random
-        opening = random.choice(OPENINGS)
-        situation = random.choice(SITUATIONS[session])
-        
-        # Format harga dan target
         price = pred_data['price']
         target = pred_data['target']
         funding = pred_data['funding']
         ob_delta = pred_data['ob_delta']
         
+        # Format prediksi
         if pred_data['direction'] == "bullish":
-            direction_text = "bullish"
             direction_emoji = "🟢"
+            direction_text = "bullish"
             direction_arrow = "naik"
             if target > price:
                 target_pct = ((target - price) / price) * 100
             else:
                 target_pct = 1.5
+            saran = "cari setup LONG"
+            sl_text = f"Stop loss: ${price - 500:,.0f}"
+            tp_text = f"Target: ${target:,.0f}"
         elif pred_data['direction'] == "bearish":
-            direction_text = "bearish"
             direction_emoji = "🔴"
+            direction_text = "bearish"
             direction_arrow = "turun"
             if target < price:
                 target_pct = ((price - target) / price) * 100
             else:
                 target_pct = 1.5
+            saran = "cari setup SHORT"
+            sl_text = f"Stop loss: ${price + 500:,.0f}"
+            tp_text = f"Target: ${target:,.0f}"
         else:
-            direction_text = "sideways"
             direction_emoji = "⚪"
+            direction_text = "sideways"
             direction_arrow = "gerak ke samping"
             target_pct = 0
+            saran = "range trading aja, jangan FOMO breakout"
+            tp_text = f"Support: ${target - 500:,.0f} | Resistance: ${target + 500:,.0f}"
+            sl_text = ""
         
-        # Format funding
+        # Format funding display
         if funding > 0.03:
             funding_text = f"+{funding:.3f}% (mulai panas 🔥)"
         elif funding < -0.03:
@@ -3165,7 +3191,7 @@ def casual_session_report():
         else:
             funding_text = f"{funding:.3f}% (normal)"
         
-        # Format OB Delta
+        # Format OB Delta display
         if ob_delta > 15:
             ob_text = f"OB +{ob_delta:.0f}% (buyer dominan 🟢)"
         elif ob_delta < -15:
@@ -3173,35 +3199,25 @@ def casual_session_report():
         else:
             ob_text = f"OB {ob_delta:.0f}% (seimbang)"
         
-        teks = f"""📊 {opening} • {get_wib()}
-━━━━━━━━━━━━━━━━━━━━━━
-{session_emoji} {situation}
-
-📡 Kondisi BTC sekarang:
-Harga: ${price:,.0f}
-Funding: {funding_text}
-{ob_text}
-
-🔮 Ramalan gw:
-{pred_data['reason']}
-Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}
-Keyakinan gw: {pred_data['confidence']}%
-
-💡 Saran gw:
-{
-    "cari setup LONG" if pred_data['direction'] == "bullish" else
-    "cari setup SHORT" if pred_data['direction'] == "bearish" else
-    "range trading aja, jangan FOMO breakout"
-}
-
-📌 {
-    f"Support: ${target - 500:,.0f} | Resistance: ${target + 500:,.0f}" if pred_data['direction'] == "sideways" else
-    f"Target: ${target:,.0f} | Stop loss: ${price + 500:,.0f}" if pred_data['direction'] == "bullish" else
-    f"Target: ${target:,.0f} | Stop loss: ${price - 500:,.0f}"
-}
-
-💀 Ini cuma prediksi ya. Ga 100% akurat. 
-Tetep pake risk management!"""
+        # Bangun teks output
+        teks = f"📊 {opening} • {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"{session_emoji} {situation}\n\n"
+        teks += "📡 Kondisi BTC sekarang:\n"
+        teks += f"Harga: ${price:,.0f}\n"
+        teks += f"Funding: {funding_text}\n"
+        teks += f"{ob_text}\n\n"
+        teks += "🔮 Ramalan gw:\n"
+        teks += f"{pred_data['reason']}\n"
+        teks += f"Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}\n"
+        teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
+        teks += "💡 Saran gw:\n"
+        teks += f"{saran}\n\n"
+        teks += f"📌 {tp_text}\n"
+        if sl_text:
+            teks += f"   {sl_text}\n"
+        teks += "\n💀 Ini cuma prediksi ya. Ga 100% akurat.\n"
+        teks += "Tetep pake risk management!"
         
         # Simpan prediksi ke history
         history = load_predictions()
@@ -3231,12 +3247,11 @@ def evaluate_predictions():
         if len(history["predictions"]) < 2:
             return
         
-        # Ambil prediksi terakhir
+        # Ambil prediksi terakhir (sebelum yang paling baru)
         last_pred = history["predictions"][-2] if len(history["predictions"]) >= 2 else None
         if not last_pred:
             return
         
-        # Ambil harga sekarang
         mids = info.all_mids()
         current_price = float(mids.get("BTC", 0))
         if current_price == 0:
@@ -3246,7 +3261,7 @@ def evaluate_predictions():
         predicted_target = last_pred["target"]
         pred_time = last_pred["time"]
         
-        # Evaluasi
+        # Evaluasi arah
         if predicted_dir == "bullish":
             correct_dir = current_price > last_pred["price_at_prediction"]
         elif predicted_dir == "bearish":
@@ -3269,28 +3284,34 @@ def evaluate_predictions():
         else:
             direction_result = "❌ SALAH"
         
-        teks = f"""📊 Evaluasi Prediksi
-━━━━━━━━━━━━━━━━━━━━━━
-🔮 Waktu prediksi: {pred_time}
-Gw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}
-
-📈 Kenyataan:
-Harga sekarang: ${current_price:,.0f}
-{
-    f"Selisih: ${abs(current_price - predicted_target):,.0f}" if predicted_dir != "sideways" else 
-    f"Gerak: {current_price - last_pred['price_at_prediction']:+.0f}"
-}
-
-📊 Nilai: {score}/100
-Arah: {direction_result}
-
-💡 Yang gw pelajari:
-{
-    "Prediksi gw bener. Lumayan lah." if correct_dir else 
-    "Wah meleset. Ada faktor yang ga keitung kayaknya."
-}
-
-📈 Update: {"/warroom BTC" if score < 60 else "Gw masih percaya sama data."}"""
+        # Build teks evaluasi
+        teks = f"📊 Evaluasi Prediksi\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🔮 Waktu prediksi: {pred_time}\n"
+        teks += f"Gw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}\n\n"
+        teks += "📈 Kenyataan:\n"
+        teks += f"Harga sekarang: ${current_price:,.0f}\n"
+        
+        if predicted_dir != "sideways":
+            diff = abs(current_price - predicted_target)
+            teks += f"Selisih target: ${diff:,.0f}\n"
+        else:
+            move = current_price - last_pred["price_at_prediction"]
+            teks += f"Gerak: {move:+.0f}\n"
+        
+        teks += f"\n📊 Nilai: {score}/100\n"
+        teks += f"Arah: {direction_result}\n\n"
+        teks += "💡 Yang gw pelajari:\n"
+        
+        if correct_dir:
+            teks += "Prediksi gw bener. Lumayan lah.\n"
+        else:
+            teks += "Wah meleset. Ada faktor yang ga keitung kayaknya.\n"
+        
+        if score < 60:
+            teks += "\n📈 Update: /warroom BTC buat analisis ulang."
+        else:
+            teks += "\n📈 Update: Gw masih percaya sama data."
         
         # Update stats
         stats = history.get("stats", {"total": 0, "correct": 0})
@@ -3314,18 +3335,20 @@ def prediction_stats(message):
     correct = stats["correct"]
     accuracy = (correct / total * 100) if total > 0 else 0
     
-    teks = f"""📊 STATISTIK PREDIKSI
-━━━━━━━━━━━━━━━━━━━━━━
-Total prediksi: {total} kali
-Bener arahnya: {correct} kali ({accuracy:.0f}%)
-
-💡 Akurasi: {
-    "Lumayan bagus" if accuracy > 65 else
-    "Masih belajar" if accuracy > 50 else
-    "Payah, butuh perbaikan"
-}
-
-🎯 /warroom BTC untuk analisis terkini"""
+    teks = f"📊 STATISTIK PREDIKSI\n"
+    teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+    teks += f"Total prediksi: {total} kali\n"
+    teks += f"Bener arahnya: {correct} kali ({accuracy:.0f}%)\n\n"
+    teks += "💡 Akurasi: "
+    
+    if accuracy > 65:
+        teks += "Lumayan bagus\n"
+    elif accuracy > 50:
+        teks += "Masih belajar\n"
+    else:
+        teks += "Payah, butuh perbaikan\n"
+    
+    teks += "\n🎯 /warroom BTC untuk analisis terkini"
     
     bot.send_message(message.chat.id, teks)
 
@@ -3337,7 +3360,6 @@ def casual_cmd(message):
 @bot.message_handler(commands=['prediksi'])
 def prediksi_stats_cmd(message):
     prediction_stats(message)
-    
 
 # ========== MOOD ==========
 @bot.message_handler(commands=['mood'])
