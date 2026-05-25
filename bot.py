@@ -2716,11 +2716,11 @@ def run_temen_scan(chat_id):
 
         alerts.sort(key=lambda x: x['score'], reverse=True)
 
-        # ✅ AMBIL TOP 3 COIN
-        top_alerts = alerts[:3]
+# ✅ AMBIL TOP 3 COIN
+top_alerts = alerts[:3]
 
-   for a in top_alerts:
-    arrow = "🚀" if a['change'] > 0 else "📉"  # ← harus ada indentasi di depan
+for a in top_alerts:
+    arrow = "🚀" if a['change'] > 0 else "📉"
     
     teks = f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
     
@@ -2732,6 +2732,7 @@ def run_temen_scan(chat_id):
     
     for sig in a['signals']:
         teks += f"   └ {sig}\n"
+    
     bot.send_message(chat_id, teks)
     time.sleep(0.5)
         
