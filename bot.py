@@ -627,7 +627,7 @@ def start(message):
     
     teks = f"""
 🧬 HYPERLIQUID TERMINAL BOT
-GM/GN 🥂 {user}  
+GM/GN 😼 {user}  
 
 {sesi}•{waktu}
 ─────────────────────────────────
@@ -678,16 +678,16 @@ GM/GN 🥂 {user}
 👽 TEMEN MODE
 /temen — Bacot ON
 /diem — Bacot OFF
-/temenstatus — Status
+/temenstatus — 🌚
 
 📊 LAPORAN & PREDIKSI
-/reportcasual — Laporan casual + prediksi
-/prediksi — Statistik akurasi prediksi
+/reportcasual — Laporan casual/prediksi
+/prediksi — Akurasi prediksi
 /report — Manual report
 
 🦾 UTILS
 /status — System status
-/ping — Cek status bot
+/ping — Cek bot
 
 ─────────────────────────────────
 ⚠️ DYOR — Not financial advice
@@ -2723,7 +2723,7 @@ def run_temen_scan(chat_id):
         for a in top_alerts:
             arrow = "🚀" if a['change'] > 0 else "📉"
             
-            teks = f"{arrow}{a['coin']:<8}{a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
+            teks = f"{arrow} {a['coin']:<8}{a['change']:+.1f}%|OB{a['ob_delta']:+.0f}%"
             
             if abs(a['funding']) > 0.03:
                 fund_icon = "🔴" if a['funding'] > 0 else "🟢"
@@ -2990,40 +2990,40 @@ PREDICTION_FILE = "predictions.json"
 # Bank kalimat per session (SUDAH SESUAI JAM)
 OPENINGS_BY_SESSION = {
     "ASIA": [
-        "🌅 Pagi-pagi", "Lagi sarapan nih", "Masih pada ngopi", 
+        "🌅 Pagi-pagi", "Bangun!", "Ngopi!", 
         "Cek pagi hari", "Pagi yang cerah", "GM!🦾"
     ],
     "LONDON": [
-        "🌇 Sore-sore", "Lagi maghriban", "Cek sore hari", 
+        "🌇 Sore-sore", "Makan!", "Cek sore hari", 
         "Sore mulai rame", "Udah sore nih", "Lets fvcking go!"
     ],
     "NY": [
-        "🌙 Malam-malam", "Lagi larut malam", "Cek tengah malem",
+        "🌙 Malam-malam", "Ngopi!", "Jangan begadang",
         "Udah malem", "Waktunya whale bermain", "GN!🌚"
     ]
 }
 
 SITUATIONS = {
     "ASIA": [
-        "Baru bangun btw. Volume tipis.",
-        "Market masih ngantuk. Gerakannya lambat.",
-        "Jam segini suka tipu-tipu. Hati-hati ya.",
+        "GM😼!Wait,Volume tipis.",
+        "Market baru start.masih slow.",
+        "Jam segini rawan.",
         "Sepi kayak perasaan gw.",
         "Pelannya minta ampun."
     ],
     "LONDON": [
-        "Mulai rame nih. Trader Eropa pada bangun.",
-        "Udah sore, mulai ada yang gerak.",
-        "Volume naik, mulai panas.",
-        "Ini jamnya breakout-breakoutan.",
-        "Mulai hidup marketnya."
+        "Trader Eropa pada bangun.",
+        "Udah sore,mulai setup😾.",
+        "Volume naik,mulai panas.",
+        "Ini jamnya breakout.",
+        "Mulai kelihatan volumenya."
     ],
     "NY": [
-        "Wah, ini dia waktunya mainan gede!",
-        "Volume gila-gilaan, semua pada aksi.",
-        "Market paling liar, pegangan!",
-        "Udah malem, ini waktunya whale bermain.",
-        "Liquidity lagi gede-gedenya kek punya gw."
+        "Good afternoon!🙀",
+        "Volume gila.",
+        "Market lagi liar,pegangan!",
+        "ini jamnya whale bermain.",
+        "Tetep hati2 ya."
     ]
 }
 
