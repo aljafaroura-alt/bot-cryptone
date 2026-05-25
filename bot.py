@@ -13,6 +13,7 @@ import schedule
 import json
 import re
 import random
+
 # ========== KONFIGURASI ==========
 TOKEN = os.environ.get('TOKEN')
 if not TOKEN:
@@ -681,7 +682,7 @@ GM/GN 😼 {user}
 /temenstatus — 🌚
 
 📊 LAPORAN & PREDIKSI
-/reportcasual — Laporan casual/prediksi
+/reportcasual — AI
 /prediksi — Akurasi prediksi
 /report — Manual report
 
@@ -2723,7 +2724,7 @@ def run_temen_scan(chat_id):
         for a in top_alerts:
             arrow = "🚀" if a['change'] > 0 else "📉"
             
-            teks = f"{arrow} {a['coin']:<8}{a['change']:+.1f}%|OB{a['ob_delta']:+.0f}%"
+            teks = f"{arrow} {a['coin']:<8}{a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
             
             if abs(a['funding']) > 0.03:
                 fund_icon = "🔴" if a['funding'] > 0 else "🟢"
@@ -2920,7 +2921,7 @@ def sniper_on(message):
     text += f"3. 💰 Funding < {cfg['funding_max']}%\n"
     text += f"Kalo 3 syarat kena = auto notif\n"
     text += f"Cooldown {cfg['cooldown']//60} menit/koin\n"
-    text += "choose /sniperaggro/sniperinsane"
+    text += "choose /sniperaggro or /sniperinsane"
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
 @bot.message_handler(commands=['sniperaggro'])
@@ -2974,7 +2975,7 @@ def build_report():
 
 @bot.message_handler(commands=['report'])
 def report(message):
-    msg = bot.reply_to(message, "🧬 Generating report...")
+    msg = bot.reply_to(message, "🤔 Generating report...")
     try:
         bot.edit_message_text(build_report(), msg.chat.id, msg.message_id)
     except Exception as e:
