@@ -2721,7 +2721,7 @@ def run_temen_scan(chat_id):
         for a in top_alerts:
             arrow = "🚀" if a['change'] > 0 else "📉"
             
-            teks = f"👽• {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n"
+            teks = f"👽 {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n"
             teks += f"{arrow} {a['coin']:<8} {a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
             
             if abs(a['funding']) > 0.03:
@@ -2748,7 +2748,7 @@ def temen_on(message):
     global TEMEN_MODE
     TEMEN_MODE = True
     bot.reply_to(message,
-        "👽TEMEN MODE • ON\n─────────────────────────────────\n"
+        "👽 TEMEN MODE • ON\n─────────────────────────────────\n"
         "Gw bakal bacot tiap 5 menit\n"
         "Format: Coin | Δ% | OB | Sinyal\n"
         "Ketik /diem buat matiin")
