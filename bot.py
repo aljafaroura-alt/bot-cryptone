@@ -907,10 +907,18 @@ def entry(message):
             emoji = "⚪"
             score = long_score
         
+        # FORMAT OI YANG BENAR (jangan sampe $2111M)
+        if oi_usd >= 1000:
+            oi_display = f"${oi_usd/1000:.1f}B"
+        elif oi_usd >= 1:
+            oi_display = f"${oi_usd:.1f}M"
+        else:
+            oi_display = f"${oi_usd*1000:.0f}K"
+        
         teks = f"🎯 ENTRY • {coin}\n⏰ {get_wib()}\n─────────────────────────────────\n"
         teks += f"💰 Harga : {fmt_price(mark)}\n"
         teks += f"💰 Fund  : {funding:.4f}%\n"
-        teks += f"📊 OI    : ${oi_usd:.0f}M\n"
+        teks += f"📊 OI    : {oi_display}\n"
         teks += f"📡 OB    : {ob_delta:+.1f}%\n"
         if bid_wall_usd > 0:
             teks += f"🐋 Bid W : ${bid_wall_usd/1e6:.2f}M @ {fmt_price(bid_wall_px)}\n"
@@ -919,9 +927,16 @@ def entry(message):
         teks += "─────────────────────────────────\n"
         
         if bias == "SHORT" and score >= 50:
+            # BATASI SL MAX 1% DAN TP MAX 2%
             sl_p = short_liq['price'] * 1.002 if ask_wall_px == 0 else min(short_liq['price'], ask_wall_px) * 1.002
-            tp_p = long_liq['price'] * 1.001 if long_liq['price'] > 0 else mark * 0.97
+            tp_p = mark * 0.98  # TP -2%
+            
+            # JANGAN BIARKAN SL TERLALU DEKAT (< 0.3%)
             risk_pct = abs(sl_p - mark) / mark * 100
+            if risk_pct < 0.3:
+                sl_p = mark * 1.003  # force SL 0.3%
+                risk_pct = 0.3
+            
             reward_pct = abs(mark - tp_p) / mark * 100
             rr = reward_pct / risk_pct if risk_pct > 0 else 0
             
@@ -932,9 +947,15 @@ def entry(message):
             teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         elif bias == "LONG" and score >= 50:
+            # BATASI SL MAX 1% DAN TP MAX 2%
             sl_p = long_liq['price'] * 0.998 if bid_wall_px == 0 else max(long_liq['price'], bid_wall_px) * 0.998
-            tp_p = short_liq['price'] * 0.999 if short_liq['price'] > mark else mark * 1.03
+            tp_p = mark * 1.02  # TP +2%
+            
             risk_pct = abs(mark - sl_p) / mark * 100
+            if risk_pct < 0.3:
+                sl_p = mark * 0.997  # force SL 0.3%
+                risk_pct = 0.3
+            
             reward_pct = abs(tp_p - mark) / mark * 100
             rr = reward_pct / risk_pct if risk_pct > 0 else 0
             
