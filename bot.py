@@ -166,6 +166,91 @@ def get_all_hyperliquid_perps():
         print(f"Gagal ambil list: {e}")
         return PERPS_CACHE or ["BTC", "ETH", "SOL"]
 
+def calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq_size=0, long_liq_size=0):
+    """Unified scoring untuk warroom dan entry - konsisten"""
+    long_score = 0
+    short_score = 0
+    
+    # 1. FUNDING (lebih longgar)
+    if funding > 0.05:
+        short_score += 30
+    elif funding > 0.02:
+        short_score += 20
+    elif funding > 0.01:
+        short_score += 10
+    elif funding < -0.05:
+        long_score += 30
+    elif funding < -0.02:
+        long_score += 20
+    elif funding < -0.01:
+        long_score += 10
+    else:
+        long_score += 5
+        short_score += 5
+    
+    # 2. OB DELTA (lebih longgar, batasi 75%)
+    ob_delta_limited = max(-75, min(75, ob_delta))
+    
+    if ob_delta_limited > 30:
+        long_score += 40
+    elif ob_delta_limited > 20:
+        long_score += 30
+    elif ob_delta_limited > 10:
+        long_score += 20
+    elif ob_delta_limited > 5:
+        long_score += 10
+    elif ob_delta_limited < -30:
+        short_score += 40
+    elif ob_delta_limited < -20:
+        short_score += 30
+    elif ob_delta_limited < -10:
+        short_score += 20
+    elif ob_delta_limited < -5:
+        short_score += 10
+    
+    # 3. WHALE WALLS
+    if bid_wall_usd >= 1_000_000:
+        long_score += 20
+    elif bid_wall_usd >= 500_000:
+        long_score += 10
+    elif bid_wall_usd < 100_000 and bid_wall_usd > 0:
+        short_score += 5
+    
+    if ask_wall_usd >= 1_000_000:
+        short_score += 20
+    elif ask_wall_usd >= 500_000:
+        short_score += 10
+    elif ask_wall_usd < 100_000 and ask_wall_usd > 0:
+        long_score += 5
+    
+    # 4. LIQUIDATION (opsional, hanya untuk entry)
+    if short_liq_size > 30:
+        short_score += 15
+    elif short_liq_size > 15:
+        short_score += 10
+    if long_liq_size > 30:
+        long_score += 15
+    elif long_liq_size > 15:
+        long_score += 10
+    
+    return long_score, short_score
+
+def get_strength_and_action(score, bias):
+    """Tentukan strength berdasarkan score"""
+    if bias == "LONG":
+        final_score = score
+    else:
+        final_score = score
+    
+    if final_score >= 60:
+        return "STRONG ✅", "🎯 READY — Entry sekarang"
+    elif final_score >= 40:
+        return "MEDIUM ⚠️", "⏳ Waspada — Konfirmasi tambahan"
+    elif final_score >= 25:
+        return "WEAK ⚠️", "📊 Monitor — Belum optimal"
+    else:
+        return "SKIP ❌", "🚫 Tidak direkomendasikan"
+
 # ========== ORDERBOOK FUNCTIONS ==========
 def get_bid_wall(coin):
     try:
@@ -1006,62 +1091,75 @@ def warroom(message):
         vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
         bid_wall = get_bid_wall(coin)
         ob_delta = get_ob_delta(coin)
-
-        long_score, short_score = 0, 0
-        if ob_delta > 15: long_score += 30
-        elif ob_delta < -15: short_score += 30
-        if funding > 0.01: short_score += 20
-        else: long_score += 20
-        if change > 3: long_score += 25
-        elif change < -3: short_score += 25
-
-        total_score = long_score + short_score
+        
+        # Ambil wall USD
+        l2 = info.l2_snapshot(coin)
+        bids = l2['levels'][0]
+        asks = l2['levels'][1]
+        
+        bid_wall_usd = 0
+        ask_wall_usd = 0
+        for b in bids[:15]:
+            usd = float(b['px']) * float(b['sz'])
+            if usd > 200_000:
+                bid_wall_usd = usd
+                break
+        for a in asks[:15]:
+            usd = float(a['px']) * float(a['sz'])
+            if usd > 200_000:
+                ask_wall_usd = usd
+                break
+        
+        # Hitung score pake fungsi unified
+        long_score, short_score = calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd)
+        
         if long_score > short_score:
             bias, emoji = "LONG", "🟢"
-        else:
+            bias_score = long_score
+        elif short_score > long_score:
             bias, emoji = "SHORT", "🔴"
-
-        winning_score = max(long_score, short_score)
-        persen = int(winning_score / total_score * 100) if total_score > 0 else 50
-        conviction = "STRONG ✅" if total_score >= 75 else "WEAK ⚠️"
-
+            bias_score = short_score
+        else:
+            bias, emoji = "NEUTRAL", "⚪"
+            bias_score = long_score
+        
+        strength, action = get_strength_and_action(bias_score, bias)
+        
+        # Format OI
+        if oi_usd >= 1000:
+            oi_display = f"${oi_usd/1000:.1f}B"
+        else:
+            oi_display = f"${oi_usd:.1f}M"
+        
+        # Batasi OB display
+        ob_display = ob_delta
+        if ob_display > 75:
+            ob_display = 75
+        elif ob_display < -75:
+            ob_display = -75
+        
         teks = f"🧠 WARROOM • {coin}\n"
         teks += f"⏰ {get_wib()} | {get_sesi()}\n"
         teks += "─────────────────────────────────\n"
         teks += f"💰 Harga: {fmt_price(mark)}\n"
         teks += f"📈 24h : {change:+.2f}%\n"
-        teks += f"📊 OI  : ${oi_usd:.2f}M\n"
+        teks += f"📊 OI  : {oi_display}\n"
         teks += f"📦 Vol : ${vol:.0f}M\n"
         teks += f"💰 Fund: {funding:.4f}%\n"
-        teks += f"📡 OB  : {ob_delta:+.1f}%\n"
+        teks += f"📡 OB  : {ob_display:+.1f}%\n"
         teks += f"🐋 Wall: ${bid_wall/1e6:.2f}M\n"
         teks += "─────────────────────────────────\n"
-
-        if bid_wall < 100000 and abs(ob_delta) > 15:
-            teks += f"🟡 SKIP — FAKE BID\n"
-            teks += f"📊 Score: Short {short_score} vs Long {long_score} [{persen}%]\n"
-            teks += "─────────────────────────────────\n"
-            teks += f"⛔ SETUP DITOLAK\nOB gerak tapi tembok tipis"
-            bot.send_message(message.chat.id, teks)
-            return
-
-        teks += f"{emoji} {bias} | {conviction}\n"
-        teks += f"📊 Score: {bias} {persen}% (L:{long_score} S:{short_score})\n"
+        teks += f"{emoji} {bias} | {strength}\n"
+        teks += f"📊 Score: {bias_score} (L:{long_score} S:{short_score})\n"
         teks += "─────────────────────────────────\n"
-
-        if conviction == "STRONG ✅":
-            teks += f"🎯 READY — Entry di atas harga sekarang"
-        else:
-            teks += f"⚠️ LEMAH — Tunggu konfirmasi OB"
-
-        teks += f"\n\n─────────────────────────────────\n"
+        teks += f"{action}\n\n"
+        teks += "─────────────────────────────────\n"
         teks += f"🔍 /squeeze {coin} | /entry {coin}"
 
         bot.send_message(message.chat.id, teks)
 
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {e}")
-        
 #Whale and liquidations command
 # ========== WHALE ENTRY ==========
 @bot.message_handler(commands=['entrywhale', 'whaleentry'])
