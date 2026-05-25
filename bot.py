@@ -640,7 +640,7 @@ GM/GN 😼 {user}
 /entry BTC — Entry + TP/SL
 /squeeze BTC — Squeeze scanner
 
-📊 MARKET DATA
+🌏 MARKET DATA
 /price | /funding | /oi | /spark
 /gainers | /losers | /nuke
 /heatmap | /narrative | /topoi
@@ -651,11 +651,11 @@ GM/GN 😼 {user}
 /news — Berita crypto terbaru
 /news BTC — Cari berita tentang BTC
 
-🔍 ANALISIS PRO
+🎰 ANALISIS PRO
 /delta | /trap | /cluster
 /liqmap | /correlation | /sentiment
 
-🐳 WHALE INTEL
+🐋 WHALE INTEL
 /whale | /whalescan | /whalewall
 /entrywhale | /liquidations
 
@@ -670,7 +670,7 @@ GM/GN 😼 {user}
 /schedule 5 temen — Auto scan
 /stopschedule — Stop all auto
 
-🎯 AUTO SNIPER
+🕶️ AUTO SNIPER
 /sniper — Smart money sniper ON
 /sniperaggro — AGGRO mode
 /sniperinsane — INSANE mode
