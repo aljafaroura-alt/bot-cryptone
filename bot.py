@@ -317,6 +317,101 @@ def check_divergence():
     except Exception as e:
         print(f"Divergence error: {e}")
 
+# ========== CVD DIVERGENCE ==========
+_cvd_cache = {}
+
+def get_cvd(coin, hours=1):
+    """Hitung Cumulative Volume Delta dalam X jam terakhir"""
+    try:
+        end_ms = int(time.time() * 1000)
+        start_ms = end_ms - (hours * 60 * 60 * 1000)
+        
+        # Ambil trades dalam range waktu
+        trades = info.recent_trades(coin)
+        if not trades:
+            return 0
+        
+        cvd = 0
+        now_ms = int(time.time() * 1000)
+        
+        for t in trades:
+            trade_time = int(t['time'])
+            if trade_time >= start_ms:
+                size_usd = float(t['px']) * float(t['sz'])
+                if t['side'] == 'B':
+                    cvd += size_usd
+                else:
+                    cvd -= size_usd
+        
+        return cvd / 1e6  # dalam jutaan USD
+    except:
+        return 0
+
+def check_cvd_divergence():
+    """Deteksi divergensi antara harga dan CVD"""
+    try:
+        data = info.meta_and_asset_ctxs()
+        alerts = []
+        
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            try:
+                coin = asset["name"]
+                mark = float(ctx.get("markPx") or 0)
+                if mark == 0:
+                    continue
+                
+                # Price change 1 jam
+                prev = float(ctx.get("prevDayPx") or mark)
+                price_change = ((mark - prev) / prev * 100) if prev > 0 else 0
+                
+                # CVD 1 jam
+                cvd_now = get_cvd(coin, 1)
+                cvd_prev = _cvd_cache.get(coin, cvd_now)
+                cvd_change = cvd_now - cvd_prev
+                
+                # Simpan untuk next check
+                _cvd_cache[coin] = cvd_now
+                
+                # Deteksi bullish divergence: harga turun, CVD naik
+                if price_change < -1 and cvd_change > 10:
+                    alerts.append({
+                        'coin': coin,
+                        'price_change': price_change,
+                        'cvd_change': cvd_change,
+                        'type': 'BULLISH'
+                    })
+                # Deteksi bearish divergence: harga naik, CVD turun
+                elif price_change > 1 and cvd_change < -10:
+                    alerts.append({
+                        'coin': coin,
+                        'price_change': price_change,
+                        'cvd_change': cvd_change,
+                        'type': 'BEARISH'
+                    })
+            except:
+                continue
+        
+        # Kirim alert
+        for a in alerts:
+            if a['type'] == 'BULLISH':
+                teks = f"""💎 CVD BULLISH DIVERGENCE
+━━━━━━━━━━━━━━━━━━━━━━
+{a['coin']}: Price {a['price_change']:.1f}% but CVD +${a['cvd_change']:.0f}M
+💎 Smart money ACCUMULATING!
+🚀 POTENTIAL BOTTOM SIGNAL!"""
+            else:
+                teks = f"""💎 CVD BEARISH DIVERGENCE
+━━━━━━━━━━━━━━━━━━━━━━
+{a['coin']}: Price +{a['price_change']:.1f}% but CVD {a['cvd_change']:.0f}M
+💎 Smart money DISTRIBUTING!
+⚠️ POTENTIAL TOP SIGNAL!"""
+            
+            bot.send_message(USER_ID, teks)
+            time.sleep(1)
+            
+    except Exception as e:
+        print(f"CVD error: {e}")
+
 # ========== ORDERBOOK FUNCTIONS ==========
 def get_bid_wall(coin):
     try:
@@ -3333,16 +3428,24 @@ def start_confluence_scanner():
 def run_scheduler():
     global SNIPER_ALL_COIN, TEMEN_MODE, TEMEN_LAST_RUN
     last_divergence_check = 0
+    last_cvd_check = 0
     
     while True:
         try:
             schedule.run_pending()
             
-            # Divergence check tiap 30 menit
             now = time.time()
             if now - last_divergence_check >= 1800:
                 check_divergence()
                 last_divergence_check = now
+            
+            # CVD check tiap 1 jam (3600 detik)
+            if now - last_cvd_check >= 3600:
+                check_cvd_divergence()
+                last_cvd_check = now
+            
+            # ... sisanya tetap sama
+                
             if TEMEN_MODE:
                 now = time.time()
                 if now - TEMEN_LAST_RUN >= 300:
