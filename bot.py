@@ -3508,6 +3508,7 @@ def run_scheduler():
 
 
 # ========== STATUS COMMAND ==========
+
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
     chat_id = message.chat.id
@@ -3537,6 +3538,11 @@ def status_cmd(message):
     temen_text = "✅ ON" if TEMEN_MODE else "🔴 OFF"
     liq_text = "✅ ON" if _liq_scanner_running else "🔴 OFF"
     conf_text = "✅ ON" if _conf_scanner_running else "🔴 OFF"
+    
+    # Cek status alert background
+    div_text = "✅ ON" if 'last_divergence_check' in globals() else "🟡 IDLE"
+    cvd_text = "✅ ON" if 'last_cvd_check' in globals() else "🟡 IDLE"
+    
     session_text = get_sesi()
     uptime = get_uptime()
     token_src = "ENV ✅" if os.environ.get('TOKEN') else "HARDCODE ⚠️"
@@ -3554,10 +3560,11 @@ def status_cmd(message):
 🔥 TEMEN     : {temen_text}
 💀 LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
+💀 DIVERGENCE: {div_text}
+💎 CVD       : {cvd_text}
 ─────────────────────────────────
 📅 SCHEDULES:{schedules_text}
 ─────────────────────────────────"""
-    
     mood_data = get_market_mood_data()
     if mood_data:
         teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n"
