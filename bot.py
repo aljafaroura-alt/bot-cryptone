@@ -12,7 +12,7 @@ import concurrent.futures
 import schedule
 import json
 import re
-
+import random
 # ========== KONFIGURASI ==========
 TOKEN = os.environ.get('TOKEN')
 if not TOKEN:
@@ -681,7 +681,11 @@ Hi {user} 👋
 /diem — Bacot OFF
 /temenstatus — Status
 
+📊 LAPORAN & PREDIKSI
+/reportcasual — Laporan casual + prediksi
+/prediksi — Statistik akurasi prediksi
 /report — Manual report
+
 /status — System status
 /ping — Cek status bot
 
@@ -2982,6 +2986,366 @@ def report(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
 
+# ========== CASUAL REPORT + PREDIKSI + EVALUASI ==========
+
+# File buat nyimpen history prediksi
+PREDICTION_FILE = "predictions.json"
+
+# Bank kalimat casual
+OPENINGS = [
+    "Pagi-pagi", "Sore-sore", "Malam-malam", "Lagi pada ngopi nih",
+    "Waktunya update", "Cek kondisi dulu yuk", "Laporan dari gw",
+    "Yo, ini kondisi terbaru", "📢 Peringatan dulu", "Langsung aja"
+]
+
+SITUATIONS = {
+    "ASIA": [
+        "Masih pada sarapan ini mah. Volume tipis.",
+        "Market masih ngantuk. Gerakannya lambat.",
+        "Jam segini suka tipu-tipu. Hati-hati ya.",
+        "Sepi kayak pasar minggu sore."
+    ],
+    "LONDON": [
+        "Mulai rame nih. Trader Eropa pada bangun.",
+        "Udah sore, mulai ada yang gerak.",
+        "Volume naik, mulai panas.",
+        "Ini jamnya breakout- breakoutan."
+    ],
+    "NY": [
+        "Wah, ini dia waktunya mainan gede!",
+        "Volume gila-gilaan, semua pada aksi.",
+        "Market paling liar, siap-siap kaget.",
+        "Udah malem, ini waktunya whale bermain."
+    ]
+}
+
+def load_predictions():
+    """Load history prediksi dari file"""
+    if os.path.exists(PREDICTION_FILE):
+        try:
+            with open(PREDICTION_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {"predictions": [], "stats": {"total": 0, "correct": 0}}
+    return {"predictions": [], "stats": {"total": 0, "correct": 0}}
+
+def save_predictions(data):
+    """Simpan history prediksi ke file"""
+    try:
+        with open(PREDICTION_FILE, 'w') as f:
+            json.dump(data, f)
+    except:
+        pass
+
+def get_casual_prediction(coin="BTC"):
+    """Buat prediksi casual berdasarkan data realtime"""
+    try:
+        ctx, mark = get_ctx(coin)
+        if not ctx:
+            return None, None
+        
+        funding = get_funding_pct(ctx)
+        oi_usd = get_oi_usd(ctx, mark)
+        
+        # Ambil OI sebelumnya dari history
+        oi_prev = OI_HISTORY.get(coin, oi_usd)
+        oi_change = ((oi_usd - oi_prev) / oi_prev * 100) if oi_prev > 0 else 0
+        OI_HISTORY[coin] = oi_usd
+        
+        ob_delta = get_ob_delta(coin)
+        
+        # Logika prediksi sederhana
+        if funding > 0.05 and oi_change < -10:
+            direction = "bearish"
+            target = mark * 0.98
+            confidence = 75
+            reason = "Funding panas tapi OI turun. Kayaknya bakal koreksi."
+        elif funding < -0.05 and oi_change > 10:
+            direction = "bullish"
+            target = mark * 1.02
+            confidence = 75
+            reason = "Funding dingin tapi OI naik. Potensi short squeeze."
+        elif ob_delta > 30:
+            direction = "bullish"
+            target = mark * 1.015
+            confidence = 65
+            reason = "OB Delta gede banget. Banyak yang beli."
+        elif ob_delta < -30:
+            direction = "bearish"
+            target = mark * 0.985
+            confidence = 65
+            reason = "OB Delta negatif gede. Banyak yang jual."
+        elif abs(funding) < 0.01 and abs(oi_change) < 5:
+            direction = "sideways"
+            target = mark
+            confidence = 80
+            reason = "Semua indikator flat. Lagi bingung nih market."
+        elif funding > 0.02:
+            direction = "bearish"
+            target = mark * 0.99
+            confidence = 60
+            reason = "Funding positif, banyak yang long. Waspada."
+        elif funding < -0.02:
+            direction = "bullish"
+            target = mark * 1.01
+            confidence = 60
+            reason = "Funding negatif, banyak yang short. Siap-siap."
+        else:
+            direction = "sideways"
+            target = mark
+            confidence = 70
+            reason = "Gaada sinyal kuat. Lagi santai."
+        
+        return {
+            "direction": direction,
+            "target": target,
+            "confidence": confidence,
+            "reason": reason,
+            "price": mark,
+            "funding": funding,
+            "oi_change": oi_change,
+            "ob_delta": ob_delta
+        }, oi_change
+        
+    except Exception as e:
+        print(f"Prediction error: {e}")
+        return None, None
+
+def casual_session_report():
+    """Laporan casual per session + prediksi"""
+    try:
+        jam = get_wib_hour()
+        
+        # Tentukan session
+        if 8 <= jam < 15:
+            session = "ASIA"
+            session_emoji = "🌏"
+        elif 15 <= jam < 20:
+            session = "LONDON"
+            session_emoji = "🇬🇧"
+        else:
+            session = "NY"
+            session_emoji = "🇺🇸"
+        
+        # Ambil data BTC untuk prediksi
+        pred_data, oi_change = get_casual_prediction("BTC")
+        if not pred_data:
+            return
+        
+        # Ambil variasi random
+        opening = random.choice(OPENINGS)
+        situation = random.choice(SITUATIONS[session])
+        
+        # Format harga dan target
+        price = pred_data['price']
+        target = pred_data['target']
+        funding = pred_data['funding']
+        ob_delta = pred_data['ob_delta']
+        
+        if pred_data['direction'] == "bullish":
+            direction_text = "bullish"
+            direction_emoji = "🟢"
+            direction_arrow = "naik"
+            if target > price:
+                target_pct = ((target - price) / price) * 100
+            else:
+                target_pct = 1.5
+        elif pred_data['direction'] == "bearish":
+            direction_text = "bearish"
+            direction_emoji = "🔴"
+            direction_arrow = "turun"
+            if target < price:
+                target_pct = ((price - target) / price) * 100
+            else:
+                target_pct = 1.5
+        else:
+            direction_text = "sideways"
+            direction_emoji = "⚪"
+            direction_arrow = "gerak ke samping"
+            target_pct = 0
+        
+        # Format funding
+        if funding > 0.03:
+            funding_text = f"funding +{funding:.3f}% (mulai panas 🔥)"
+        elif funding < -0.03:
+            funding_text = f"funding {funding:.3f}% (dingin ❄️)"
+        else:
+            funding_text = f"funding {funding:.3f}% (normal)"
+        
+        # Format OB Delta
+        if ob_delta > 15:
+            ob_text = f"OB +{ob_delta:.0f}% (buyer dominan 🟢)"
+        elif ob_delta < -15:
+            ob_text = f"OB {ob_delta:.0f}% (seller dominan 🔴)"
+        else:
+            ob_text = f"OB {ob_delta:.0f}% (seimbang)"
+        
+        teks = f"""📊 {opening} • {get_wib()}
+━━━━━━━━━━━━━━━━━━━━━━
+{session_emoji} {situation}
+
+📡 Kondisi BTC sekarang:
+Harga: ${price:,.0f}
+Funding: {funding_text}
+{ob_text}
+
+🔮 Ramalan gw:
+{pred_data['reason']}
+Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}
+Keyakinan gw: {pred_data['confidence']}%
+
+💡 Saran gw:
+{
+    "cari setup LONG" if pred_data['direction'] == "bullish" else
+    "cari setup SHORT" if pred_data['direction'] == "bearish" else
+    "range trading aja, jangan FOMO breakout"
+}
+
+📌 {
+    f"Support: ${target - 500:,.0f} | Resistance: ${target + 500:,.0f}" if pred_data['direction'] == "sideways" else
+    f"Target: ${target:,.0f} | Stop loss: ${price + 500:,.0f}" if pred_data['direction'] == "bullish" else
+    f"Target: ${target:,.0f} | Stop loss: ${price - 500:,.0f}"
+}
+
+💀 Ini cuma prediksi ya. Ga 100% akurat. 
+Tetep pake risk management!"""
+        
+        # Simpan prediksi ke history
+        history = load_predictions()
+        history["predictions"].append({
+            "time": datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S"),
+            "session": session,
+            "direction": pred_data['direction'],
+            "target": target,
+            "confidence": pred_data['confidence'],
+            "price_at_prediction": price
+        })
+        # Keep last 50 predictions only
+        if len(history["predictions"]) > 50:
+            history["predictions"] = history["predictions"][-50:]
+        save_predictions(history)
+        
+        bot.send_message(USER_ID, teks)
+        
+    except Exception as e:
+        print(f"Casual report error: {e}")
+        bot.send_message(USER_ID, f"❌ Error laporan: {str(e)[:100]}")
+
+def evaluate_predictions():
+    """Evaluasi prediksi sebelumnya"""
+    try:
+        history = load_predictions()
+        if len(history["predictions"]) < 2:
+            return
+        
+        # Ambil prediksi terakhir
+        last_pred = history["predictions"][-2] if len(history["predictions"]) >= 2 else None
+        if not last_pred:
+            return
+        
+        # Ambil harga sekarang
+        mids = info.all_mids()
+        current_price = float(mids.get("BTC", 0))
+        if current_price == 0:
+            return
+        
+        predicted_dir = last_pred["direction"]
+        predicted_target = last_pred["target"]
+        pred_time = last_pred["time"]
+        
+        # Evaluasi
+        if predicted_dir == "bullish":
+            correct_dir = current_price > last_pred["price_at_prediction"]
+        elif predicted_dir == "bearish":
+            correct_dir = current_price < last_pred["price_at_prediction"]
+        else:
+            correct_dir = abs(current_price - last_pred["price_at_prediction"]) < 500
+        
+        # Hitung skor
+        if predicted_dir == "sideways":
+            score = 80 if correct_dir else 40
+        else:
+            target_achieved = abs(current_price - predicted_target) / predicted_target * 100 < 1.0
+            score = 70 if correct_dir else 30
+            if target_achieved:
+                score += 10
+        
+        # Format output
+        if correct_dir:
+            direction_result = "✅ BENER"
+        else:
+            direction_result = "❌ SALAH"
+        
+        teks = f"""📊 Evaluasi Prediksi
+━━━━━━━━━━━━━━━━━━━━━━
+🔮 Waktu prediksi: {pred_time}
+Gw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}
+
+📈 Kenyataan:
+Harga sekarang: ${current_price:,.0f}
+{
+    f"Selisih: ${abs(current_price - predicted_target):,.0f}" if predicted_dir != "sideways" else 
+    f"Gerak: {current_price - last_pred['price_at_prediction']:+.0f}"
+}
+
+📊 Nilai: {score}/100
+Arah: {direction_result}
+
+💡 Yang gw pelajari:
+{
+    "Prediksi gw bener. Lumayan lah." if correct_dir else 
+    "Wah meleset. Ada faktor yang ga keitung kayaknya."
+}
+
+📈 Update: {"/warroom BTC" if score < 60 else "Gw masih percaya sama data."}"""
+        
+        # Update stats
+        stats = history.get("stats", {"total": 0, "correct": 0})
+        stats["total"] += 1
+        if correct_dir:
+            stats["correct"] += 1
+        history["stats"] = stats
+        save_predictions(history)
+        
+        bot.send_message(USER_ID, teks)
+        
+    except Exception as e:
+        print(f"Evaluation error: {e}")
+
+def prediction_stats(message):
+    """Statistik akurasi prediksi"""
+    history = load_predictions()
+    stats = history.get("stats", {"total": 0, "correct": 0})
+    
+    total = stats["total"]
+    correct = stats["correct"]
+    accuracy = (correct / total * 100) if total > 0 else 0
+    
+    teks = f"""📊 STATISTIK PREDIKSI
+━━━━━━━━━━━━━━━━━━━━━━
+Total prediksi: {total} kali
+Bener arahnya: {correct} kali ({accuracy:.0f}%)
+
+💡 Akurasi: {
+    "Lumayan bagus" if accuracy > 65 else
+    "Masih belajar" if accuracy > 50 else
+    "Payah, butuh perbaikan"
+}
+
+🎯 /warroom BTC untuk analisis terkini"""
+    
+    bot.send_message(message.chat.id, teks)
+
+# Command manual
+@bot.message_handler(commands=['reportcasual'])
+def casual_cmd(message):
+    casual_session_report()
+
+@bot.message_handler(commands=['prediksi'])
+def prediksi_stats_cmd(message):
+    prediction_stats(message)
+    
+
 # ========== MOOD ==========
 @bot.message_handler(commands=['mood'])
 def market_mood(message):
@@ -3429,6 +3793,8 @@ def run_scheduler():
     global SNIPER_ALL_COIN, TEMEN_MODE, TEMEN_LAST_RUN
     last_divergence_check = 0
     last_cvd_check = 0
+    last_casual_report = 0
+    last_evaluation = 0
     
     while True:
         try:
@@ -3443,6 +3809,15 @@ def run_scheduler():
             if now - last_cvd_check >= 3600:
                 check_cvd_divergence()
                 last_cvd_check = now
+              # Casual report tiap 4 jam (14400 detik)
+            if now - last_casual_report >= 14400:
+                casual_session_report()
+                last_casual_report = now
+            
+            # Evaluasi tiap 4 jam juga, 2 jam setelah report (biar ga bareng)
+            if now - last_evaluation >= 14400 and (now - last_casual_report) > 7200:
+                evaluate_predictions()
+                last_evaluation = now
             
             # ... sisanya tetap sama
                 
