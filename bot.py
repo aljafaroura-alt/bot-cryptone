@@ -3247,10 +3247,10 @@ def casual_session_report():
             ob_text = f"OB {ob_delta:.0f}% (seimbang)"
         
         # Bangun teks output
-        teks = f"{opening}|{get_wib()}\n"
+        teks = f"{opening} |{get_wib()}\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"{session_emoji}{situation}\n\n"
-        teks += "📡 Kondisi BTC sekarang:\n"
+        teks += "📡 Kondisi BTC now:\n"
         teks += f"Harga: ${price:,.0f}\n"
         teks += f"Funding: {funding_text}\n"
         teks += f"{ob_text}\n\n"
@@ -3260,11 +3260,14 @@ def casual_session_report():
         teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
         teks += "💡 Saran gw:\n"
         teks += f"{saran}\n\n"
-        teks += f"📌 {tp_text}\n"
+        teks += f"📌{tp_text}\n"
+        
         if sl_text:
-            teks += f"   {sl_text}\n"
+           teks += f" | {sl_text}\n"
+            
         teks += "\n💀 Ini cuma prediksi ya. Ga 100% akurat.\n"
         teks += "Tetep pake risk management!"
+        teks += "⚠️DYOR!"
         
         # Simpan prediksi ke history
         history = load_predictions()
