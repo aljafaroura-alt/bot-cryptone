@@ -317,6 +317,47 @@ def check_divergence():
     except Exception as e:
         print(f"Divergence error: {e}")
 
+
+def get_session_analysis():
+    jam = get_wib_hour()
+    
+    if 8 <= jam < 15:
+        return {
+            "name": "ASIA",
+            "emoji": "🌏",
+            "vol": "rendah",
+            "karakter": "sideways, suka tipu-tipu",
+            "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
+            "saran": "Range trading aja. Jangan FOMO breakout."
+        }
+    elif 15 <= jam < 20:
+        return {
+            "name": "LONDON",
+            "emoji": "🇬🇧",
+            "vol": "sedang",
+            "karakter": "mulai rame, ada tren",
+            "pembuka": "🌇 Sore-sore mulai rame nih",
+            "saran": "Ikut breakout kalo udah konfirmasi."
+        }
+    elif 20 <= jam < 24:
+        return {
+            "name": "NY",
+            "emoji": "🇺🇸",
+            "vol": "liar",
+            "karakter": "paling rame, suka reversal",
+            "pembuka": "🌙 Malam-malam, ini waktunya whale bermain",
+            "saran": "Hati-hati FOMO. Cari sinyal reversal."
+        }
+    else:  # jam 0-7
+        return {
+            "name": "ASIA",
+            "emoji": "🌏",
+            "vol": "rendah",
+            "karakter": "sepi, market masih ngantuk",
+            "pembuka": "🌙 Masih tengah malam, Asia mulai gerak",
+            "saran": "Range trading kecil. Jangan berani-berani."
+        }
+
 # ========== CVD DIVERGENCE ==========
 _cvd_cache = {}
 
@@ -3125,18 +3166,20 @@ def casual_session_report():
     try:
         jam = get_wib_hour()
         
-        # Tentukan session berdasarkan jam (GAK BAKAL SALAH)
         if 8 <= jam < 15:
             session = "ASIA"
             session_emoji = "🌏"
         elif 15 <= jam < 20:
             session = "LONDON"
             session_emoji = "🇬🇧"
-        else:
+        elif 20 <= jam < 24:
             session = "NY"
             session_emoji = "🇺🇸"
+        else:  # jam 0-7
+            session = "ASIA"
+            session_emoji = "🌏"
         
-        # Ambil opening random sesuai session (OTOMATIS SORE UNTUK LONDON, MALEM UNTUK NY)
+        # Ambil opening random sesuai session
         opening = random.choice(OPENINGS_BY_SESSION[session])
         
         # Ambil situasi random sesuai session
@@ -3147,6 +3190,8 @@ def casual_session_report():
         if not pred_data:
             bot.send_message(USER_ID, "❌ Gagal ambil data untuk prediksi")
             return
+        
+        # Lanjutkan kode Anda di sini...
         
         price = pred_data['price']
         target = pred_data['target']
