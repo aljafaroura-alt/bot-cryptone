@@ -3260,14 +3260,13 @@ def casual_session_report():
         teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
         teks += "💡 Saran gw:\n"
         teks += f"{saran}\n\n"
-        teks += f"📌{tp_text}\n"
+        teks += f"📌 {tp_text}\n"
         
         if sl_text:
-           teks += f" | {sl_text}\n"
+           teks += f"| {sl_text}\n"
             
-        teks += "\n💀 Ini cuma prediksi ya. Ga 100% akurat.\n"
-        teks += "Tetep pake risk management!"
-        teks += "⚠️DYOR!"
+        teks += "\n💀 DYOR ya. Ga 100% akurat.\n"
+        teks += "maintain risk management"
         
         # Simpan prediksi ke history
         history = load_predictions()
