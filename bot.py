@@ -4514,8 +4514,7 @@ def run_scheduler():
                         TEMEN_LAST_RUN = now
                     except Exception as e:
                         print(f"Temen error: {e}")
-
-            # ========== 8. SNIPER MODE (ADAPTIVE) ==========
+# ========== 8. SNIPER MODE (ADAPTIVE) ==========
 if SNIPER_ALL_COIN:
     cfg, current_regime = get_adaptive_sniper_config(SNIPER_MODE)
     all_mids = info.all_mids()
@@ -4572,14 +4571,13 @@ if SNIPER_ALL_COIN:
                 return sl, sl_p, tp, tp_p, rr
             
             # ===== LONG SETUP (regime-aware) =====
-            long_delta_min  = cfg['delta_min'] * (0.8 if current_regime == "TRENDING_UP"   else 1.0)
+            long_delta_min = cfg['delta_min'] * (0.8 if current_regime == "TRENDING_UP" else 1.0)
             short_delta_min = cfg['delta_min'] * (0.8 if current_regime == "TRENDING_DOWN" else 1.0)
 
             is_long = (wall_bid >= cfg['wall_min'] and
                       delta >= long_delta_min and
                       funding <= cfg['funding_max'])
 
-            # ===== SHORT SETUP (regime-aware) =====
             is_short = (wall_ask >= cfg['wall_min'] and
                        delta <= -short_delta_min and
                        funding >= -cfg['funding_max'])
@@ -4615,11 +4613,10 @@ if SNIPER_ALL_COIN:
                 alert += f"⚖️ R:R   : 1:{rr:.1f}"
             
             if alert:
-                # Track untuk learning engine — evaluasi 2 jam kemudian
                 ind_data = {
                     "funding_strong": abs(funding) > 0.02,
-                    "ob_strong":      abs(delta)   > 20,
-                    "wall_strong":    wall_bid > 500_000 if is_long else wall_ask > 500_000
+                    "ob_strong": abs(delta) > 20,
+                    "wall_strong": wall_bid > 500_000 if is_long else wall_ask > 500_000
                 }
                 track_signal_entry(coin, "LONG" if is_long else "SHORT", price, ind_data)
                 send_to_both(alert)
@@ -4634,7 +4631,7 @@ if SNIPER_ALL_COIN:
             time.sleep(1)
             continue
 
-time.sleep(10)                   
+time.sleep(10)
             
 # ========== STATUS COMMAND ==========
 @bot.message_handler(commands=['status'])
