@@ -60,7 +60,7 @@ def handle_strangers(message):
         "⚡ <b>Bot ini private.</b>\n\n"
         "Sinyal crypto gratis di\n"
         "👉 @oncryptone\n\n"
-        "Follow sekarang! 🔥",
+        "Follow sekarang! 🎢",
         parse_mode='HTML')
 # ────────────────────────────────────────────────────────────
 
@@ -611,7 +611,7 @@ def ultimate_predator_scan():
             else:
                 target_display = "🎯 Range trade"
             
-            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
+            teks = f"""👹 ULTIMATE PREDATOR • {pred['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
 {pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
@@ -626,8 +626,7 @@ OB: {pred['ob_delta']:+.0f}% | CVD: {pred['cvd_change']:+.0f}M
 Vol: {pred['vol_spike']:.1f}x | OI: {pred['oi_change']:+.0f}%
 Funding: {pred['funding']:+.4f}% | Momentum: {pred['momentum']:+.2f}%/m
 
-💀 FIRE!
-🎯 /warroom {pred['coin']} | /entry {pred['coin']}"""
+💀 FIRE!"""
             
             send_to_both(teks)
             time.sleep(1)
