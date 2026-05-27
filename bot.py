@@ -4576,68 +4576,14 @@ def run_scheduler():
                         is_short = (wall_ask >= cfg['wall_min'] and
                                    delta <= -short_delta_min and
                                    funding >= -cfg['funding_max'])
-                        
+
                         def calc_sl_tp_long():
-                            if bid_wall_px > 0 and bid_wall_px < price:
-                                sl = bid_wall_px * 0.998
-                                sl_p = abs((price - sl) / price * 100)
-                                if sl_p < 0.3 or sl_p > 5.0:
-                                    sl_p = sl_pct_fallback
-                                    sl = price * (1 - sl_p / 100)
-                            else:
-                                sl_p = sl_pct_fallback
-                                sl = price * (1 - sl_p / 100)
-                            
-                            if ask_wall_px > 0 and ask_wall_px > price:
-                                tp = ask_wall_px * 0.999
-                                tp_p = abs((tp - price) / price * 100)
-                                if tp_p < 0.5 or tp_p > 10.0:
-                                    tp_p = tp_pct_fallback
-                                    tp = price * (1 + tp_p / 100)
-                            else:
-                                tp_p = tp_pct_fallback
-                                tp = price * (1 + tp_p / 100)
-                            
-                            rr = tp_p / sl_p if sl_p > 0 else 0
-                            if rr < 1.5:
-                                sl_p = sl_pct_fallback
-                                tp_p = tp_pct_fallback
-                                sl = price * (1 - sl_p / 100)
-                                tp = price * (1 + tp_p / 100)
-                                rr = tp_p / sl_p
-                            
+                            sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "LONG")
                             return sl, sl_p, tp, tp_p, rr
-                        
-                        def calc_sl_tp_short():
-                            if ask_wall_px > 0 and ask_wall_px > price:
-                                sl = ask_wall_px * 1.002
-                                sl_p = abs((sl - price) / price * 100)
-                                if sl_p < 0.3 or sl_p > 5.0:
-                                    sl_p = sl_pct_fallback
-                                    sl = price * (1 + sl_p / 100)
-                            else:
-                                sl_p = sl_pct_fallback
-                                sl = price * (1 + sl_p / 100)
-                            
-                            if bid_wall_px > 0 and bid_wall_px < price:
-                                tp = bid_wall_px * 1.001
-                                tp_p = abs((price - tp) / price * 100)
-                                if tp_p < 0.5 or tp_p > 10.0:
-                                    tp_p = tp_pct_fallback
-                                    tp = price * (1 - tp_p / 100)
-                            else:
-                                tp_p = tp_pct_fallback
-                                tp = price * (1 - tp_p / 100)
-                            
-                            rr = tp_p / sl_p if sl_p > 0 else 0
-                            if rr < 1.5:
-                                sl_p = sl_pct_fallback
-                                tp_p = tp_pct_fallback
-                                sl = price * (1 + sl_p / 100)
-                                tp = price * (1 - tp_p / 100)
-                                rr = tp_p / sl_p
-                            
-                            return sl, sl_p, tp, tp_p, rr
+
+                      def calc_sl_tp_short():
+                          sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "SHORT")
+                           return sl, sl_p, tp, tp_p, rr
                         
                         alert = None
                         
