@@ -4138,52 +4138,84 @@ def start_confluence_scanner():
     conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
     conf_thread.start()
     print("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
-
-
-#Main loop dan scheduler
+    
+# ========== MAIN LOOP DAN SCHEDULER ==========
 # ========== MAIN SCHEDULER ==========
 def run_scheduler():
     global SNIPER_ALL_COIN, TEMEN_MODE, TEMEN_LAST_RUN
     last_divergence_check = 0
     last_cvd_check = 0
     last_casual_report = 0
-    last_evaluation = 0  
+    last_evaluation = 0
     last_smart_money_check = 0
-    
+
     while True:
         try:
             schedule.run_pending()
             now = time.time()
-            
+
             # ========== 1. DIVERGENCE CHECK (30 menit) ==========
             if now - last_divergence_check >= 1800:
                 check_divergence()
                 last_divergence_check = now
-            
+
             # ========== 2. CVD CHECK (1 jam) ==========
             if now - last_cvd_check >= 3600:
                 check_cvd_divergence()
                 last_cvd_check = now
-            
+
             # ========== 3. CASUAL REPORT (4 jam) ==========
             if now - last_casual_report >= 14400:
                 casual_session_report()
                 last_casual_report = now
-            
+
             # ========== 4. EVALUASI (4 jam, offset) ==========
             if now - last_evaluation >= 14400 and (now - last_casual_report) > 7200:
                 evaluate_predictions()
                 last_evaluation = now
 
-            # ========== SMART MONEY FLOW (tiap 45 menit) ==========
-             if now - last_smart_money_check >= 2700:
-               check_smart_money_rotation()
-               last_smart_money_check = now
+            # ========== 5. SMART MONEY FLOW (ADAPTIF) ==========
+            # Hitung interval berdasarkan volatilitas market
+            flow_interval = 3600  # default 1 jam
+
+            # Ambil volatilitas dari fungsi yang sudah ada
+            try:
+                data = info.meta_and_asset_ctxs()
+                changes = []
+                for asset, ctx in zip(data[0]["universe"][:10], data[1][:10]):
+                    change = abs(get_change(ctx))
+                    if change > 0:
+                        changes.append(change)
+
+                if changes:
+                    avg_change = sum(changes) / len(changes)
+                    if avg_change > 3:
+                        flow_interval = 1800   # 30 menit (HIGH)
+                    elif avg_change > 1.5:
+                        flow_interval = 3600   # 1 jam (MEDIUM)
+                    else:
+                        flow_interval = 7200   # 2 jam (LOW)
+            except:
+                flow_interval = 3600  # fallback 1 jam
+
+            if now - last_smart_money_check >= flow_interval:
+                check_smart_money_rotation()
+                last_smart_money_check = now
+
+            # ========== 6. TEMEN MODE ==========
+            if TEMEN_MODE:
+                if now - TEMEN_LAST_RUN >= 300:
+                    try:
+                        run_temen_scan(USER_ID)
+                        TEMEN_LAST_RUN = now
+                    except Exception as e:
+                        print(f"Temen error: {e}")
+
             # ========== 7. SNIPER MODE ==========
             if SNIPER_ALL_COIN:
                 cfg = SNIPER_CONFIG[SNIPER_MODE]
                 all_mids = info.all_mids()
-                
+
                 try:
                     meta_data = info.meta_and_asset_ctxs()
                     meta_map = {
@@ -4194,9 +4226,9 @@ def run_scheduler():
                     print(f"Sniper meta error: {e}")
                     time.sleep(30)
                     continue
-                
+
                 coins = [c for c in all_mids.keys() if c in meta_map][:60]
-                
+
                 for coin in coins:
                     try:
                         now_coin = time.time()
@@ -4226,12 +4258,12 @@ def run_scheduler():
                         change = get_change(ctx)
                         sl_pct_fallback, tp_pct_fallback = get_volatility_params(coin)
                         
-                        # LONG SETUP
+                        # ===== LONG SETUP =====
                         is_long = (wall_bid >= cfg['wall_min'] and 
                                   delta >= cfg['delta_min'] and 
                                   funding <= cfg['funding_max'])
                         
-                        # SHORT SETUP
+                        # ===== SHORT SETUP =====
                         is_short = (wall_ask >= cfg['wall_min'] and 
                                    delta <= -cfg['delta_min'] and 
                                    funding >= -cfg['funding_max'])
@@ -4345,7 +4377,7 @@ def run_scheduler():
             
         except Exception as e:
             print(f"Scheduler error: {e}")
-            time.sleep(60)
+            time.sleep(60)                                            
 # ========== STATUS COMMAND ==========
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
