@@ -133,6 +133,54 @@ def get_volatility_params(coin):
 
 WIB = timezone(timedelta(hours=7))
 
+# ========== ADAPTIVE SL/TP ==========
+def get_adaptive_sltp(coin, price, direction="LONG"):
+    """
+    Hitung SL/TP berdasarkan ATR (dynamic) dengan fallback ke volatility profile
+    Returns: (sl_price, sl_pct, tp_price, tp_pct, rr)
+    """
+    sl_pct_fallback, tp_pct_fallback = get_volatility_params(coin)
+    
+    # Coba hitung ATR
+    atr = get_atr(coin)
+    
+    if atr and atr > 0:
+        # ATR-based dynamic SL/TP
+        atr_pct = (atr / price) * 100
+        
+        # SL: 1.5 x ATR (wajar)
+        # TP: 2.5 x ATR (minimal RR 1:1.6)
+        sl_pct = max(0.3, min(3.0, atr_pct * 1.5))
+        tp_pct = max(0.5, min(6.0, atr_pct * 2.5))
+        
+        # Pastikan RR minimal 1:1.5
+        if tp_pct / sl_pct < 1.5:
+            tp_pct = sl_pct * 1.8
+        
+        rr = tp_pct / sl_pct
+        
+        if direction == "LONG":
+            sl_price = price * (1 - sl_pct / 100)
+            tp_price = price * (1 + tp_pct / 100)
+        else:
+            sl_price = price * (1 + sl_pct / 100)
+            tp_price = price * (1 - tp_pct / 100)
+        
+        return sl_price, sl_pct, tp_price, tp_pct, rr
+    else:
+        # Fallback ke volatility profile
+        sl_pct = sl_pct_fallback
+        tp_pct = tp_pct_fallback
+        rr = tp_pct / sl_pct
+        
+        if direction == "LONG":
+            sl_price = price * (1 - sl_pct / 100)
+            tp_price = price * (1 + tp_pct / 100)
+        else:
+            sl_price = price * (1 + sl_pct / 100)
+            tp_price = price * (1 - tp_pct / 100)
+        
+        return sl_price, sl_pct, tp_price, tp_pct, rr
 # ========== NARRATIVES ==========
 NARRATIVES = {
     "L1": ["BTC","ETH","SOL","AVAX","SUI","APT","SEI","INJ","TIA","NEAR","FTM","ONE","EGLD","KAVA","ROSE","CELO","MOVR","TON","ALGO","ADA","XRP","XLM","VET","HBAR"],
@@ -396,7 +444,7 @@ def get_all_hyperliquid_perps():
         return PERPS_CACHE or ["BTC", "ETH", "SOL"]
 
 def calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq_size=0, long_liq_size=0):
-    """Unified scoring dengan adaptive learning weights"""
+    """Unified scoring dengan adaptive learning weights + regime bonus"""
     long_score = 0
     short_score = 0
 
@@ -405,7 +453,7 @@ def calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq_si
     ww = LEARNING_WEIGHTS.get("wall", 1.0)
     lw = LEARNING_WEIGHTS.get("liquidity", 1.0)
 
-    # 1. FUNDING (dengan learning weight)
+    # 1. FUNDING
     if funding > 0.05:
         short_score += int(30 * fw)
     elif funding > 0.02:
@@ -422,7 +470,7 @@ def calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq_si
         long_score += 5
         short_score += 5
 
-    # 2. OB DELTA (dengan learning weight, batasi 75%)
+    # 2. OB DELTA
     ob_delta_limited = max(-75, min(75, ob_delta))
 
     if ob_delta_limited > 30:
@@ -442,7 +490,7 @@ def calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq_si
     elif ob_delta_limited < -5:
         short_score += int(10 * ow)
 
-    # 3. WHALE WALLS (dengan learning weight)
+    # 3. WHALE WALLS
     if bid_wall_usd >= 1_000_000:
         long_score += int(20 * ww)
     elif bid_wall_usd >= 500_000:
@@ -457,7 +505,7 @@ def calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq_si
     elif ask_wall_usd < 100_000 and ask_wall_usd > 0:
         long_score += 5
 
-    # 4. LIQUIDATION (dengan learning weight)
+    # 4. LIQUIDATION
     if short_liq_size > 30:
         short_score += int(15 * lw)
     elif short_liq_size > 15:
@@ -466,6 +514,19 @@ def calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq_si
         long_score += int(15 * lw)
     elif long_liq_size > 15:
         long_score += int(10 * lw)
+
+    # 5. MARKET REGIME BONUS (BARU!)
+    regime = get_market_regime()
+    if regime == "TRENDING_UP":
+        long_score += 10
+        short_score -= 5
+    elif regime == "TRENDING_DOWN":
+        short_score += 10
+        long_score -= 5
+    elif regime == "VOLATILE":
+        long_score -= 5
+        short_score -= 5
+    # RANGING: no change
 
     return long_score, short_score
 
@@ -1526,9 +1587,20 @@ def entry(message):
         teks += "─────────────────────────────────\n"
         
         if bias == "SHORT" and score >= 50:
-            # BATASI SL MAX 1% DAN TP MAX 2%
-            sl_p = short_liq['price'] * 1.002 if ask_wall_px == 0 else min(short_liq['price'], ask_wall_px) * 1.002
-            tp_p = mark * 0.98  # TP -2%
+          # Adaptive SL/TP based on ATR
+          sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, "SHORT")
+    
+    # Force minimal SL 0.3%
+    if sl_pct < 0.3:
+        sl_p = mark * 1.003
+        sl_pct = 0.3
+        rr = tp_pct / sl_pct
+    
+    teks += f"{emoji} SHORT SETUP • Score {score}\n\n"
+    teks += f"ENTRY : {fmt_price(mark)}\n"
+    teks += f"SL    : {fmt_price(sl_p)} (+{sl_pct:.2f}%)\n"
+    teks += f"TP    : {fmt_price(tp_p)} (-{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
+    teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
             # JANGAN BIARKAN SL TERLALU DEKAT (< 0.3%)
             risk_pct = abs(sl_p - mark) / mark * 100
@@ -1546,23 +1618,19 @@ def entry(message):
             teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         elif bias == "LONG" and score >= 50:
-            # BATASI SL MAX 1% DAN TP MAX 2%
-            sl_p = long_liq['price'] * 0.998 if bid_wall_px == 0 else max(long_liq['price'], bid_wall_px) * 0.998
-            tp_p = mark * 1.02  # TP +2%
-            
-            risk_pct = abs(mark - sl_p) / mark * 100
-            if risk_pct < 0.3:
-                sl_p = mark * 0.997  # force SL 0.3%
-                risk_pct = 0.3
-            
-            reward_pct = abs(tp_p - mark) / mark * 100
-            rr = reward_pct / risk_pct if risk_pct > 0 else 0
-            
-            teks += f"{emoji} LONG SETUP • Score {score}\n\n"
-            teks += f"ENTRY : {fmt_price(mark)}\n"
-            teks += f"SL    : {fmt_price(sl_p)} (-{risk_pct:.2f}%)\n"
-            teks += f"TP    : {fmt_price(tp_p)} (+{reward_pct:.2f}%) | RR 1:{rr:.1f}\n"
-            teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
+    # Adaptive SL/TP based on ATR
+    sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, "LONG")
+    
+    if sl_pct < 0.3:
+        sl_p = mark * 0.997
+        sl_pct = 0.3
+        rr = tp_pct / sl_pct
+    
+    teks += f"{emoji} LONG SETUP • Score {score}\n\n"
+    teks += f"ENTRY : {fmt_price(mark)}\n"
+    teks += f"SL    : {fmt_price(sl_p)} (-{sl_pct:.2f}%)\n"
+    teks += f"TP    : {fmt_price(tp_p)} (+{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
+    teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         else:
             teks += f"{emoji} {bias} • Score {score}\n"
@@ -4672,7 +4740,8 @@ def run_scheduler():
             
         except Exception as e:
             print(f"Scheduler error: {e}")
-            time.sleep(60)                                            
+            time.sleep(60)     
+            
 # ========== STATUS COMMAND ==========
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
@@ -4909,6 +4978,28 @@ def regime_cmd(message):
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 
+@bot.message_handler(commands=['atr'])
+def atr_cmd(message):
+    """Cek ATR value untuk coin (test adaptive SL/TP)"""
+    try:
+        coin = get_coin(message)
+        atr = get_atr(coin)
+        price = float(info.all_mids().get(coin, 0))
+        
+        if atr and price > 0:
+            atr_pct = (atr / price) * 100
+            teks = f"📊 ATR • {coin}\n─────────────────\n"
+            teks += f"💰 Harga: ${price:,.2f}\n"
+            teks += f"📈 ATR (15m): ${atr:.2f}\n"
+            teks += f"📊 ATR %: {atr_pct:.2f}%\n"
+            teks += "─────────────────────────────────\n"
+            teks += f"💡 Adaptive SL: {atr_pct * 1.5:.2f}%\n"
+            teks += f"💡 Adaptive TP: {atr_pct * 2.5:.2f}%\n"
+            bot.reply_to(message, teks)
+        else:
+            bot.reply_to(message, f"❌ Gagal ambil ATR untuk {coin}")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 # ========== MAIN ==========
 if __name__ == "__main__":
     bot.remove_webhook()
