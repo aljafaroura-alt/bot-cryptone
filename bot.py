@@ -4138,9 +4138,9 @@ def start_confluence_scanner():
     conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
     conf_thread.start()
     print("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
-    
+
+
 #Main loop dan scheduler
-# ========== MAIN SCHEDULER ==========
 # ========== MAIN SCHEDULER ==========
 def run_scheduler():
     global SNIPER_ALL_COIN, TEMEN_MODE, TEMEN_LAST_RUN
@@ -4153,44 +4153,47 @@ def run_scheduler():
     while True:
         try:
             schedule.run_pending()
-            
             now = time.time()
+            
+            # ========== 1. DIVERGENCE CHECK (30 menit) ==========
             if now - last_divergence_check >= 1800:
                 check_divergence()
                 last_divergence_check = now
             
-            # CVD check tiap 1 jam (3600 detik)
+            # ========== 2. CVD CHECK (1 jam) ==========
             if now - last_cvd_check >= 3600:
                 check_cvd_divergence()
                 last_cvd_check = now
             
-            # Casual report tiap 4 jam (14400 detik)
+            # ========== 3. CASUAL REPORT (4 jam) ==========
             if now - last_casual_report >= 14400:
                 casual_session_report()
                 last_casual_report = now
             
-            # Evaluasi tiap 4 jam juga, 2 jam setelah report (biar ga bareng)
+            # ========== 4. EVALUASI (4 jam, offset) ==========
             if now - last_evaluation >= 14400 and (now - last_casual_report) > 7200:
                 evaluate_predictions()
                 last_evaluation = now
             
-# ========== SMART MONEY FLOW (tiap 1 jam) ==========
-if now - last_smart_money_check >= 3600:
-    check_smart_money_rotation()
-    last_smart_money_check = now                
-                        
+            # ========== 5. SMART MONEY FLOW (1 jam) ==========
+            if now - last_smart_money_check >= 3600:
+                check_smart_money_rotation()
+                last_smart_money_check = now
+            
+            # ========== 6. TEMEN MODE ==========
             if TEMEN_MODE:
-                now = time.time()
                 if now - TEMEN_LAST_RUN >= 300:
                     try:
                         run_temen_scan(USER_ID)
                         TEMEN_LAST_RUN = now
                     except Exception as e:
                         print(f"Temen error: {e}")
-                        
+            
+            # ========== 7. SNIPER MODE ==========
             if SNIPER_ALL_COIN:
                 cfg = SNIPER_CONFIG[SNIPER_MODE]
                 all_mids = info.all_mids()
+                
                 try:
                     meta_data = info.meta_and_asset_ctxs()
                     meta_map = {
@@ -4201,20 +4204,28 @@ if now - last_smart_money_check >= 3600:
                     print(f"Sniper meta error: {e}")
                     time.sleep(30)
                     continue
+                
                 coins = [c for c in all_mids.keys() if c in meta_map][:60]
+                
                 for coin in coins:
                     try:
-                        now = time.time()
-                        # Cooldown key per-coin per-mode biar ga bentrok antar mode
+                        now_coin = time.time()
                         cooldown_key = f"{coin}_{SNIPER_MODE}"
-                        if cooldown_key in last_entry_time and now - last_entry_time[cooldown_key] < cfg['cooldown']:
+                        
+                        if cooldown_key in last_entry_time and now_coin - last_entry_time[cooldown_key] < cfg['cooldown']:
                             continue
+                        
                         ctx = meta_map.get(coin)
-                        if not ctx: continue
+                        if not ctx:
+                            continue
+                        
                         mark = float(ctx.get("markPx") or 0)
-                        if mark == 0: continue
+                        if mark == 0:
+                            continue
+                        
                         if is_market_chaos(coin, cfg['chaos_pct']):
                             continue
+                        
                         delta = get_ob_delta(coin)
                         funding = get_funding_pct(ctx)
                         price = float(all_mids.get(coin, mark))
@@ -4224,17 +4235,17 @@ if now - last_smart_money_check >= 3600:
                         narrative = get_narrative(coin)
                         change = get_change(ctx)
                         sl_pct_fallback, tp_pct_fallback = get_volatility_params(coin)
-
-                        # ===== LONG SETUP =====
-                        is_long = (wall_bid >= cfg['wall_min'] and
-                                   delta >= cfg['delta_min'] and
-                                   funding <= cfg['funding_max'])
-
-                        # ===== SHORT SETUP =====
-                        is_short = (wall_ask >= cfg['wall_min'] and
-                                    delta <= -cfg['delta_min'] and
-                                    funding >= -cfg['funding_max'])
-
+                        
+                        # LONG SETUP
+                        is_long = (wall_bid >= cfg['wall_min'] and 
+                                  delta >= cfg['delta_min'] and 
+                                  funding <= cfg['funding_max'])
+                        
+                        # SHORT SETUP
+                        is_short = (wall_ask >= cfg['wall_min'] and 
+                                   delta <= -cfg['delta_min'] and 
+                                   funding >= -cfg['funding_max'])
+                        
                         def calc_sl_tp_long():
                             if bid_wall_px > 0 and bid_wall_px < price:
                                 sl = bid_wall_px * 0.998
@@ -4245,6 +4256,7 @@ if now - last_smart_money_check >= 3600:
                             else:
                                 sl_p = sl_pct_fallback
                                 sl = price * (1 - sl_p / 100)
+                            
                             if ask_wall_px > 0 and ask_wall_px > price:
                                 tp = ask_wall_px * 0.999
                                 tp_p = abs((tp - price) / price * 100)
@@ -4254,6 +4266,7 @@ if now - last_smart_money_check >= 3600:
                             else:
                                 tp_p = tp_pct_fallback
                                 tp = price * (1 + tp_p / 100)
+                            
                             rr = tp_p / sl_p if sl_p > 0 else 0
                             if rr < 1.5:
                                 sl_p = sl_pct_fallback
@@ -4261,8 +4274,9 @@ if now - last_smart_money_check >= 3600:
                                 sl = price * (1 - sl_p / 100)
                                 tp = price * (1 + tp_p / 100)
                                 rr = tp_p / sl_p
+                            
                             return sl, sl_p, tp, tp_p, rr
-
+                        
                         def calc_sl_tp_short():
                             if ask_wall_px > 0 and ask_wall_px > price:
                                 sl = ask_wall_px * 1.002
@@ -4273,6 +4287,7 @@ if now - last_smart_money_check >= 3600:
                             else:
                                 sl_p = sl_pct_fallback
                                 sl = price * (1 + sl_p / 100)
+                            
                             if bid_wall_px > 0 and bid_wall_px < price:
                                 tp = bid_wall_px * 1.001
                                 tp_p = abs((price - tp) / price * 100)
@@ -4282,6 +4297,7 @@ if now - last_smart_money_check >= 3600:
                             else:
                                 tp_p = tp_pct_fallback
                                 tp = price * (1 - tp_p / 100)
+                            
                             rr = tp_p / sl_p if sl_p > 0 else 0
                             if rr < 1.5:
                                 sl_p = sl_pct_fallback
@@ -4289,9 +4305,11 @@ if now - last_smart_money_check >= 3600:
                                 sl = price * (1 + sl_p / 100)
                                 tp = price * (1 - tp_p / 100)
                                 rr = tp_p / sl_p
+                            
                             return sl, sl_p, tp, tp_p, rr
-
+                        
                         alert = None
+                        
                         if is_long:
                             sl, sl_p, tp, tp_p, rr = calc_sl_tp_long()
                             alert = f"🦈 SMART MONEY LONG • {coin} [{SNIPER_MODE}]\n"
@@ -4305,6 +4323,7 @@ if now - last_smart_money_check >= 3600:
                             alert += f"🛑 SL    : {fmt_price(sl)} (-{sl_p:.1f}%)\n"
                             alert += f"✅ TP    : {fmt_price(tp)} (+{tp_p:.1f}%)\n"
                             alert += f"⚖️ R:R   : 1:{rr:.1f}"
+                        
                         elif is_short:
                             sl, sl_p, tp, tp_p, rr = calc_sl_tp_short()
                             alert = f"🦈 SMART MONEY SHORT • {coin} [{SNIPER_MODE}]\n"
@@ -4318,23 +4337,25 @@ if now - last_smart_money_check >= 3600:
                             alert += f"🛑 SL    : {fmt_price(sl)} (+{sl_p:.1f}%)\n"
                             alert += f"✅ TP    : {fmt_price(tp)} (-{tp_p:.1f}%)\n"
                             alert += f"⚖️ R:R   : 1:{rr:.1f}"
-
+                        
                         if alert:
                             send_to_both(alert)
                             print(f"ALERT SENT: {coin} [{SNIPER_MODE}] {'LONG' if is_long else 'SHORT'}")
-                            last_entry_time[cooldown_key] = now
+                            last_entry_time[cooldown_key] = now_coin
                             time.sleep(2)
+                        
                         time.sleep(0.3)
+                        
                     except Exception as e:
                         print(f"Error scan {coin}: {e}")
                         time.sleep(1)
                         continue
+            
             time.sleep(10)
+            
         except Exception as e:
-            print(f"Scanner error: {e}")
+            print(f"Scheduler error: {e}")
             time.sleep(60)
-
-
 # ========== STATUS COMMAND ==========
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
