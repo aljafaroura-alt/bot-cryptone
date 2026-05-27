@@ -4707,9 +4707,8 @@ def status_cmd(message):
     # Cek status alert background
     div_text = "✅ ON" if 'last_divergence_check' in globals() else "🟡 IDLE"
     cvd_text = "✅ ON" if 'last_cvd_check' in globals() else "🟡 IDLE"
-    
-    # Cek status smart money flow
     smart_text = "✅ ON" if 'last_smart_money_check' in globals() else "🟡 IDLE"
+    predator_text = "✅ ON" if 'last_predator_scan' in globals() else "🟡 IDLE"
     
     session_text = get_sesi()
     uptime = get_uptime()
@@ -4724,13 +4723,14 @@ def status_cmd(message):
 📡 Session   : {session_text}
 🕐 WIB       : {get_wib()}
 ─────────────────────────────────
-🕶️ SNIPER    : {sniper_text}
+🎯 SNIPER    : {sniper_text}
 👽 TEMEN     : {temen_text}
 ☠️ LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
+🦈 PREDATOR  : {predator_text}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
 ─────────────────────────────────
@@ -4782,7 +4782,7 @@ def liquidation_cluster(message):
 def smartflow_cmd(message):
     """Manual check smart money flow antar narrative"""
     try:
-        msg = bot.reply_to(message, "🧠 Scanning smart money flow...")
+        msg = bot.reply_to(message, "🕶️ Scanning smart money flow...")
         
         flow = get_narrative_flow()
         
@@ -4793,7 +4793,7 @@ def smartflow_cmd(message):
         # Urutkan dari inflow tertinggi ke outflow terbawah
         sorted_flow = sorted(flow.items(), key=lambda x: x[1]["oi_change"], reverse=True)
         
-        teks = f"🧠 SMART MONEY FLOW\n━━━━━━━━━━━━━━━━━━━━━━\n⏰ {get_wib()}\n\n"
+        teks = f"🦈 SMART MONEY FLOW\n━━━━━━━━━━━━━━━━━━━━━━\n⏰ {get_wib()}\n\n"
         
         for i, (name, data) in enumerate(sorted_flow[:8], 1):
             if data["oi_change"] > 0:
@@ -4817,7 +4817,6 @@ def smartflow_cmd(message):
         teks += "💡 +% = inflow (smart money masuk)\n"
         teks += "💡 -% = outflow (smart money keluar)\n"
         teks += "🔥 = trend menguat | ❄️ = trend melemah\n"
-        teks += "\n🎯 /warroom BTC untuk analisis"
         
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
         
