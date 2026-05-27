@@ -4141,13 +4141,14 @@ def start_confluence_scanner():
     
 #Main loop dan scheduler
 # ========== MAIN SCHEDULER ==========
+# ========== MAIN SCHEDULER ==========
 def run_scheduler():
     global SNIPER_ALL_COIN, TEMEN_MODE, TEMEN_LAST_RUN
     last_divergence_check = 0
     last_cvd_check = 0
     last_casual_report = 0
     last_evaluation = 0  
-    last_smart_money_check = 0   # ←      TAMBAHKAN INI
+    last_smart_money_check = 0
     
     while True:
         try:
@@ -4162,20 +4163,17 @@ def run_scheduler():
             if now - last_cvd_check >= 3600:
                 check_cvd_divergence()
                 last_cvd_check = now
-              # Casual report tiap 4 jam (14400 detik)
+            
+            # Casual report tiap 4 jam (14400 detik)
             if now - last_casual_report >= 14400:
                 casual_session_report()
                 last_casual_report = now
+            
             # Evaluasi tiap 4 jam juga, 2 jam setelah report (biar ga bareng)
             if now - last_evaluation >= 14400 and (now - last_casual_report) > 7200:
                 evaluate_predictions()
                 last_evaluation = now
-                        
-# ========== EVALUASI ==========
-if now - last_evaluation >= 14400 and (now - last_casual_report) > 7200:
-    evaluate_predictions()
-    last_evaluation = now
-
+            
 # ========== SMART MONEY FLOW (tiap 1 jam) ==========
 if now - last_smart_money_check >= 3600:
     check_smart_money_rotation()
