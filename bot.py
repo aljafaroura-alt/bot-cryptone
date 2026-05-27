@@ -4436,17 +4436,14 @@ def get_adaptive_sniper_config(mode):
         base["cooldown"] = max(60, int(base["cooldown"] * 0.8))
 
     return base, regime
-
-# ========== MAIN LOOP DAN SCHEDULER ==========
-# ========== MAIN SCHEDULER ==========
 def run_scheduler():
     global SNIPER_ALL_COIN, TEMEN_MODE, TEMEN_LAST_RUN
-    last_divergence_check  = 0
-    last_cvd_check         = 0
-    last_casual_report     = 0
-    last_evaluation        = 0
+    last_divergence_check = 0
+    last_cvd_check = 0
+    last_casual_report = 0
+    last_evaluation = 0
     last_smart_money_check = 0
-    last_learning_eval     = 0  # NEW: learning engine eval tiap 2 jam
+    last_learning_eval = 0
 
     while True:
         try:
@@ -4479,10 +4476,7 @@ def run_scheduler():
                 last_learning_eval = now
 
             # ========== 6. SMART MONEY FLOW (ADAPTIF) ==========
-            # Hitung interval berdasarkan volatilitas market
-            flow_interval = 3600  # default 1 jam
-
-            # Ambil volatilitas dari fungsi yang sudah ada
+            flow_interval = 3600
             try:
                 data = info.meta_and_asset_ctxs()
                 changes = []
@@ -4490,17 +4484,16 @@ def run_scheduler():
                     change = abs(get_change(ctx))
                     if change > 0:
                         changes.append(change)
-
                 if changes:
                     avg_change = sum(changes) / len(changes)
                     if avg_change > 3:
-                        flow_interval = 1800   # 30 menit (HIGH)
+                        flow_interval = 1800
                     elif avg_change > 1.5:
-                        flow_interval = 3600   # 1 jam (MEDIUM)
+                        flow_interval = 3600
                     else:
-                        flow_interval = 7200   # 2 jam (LOW)
+                        flow_interval = 7200
             except:
-                flow_interval = 3600  # fallback 1 jam
+                flow_interval = 3600
 
             if now - last_smart_money_check >= flow_interval:
                 check_smart_money_rotation()
@@ -4514,124 +4507,126 @@ def run_scheduler():
                         TEMEN_LAST_RUN = now
                     except Exception as e:
                         print(f"Temen error: {e}")
-# ========== 8. SNIPER MODE (ADAPTIVE) ==========
-if SNIPER_ALL_COIN:
-    cfg, current_regime = get_adaptive_sniper_config(SNIPER_MODE)
-    all_mids = info.all_mids()
 
-    try:
-        meta_data = info.meta_and_asset_ctxs()
-        meta_map = {
-            asset["name"]: ctx
-            for asset, ctx in zip(meta_data[0]["universe"], meta_data[1])
-        }
-    except Exception as e:
-        print(f"Sniper meta error: {e}")
-        time.sleep(30)
-        continue
+            # ========== 8. SNIPER MODE (ADAPTIVE) ==========
+            if SNIPER_ALL_COIN:
+                cfg, current_regime = get_adaptive_sniper_config(SNIPER_MODE)
+                all_mids = info.all_mids()
 
-    coins = [c for c in all_mids.keys() if c in meta_map][:60]
+                try:
+                    meta_data = info.meta_and_asset_ctxs()
+                    meta_map = {
+                        asset["name"]: ctx
+                        for asset, ctx in zip(meta_data[0]["universe"], meta_data[1])
+                    }
+                except Exception as e:
+                    print(f"Sniper meta error: {e}")
+                    time.sleep(30)
+                    continue
 
-    for coin in coins:
-        try:
-            now_coin = time.time()
-            cooldown_key = f"{coin}_{SNIPER_MODE}"
-            
-            if cooldown_key in last_entry_time and now_coin - last_entry_time[cooldown_key] < cfg['cooldown']:
-                continue
-            
-            ctx = meta_map.get(coin)
-            if not ctx:
-                continue
-            
-            mark = float(ctx.get("markPx") or 0)
-            if mark == 0:
-                continue
-            
-            if is_market_chaos(coin, cfg['chaos_pct']):
-                continue
-            
-            delta = get_ob_delta(coin)
-            funding = get_funding_pct(ctx)
-            price = float(all_mids.get(coin, mark))
-            wall_bid = get_bid_wall(coin)
-            wall_ask, ask_wall_px = get_ask_wall_level(coin)
-            _, bid_wall_px = get_bid_wall_level(coin)
-            narrative = get_narrative(coin)
-            change = get_change(ctx)
-            sl_pct_fallback, tp_pct_fallback = get_volatility_params(coin)
-            
-            # ===== ADAPTIVE SL/TP FUNCTIONS =====
-            def calc_sl_tp_long():
-                sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "LONG")
-                return sl, sl_p, tp, tp_p, rr
-            
-            def calc_sl_tp_short():
-                sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "SHORT")
-                return sl, sl_p, tp, tp_p, rr
-            
-            # ===== LONG SETUP (regime-aware) =====
-            long_delta_min = cfg['delta_min'] * (0.8 if current_regime == "TRENDING_UP" else 1.0)
-            short_delta_min = cfg['delta_min'] * (0.8 if current_regime == "TRENDING_DOWN" else 1.0)
+                coins = [c for c in all_mids.keys() if c in meta_map][:60]
 
-            is_long = (wall_bid >= cfg['wall_min'] and
-                      delta >= long_delta_min and
-                      funding <= cfg['funding_max'])
+                for coin in coins:
+                    try:
+                        now_coin = time.time()
+                        cooldown_key = f"{coin}_{SNIPER_MODE}"
+                        if cooldown_key in last_entry_time and now_coin - last_entry_time[cooldown_key] < cfg['cooldown']:
+                            continue
 
-            is_short = (wall_ask >= cfg['wall_min'] and
-                       delta <= -short_delta_min and
-                       funding >= -cfg['funding_max'])
-            
-            alert = None
-            
-            if is_long:
-                sl, sl_p, tp, tp_p, rr = calc_sl_tp_long()
-                alert = f"🦈 SMART MONEY LONG • {coin} [{SNIPER_MODE}|{current_regime}]\n"
-                alert += f"⏰ {get_wib()}\n"
-                alert += f"📂 {narrative} | {change:+.1f}% 24h\n"
-                alert += f"💰 {fmt_price(price)}\n"
-                alert += f"📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n"
-                alert += f"🐋 Bid Wall: ${wall_bid/1e6:.2f}M\n\n"
-                alert += f"🟢 LONG\n"
-                alert += f"🎯 Entry : {fmt_price(price)}\n"
-                alert += f"🛑 SL    : {fmt_price(sl)} (-{sl_p:.1f}%)\n"
-                alert += f"✅ TP    : {fmt_price(tp)} (+{tp_p:.1f}%)\n"
-                alert += f"⚖️ R:R   : 1:{rr:.1f}"
-            
-            elif is_short:
-                sl, sl_p, tp, tp_p, rr = calc_sl_tp_short()
-                alert = f"🦈 SMART MONEY SHORT • {coin} [{SNIPER_MODE}|{current_regime}]\n"
-                alert += f"⏰ {get_wib()}\n"
-                alert += f"📂 {narrative} | {change:+.1f}% 24h\n"
-                alert += f"💰 {fmt_price(price)}\n"
-                alert += f"📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n"
-                alert += f"🔴 Ask Wall: ${wall_ask/1e6:.2f}M\n\n"
-                alert += f"🔴 SHORT\n"
-                alert += f"🎯 Entry : {fmt_price(price)}\n"
-                alert += f"🛑 SL    : {fmt_price(sl)} (+{sl_p:.1f}%)\n"
-                alert += f"✅ TP    : {fmt_price(tp)} (-{tp_p:.1f}%)\n"
-                alert += f"⚖️ R:R   : 1:{rr:.1f}"
-            
-            if alert:
-                ind_data = {
-                    "funding_strong": abs(funding) > 0.02,
-                    "ob_strong": abs(delta) > 20,
-                    "wall_strong": wall_bid > 500_000 if is_long else wall_ask > 500_000
-                }
-                track_signal_entry(coin, "LONG" if is_long else "SHORT", price, ind_data)
-                send_to_both(alert)
-                print(f"ALERT SENT: {coin} [{SNIPER_MODE}|{current_regime}] {'LONG' if is_long else 'SHORT'}")
-                last_entry_time[cooldown_key] = now_coin
-                time.sleep(2)
-            
-            time.sleep(0.3)
-            
+                        ctx = meta_map.get(coin)
+                        if not ctx:
+                            continue
+
+                        mark = float(ctx.get("markPx") or 0)
+                        if mark == 0:
+                            continue
+
+                        if is_market_chaos(coin, cfg['chaos_pct']):
+                            continue
+
+                        delta = get_ob_delta(coin)
+                        funding = get_funding_pct(ctx)
+                        price = float(all_mids.get(coin, mark))
+                        wall_bid = get_bid_wall(coin)
+                        wall_ask, ask_wall_px = get_ask_wall_level(coin)
+                        _, bid_wall_px = get_bid_wall_level(coin)
+                        narrative = get_narrative(coin)
+                        change = get_change(ctx)
+                        sl_pct_fallback, tp_pct_fallback = get_volatility_params(coin)
+
+                        def calc_sl_tp_long():
+                            sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "LONG")
+                            return sl, sl_p, tp, tp_p, rr
+
+                        def calc_sl_tp_short():
+                            sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "SHORT")
+                            return sl, sl_p, tp, tp_p, rr
+
+                        long_delta_min = cfg['delta_min'] * (0.8 if current_regime == "TRENDING_UP" else 1.0)
+                        short_delta_min = cfg['delta_min'] * (0.8 if current_regime == "TRENDING_DOWN" else 1.0)
+
+                        is_long = (wall_bid >= cfg['wall_min'] and
+                                   delta >= long_delta_min and
+                                   funding <= cfg['funding_max'])
+
+                        is_short = (wall_ask >= cfg['wall_min'] and
+                                    delta <= -short_delta_min and
+                                    funding >= -cfg['funding_max'])
+
+                        alert = None
+
+                        if is_long:
+                            sl, sl_p, tp, tp_p, rr = calc_sl_tp_long()
+                            alert = f"🦈 SMART MONEY LONG • {coin} [{SNIPER_MODE}|{current_regime}]\n"
+                            alert += f"⏰ {get_wib()}\n"
+                            alert += f"📂 {narrative} | {change:+.1f}% 24h\n"
+                            alert += f"💰 {fmt_price(price)}\n"
+                            alert += f"📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n"
+                            alert += f"🐋 Bid Wall: ${wall_bid/1e6:.2f}M\n\n"
+                            alert += f"🟢 LONG\n"
+                            alert += f"🎯 Entry : {fmt_price(price)}\n"
+                            alert += f"🛑 SL    : {fmt_price(sl)} (-{sl_p:.1f}%)\n"
+                            alert += f"✅ TP    : {fmt_price(tp)} (+{tp_p:.1f}%)\n"
+                            alert += f"⚖️ R:R   : 1:{rr:.1f}"
+
+                        elif is_short:
+                            sl, sl_p, tp, tp_p, rr = calc_sl_tp_short()
+                            alert = f"🦈 SMART MONEY SHORT • {coin} [{SNIPER_MODE}|{current_regime}]\n"
+                            alert += f"⏰ {get_wib()}\n"
+                            alert += f"📂 {narrative} | {change:+.1f}% 24h\n"
+                            alert += f"💰 {fmt_price(price)}\n"
+                            alert += f"📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n"
+                            alert += f"🔴 Ask Wall: ${wall_ask/1e6:.2f}M\n\n"
+                            alert += f"🔴 SHORT\n"
+                            alert += f"🎯 Entry : {fmt_price(price)}\n"
+                            alert += f"🛑 SL    : {fmt_price(sl)} (+{sl_p:.1f}%)\n"
+                            alert += f"✅ TP    : {fmt_price(tp)} (-{tp_p:.1f}%)\n"
+                            alert += f"⚖️ R:R   : 1:{rr:.1f}"
+
+                        if alert:
+                            ind_data = {
+                                "funding_strong": abs(funding) > 0.02,
+                                "ob_strong": abs(delta) > 20,
+                                "wall_strong": wall_bid > 500_000 if is_long else wall_ask > 500_000
+                            }
+                            track_signal_entry(coin, "LONG" if is_long else "SHORT", price, ind_data)
+                            send_to_both(alert)
+                            print(f"ALERT SENT: {coin} [{SNIPER_MODE}|{current_regime}] {'LONG' if is_long else 'SHORT'}")
+                            last_entry_time[cooldown_key] = now_coin
+                            time.sleep(2)
+
+                        time.sleep(0.3)
+
+                    except Exception as e:
+                        print(f"Error scan {coin}: {e}")
+                        time.sleep(1)
+                        continue
+
+            time.sleep(10)
+
         except Exception as e:
-            print(f"Error scan {coin}: {e}")
-            time.sleep(1)
-            continue
-
-time.sleep(10)
+            print(f"Scheduler error: {e}")
+            time.sleep(60)
             
 # ========== STATUS COMMAND ==========
 @bot.message_handler(commands=['status'])
