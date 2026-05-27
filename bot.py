@@ -4391,6 +4391,9 @@ def status_cmd(message):
     div_text = "✅ ON" if 'last_divergence_check' in globals() else "🟡 IDLE"
     cvd_text = "✅ ON" if 'last_cvd_check' in globals() else "🟡 IDLE"
     
+    # Cek status smart money flow
+    smart_text = "✅ ON" if 'last_smart_money_check' in globals() else "🟡 IDLE"
+    
     session_text = get_sesi()
     uptime = get_uptime()
     token_src = "ENV ✅" if os.environ.get('TOKEN') else "HARDCODE ⚠️"
@@ -4404,12 +4407,13 @@ def status_cmd(message):
 📡 Session   : {session_text}
 🕐 WIB       : {get_wib()}
 ─────────────────────────────────
-🎯 SNIPER    : {sniper_text}
+🕶️ SNIPER    : {sniper_text}
 👽 TEMEN     : {temen_text}
 ☠️ LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
+🌐 SMART FLOW: {smart_text}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
 ─────────────────────────────────
@@ -4422,8 +4426,7 @@ def status_cmd(message):
         teks += f"   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
     teks += "─────────────────────────────────\n✅ Semua sistem normal"
     bot.send_message(chat_id, teks)
-
-
+    
 # ========== CLUSTER ==========
 @bot.message_handler(commands=['cluster'])
 def liquidation_cluster(message):
