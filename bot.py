@@ -572,7 +572,6 @@ def calculate_predator_score(coin):
         return None
 
 def ultimate_predator_scan():
-    """Scan semua coin dan kirim sinyal terkuat"""
     try:
         all_mids = info.all_mids()
         coins = list(all_mids.keys())[:30]
@@ -580,8 +579,21 @@ def ultimate_predator_scan():
         results = []
         for coin in coins:
             pred = calculate_predator_score(coin)
-            if pred and pred["confidence"] >= 65:
+            if not pred:
+                continue
+            
+            # SKIP COIN GA VALID
+            if pred["target"] <= 0 or pred["target"] == pred["price"]:
+                continue
+            
+            # SKIP COIN VOLUME KECIL
+            if pred["vol_spike"] < 1.0 and pred["ob_delta"] == 0:
+                continue
+            
+            # SKIP KALO RAIN TERLALU RENDAH
+            if pred["confidence"] >= 65 and pred["rain_score"] >= 15:
                 results.append(pred)
+            
             time.sleep(0.1)
         
         if not results:
