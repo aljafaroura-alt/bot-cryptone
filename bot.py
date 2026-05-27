@@ -4174,21 +4174,11 @@ def run_scheduler():
             if now - last_evaluation >= 14400 and (now - last_casual_report) > 7200:
                 evaluate_predictions()
                 last_evaluation = now
-            
-            # ========== 5. SMART MONEY FLOW (1 jam) ==========
-            if now - last_smart_money_check >= 3600:
-                check_smart_money_rotation()
-                last_smart_money_check = now
-            
-            # ========== 6. TEMEN MODE ==========
-            if TEMEN_MODE:
-                if now - TEMEN_LAST_RUN >= 300:
-                    try:
-                        run_temen_scan(USER_ID)
-                        TEMEN_LAST_RUN = now
-                    except Exception as e:
-                        print(f"Temen error: {e}")
-            
+
+            # ========== SMART MONEY FLOW (tiap 45 menit) ==========
+             if now - last_smart_money_check >= 2700:
+               check_smart_money_rotation()
+               last_smart_money_check = now
             # ========== 7. SNIPER MODE ==========
             if SNIPER_ALL_COIN:
                 cfg = SNIPER_CONFIG[SNIPER_MODE]
