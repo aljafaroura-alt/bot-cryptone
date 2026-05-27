@@ -1524,35 +1524,8 @@ def entry(message):
         short_liq = above[0] if above else {"price": mark * 1.05, "size": 0}
         long_liq = below[0] if below else {"price": mark * 0.95, "size": 0}
         
-        long_score = 0
-        short_score = 0
-        
-        if funding > 0.02:
-            short_score += 30
-        elif funding < -0.02:
-            long_score += 30
-        else:
-            long_score += 10
-            short_score += 10
-        
-        if ob_delta > 15:
-            long_score += 30
-        elif ob_delta < -15:
-            short_score += 30
-        
-        if short_liq['size'] > 20:
-            short_score += 20
-        if long_liq['size'] > 20:
-            long_score += 20
-        
-        if bid_wall_usd >= 500_000:
-            long_score += 20
-        if ask_wall_usd >= 500_000:
-            short_score += 20
-        if ask_wall_usd < 200_000 and ask_wall_usd > 0:
-            long_score += 10
-        if bid_wall_usd < 200_000 and bid_wall_usd > 0:
-            short_score += 10
+        # Hitung score dengan regime bonus (fungsi calculate_scores sudah update)
+        long_score, short_score = calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd, short_liq['size'], long_liq['size'])
         
         if long_score > short_score:
             bias = "LONG"
@@ -1567,7 +1540,7 @@ def entry(message):
             emoji = "⚪"
             score = long_score
         
-        # FORMAT OI YANG BENAR (jangan sampe $2111M)
+        # Format OI
         if oi_usd >= 1000:
             oi_display = f"${oi_usd/1000:.1f}B"
         elif oi_usd >= 1:
@@ -1586,55 +1559,35 @@ def entry(message):
             teks += f"🦈 Ask W : ${ask_wall_usd/1e6:.2f}M @ {fmt_price(ask_wall_px)}\n"
         teks += "─────────────────────────────────\n"
         
+        # Gunakan adaptive SL/TP
         if bias == "SHORT" and score >= 50:
-          # Adaptive SL/TP based on ATR
-          sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, "SHORT")
-    
-    # Force minimal SL 0.3%
-    if sl_pct < 0.3:
-        sl_p = mark * 1.003
-        sl_pct = 0.3
-        rr = tp_pct / sl_pct
-    
-    teks += f"{emoji} SHORT SETUP • Score {score}\n\n"
-    teks += f"ENTRY : {fmt_price(mark)}\n"
-    teks += f"SL    : {fmt_price(sl_p)} (+{sl_pct:.2f}%)\n"
-    teks += f"TP    : {fmt_price(tp_p)} (-{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
-    teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
-            
-            # JANGAN BIARKAN SL TERLALU DEKAT (< 0.3%)
-            risk_pct = abs(sl_p - mark) / mark * 100
-            if risk_pct < 0.3:
-                sl_p = mark * 1.003  # force SL 0.3%
-                risk_pct = 0.3
-            
-            reward_pct = abs(mark - tp_p) / mark * 100
-            rr = reward_pct / risk_pct if risk_pct > 0 else 0
-            
+            sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, "SHORT")
+            if sl_pct < 0.3:
+                sl_p = mark * 1.003
+                sl_pct = 0.3
+                rr = tp_pct / sl_pct
             teks += f"{emoji} SHORT SETUP • Score {score}\n\n"
             teks += f"ENTRY : {fmt_price(mark)}\n"
-            teks += f"SL    : {fmt_price(sl_p)} (+{risk_pct:.2f}%)\n"
-            teks += f"TP    : {fmt_price(tp_p)} (-{reward_pct:.2f}%) | RR 1:{rr:.1f}\n"
+            teks += f"SL    : {fmt_price(sl_p)} (+{sl_pct:.2f}%)\n"
+            teks += f"TP    : {fmt_price(tp_p)} (-{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
             teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         elif bias == "LONG" and score >= 50:
-    # Adaptive SL/TP based on ATR
-    sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, "LONG")
-    
-    if sl_pct < 0.3:
-        sl_p = mark * 0.997
-        sl_pct = 0.3
-        rr = tp_pct / sl_pct
-    
-    teks += f"{emoji} LONG SETUP • Score {score}\n\n"
-    teks += f"ENTRY : {fmt_price(mark)}\n"
-    teks += f"SL    : {fmt_price(sl_p)} (-{sl_pct:.2f}%)\n"
-    teks += f"TP    : {fmt_price(tp_p)} (+{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
-    teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
+            sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, "LONG")
+            if sl_pct < 0.3:
+                sl_p = mark * 0.997
+                sl_pct = 0.3
+                rr = tp_pct / sl_pct
+            teks += f"{emoji} LONG SETUP • Score {score}\n\n"
+            teks += f"ENTRY : {fmt_price(mark)}\n"
+            teks += f"SL    : {fmt_price(sl_p)} (-{sl_pct:.2f}%)\n"
+            teks += f"TP    : {fmt_price(tp_p)} (+{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
+            teks += f"\n{'✅ VALID' if rr >= 1.5 else '⚠️ RR KECIL'}"
             
         else:
             teks += f"{emoji} {bias} • Score {score}\n"
-            teks += f"Minimal score 50 untuk entry"
+            teks += f"Minimal score 50 untuk entry valid\n"
+            teks += f"(Long: {long_score} | Short: {short_score})"
         
         teks += f"\n\n─────────────────────────────────\n"
         teks += f"🔍 /squeeze {coin} | /warroom {coin}"
