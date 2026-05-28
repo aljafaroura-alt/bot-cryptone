@@ -4818,8 +4818,7 @@ def atr_cmd(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
-
-# ---------- STATUS ----------
+#------------ STATUS --------
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
     chat_id = message.chat.id
@@ -4842,6 +4841,7 @@ def status_cmd(message):
             schedules_text = "\n" + "\n".join(jobs_info)
         else:
             schedules_text = "⚠️ Kosong"
+    
     sniper_text = f"✅ {SNIPER_MODE}" if SNIPER_ALL_COIN else "🔴 OFF"
     temen_text = "✅ ON" if TEMEN_MODE else "🔴 OFF"
     liq_text = "✅ ON" if _liq_scanner_running else "🔴 OFF"
@@ -4849,13 +4849,19 @@ def status_cmd(message):
     div_text = "✅ ON" if 'last_divergence_check' in globals() else "🟡 IDLE"
     cvd_text = "✅ ON" if 'last_cvd_check' in globals() else "🟡 IDLE"
     smart_text = "✅ ON" if 'last_smart_money_check' in globals() else "🟡 IDLE"
+    
+    # ===== PREDATOR STATUS =====
+    predator_text = "✅ ON (tiap 30 menit)" if _last_predator_scan > 0 else "🟡 IDLE"
+    # ============================
+
     session_text = get_sesi()
     uptime = get_uptime()
     token_src = "ENV ✅" if os.environ.get('TOKEN') else "HARDCODE ⚠️"
     token_preview = TOKEN[:8] + "..." + TOKEN[-4:] if TOKEN else "NONE"
+    
     teks = f"""⚙️ SYSTEM STATUS
 ─────────────────────────────────
-🤖 Bot       : ✅ ONLINE [{token_src}]
+😼 Bot       : ✅ ONLINE [{token_src}]
 🔑 Token     : {token_preview}
 ⏱️ Uptime    : {uptime}
 📡 Session   : {session_text}
@@ -4863,11 +4869,12 @@ def status_cmd(message):
 ─────────────────────────────────
 🕶️ SNIPER    : {sniper_text}
 👽 TEMEN     : {temen_text}
-☠️ LIQ SCAN  : {liq_text}
+💥 LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
+🦈 PREDATOR  : {predator_text}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
 ─────────────────────────────────
@@ -4878,8 +4885,7 @@ def status_cmd(message):
         teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n   Funding avg: {mood_data['funding']:+.4f}%\n   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
     teks += "─────────────────────────────────\n✅ Semua sistem normal"
     bot.send_message(chat_id, teks)
-
-
+    
 # ============================================================
 # SCHEDULER & MAIN LOOP
 # ============================================================
