@@ -4922,9 +4922,9 @@ def run_scheduler():
                 last_learning_eval = now
 
             # ========== ULTIMATE PREDATOR (tiap 30 menit) ==========
-             if now - last_predator_scan >= 1800:
-                 ultimate_predator_scan()
-                 last_predator_scan = now
+            if now - last_predator_scan >= 1800:
+                ultimate_predator_scan()
+                last_predator_scan = now
 
             # Smart money flow (adaptif)
             flow_interval = 3600
