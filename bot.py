@@ -383,7 +383,6 @@ def get_session_status(wib_hour: int, wib_min: int) -> dict:
     return sessions
 
 # ========== ULTIMATE PREDATOR ==========
-
 def get_price_momentum(coin, minutes=5):
     """Hitung kecepatan pergerakan harga (% per menit)"""
     try:
@@ -403,11 +402,13 @@ def get_price_momentum(coin, minutes=5):
     except:
         return 0
 
+
 def calculate_predator_score(coin):
     """Hitung score ultimate predator (0-100)"""
     try:
         ctx, mark = get_ctx(coin)
-        if not ctx or mark == 0:
+        # ===== FILTER HARGA VALID =====
+        if not ctx or mark == 0 or mark < 0.0001:
             return None
         
         funding = get_funding_pct(ctx)
@@ -602,7 +603,6 @@ def calculate_predator_score(coin):
     except Exception as e:
         print(f"Predator error {coin}: {e}")
         return None
-
 def ultimate_predator_scan():
     """Scan semua coin dan kirim sinyal terkuat"""
     try:
@@ -611,6 +611,10 @@ def ultimate_predator_scan():
         
         results = []
         for coin in coins:
+            # ===== FILTER HARGA VALID =====
+            if all_mids.get(coin, 0) < 0.0001:
+                continue
+            
             pred = calculate_predator_score(coin)
             if pred and pred["confidence"] >= 65:
                 results.append(pred)
@@ -653,7 +657,6 @@ Funding: {pred['funding']:+.4f}% | Momentum: {pred['momentum']:+.2f}%/m
         
     except Exception as e:
         print(f"Ultimate predator error: {e}")
-
 
 # ============================================================
 # ACCESS CONTROL & TELEGRAM SENDER FUNCTIONS
@@ -4922,10 +4925,10 @@ def run_scheduler():
                 last_learning_eval = now
 
             # ========== ULTIMATE PREDATOR (tiap 30 menit) ==========
-            if now - last_predator_scan >= 1800:
+              if now - last_predator_scan >= 1800:
                 ultimate_predator_scan()
                 last_predator_scan = now
-
+  
             # Smart money flow (adaptif)
             flow_interval = 3600
             try:
