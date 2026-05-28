@@ -197,15 +197,15 @@ CONFLUENCE_CONFIG = {
 
 # ========== CASUAL REPORT BANK KALIMAT ==========
 OPENINGS_BY_SESSION = {
-    "ASIA": ["🌅 Pagi-pagi", "Bangun!", "Ngopi!", "Cek pagi hari", "Pagi yang cerah", "GM!🦾"],
-    "LONDON": ["🌇 Sore-sore", "Makan!", "Cek sore hari", "Sore mulai rame", "Udah sore nih", "Lets fvcking go!"],
-    "NY": ["🌙 Malam-malam", "Ngopi!", "Jangan begadang", "Udah malem", "Waktunya whale bermain", "GN!🌚"]
+    "ASIA": ["🌅 Have a nice day", "Bangun!!", "☕ Ngopi!", "Hari yang mantap", "Hari yang cerah", "GM!🦾"],
+    "LONDON": ["🌇 Met sore!", "🍌Jangan lupa makan", "Cek sore hari", "Sore mulai rame", "Udah sore nih", "Lets fvcking go!"],
+    "NY": ["🌙 Met malam", "Enjoy the dinner", "Jangan begadang", "Hari mulai gelap", "Waktunya whale bermain", "GN!🌚"]
 }
 
 SITUATIONS = {
-    "ASIA": ["GM😼! Wait, volume tipis.", "Market baru start, masih slow.", "Jam segini rawan.", "Sepi kayak perasaan gw.", "Pelannya minta ampun."],
-    "LONDON": ["Trader Eropa pada bangun.", "Udah sore, mulai setup😾.", "Volume naik, mulai panas.", "Ini jamnya breakout.", "Mulai kelihatan volumenya."],
-    "NY": ["Good afternoon!🙀", "Volume gila.", "Market lagi liar, pegangan!", "Ini jamnya whale bermain.", "Tetep hati2 ya."]
+    "ASIA": ["GM😼! Wait, volume tipis.", "Market baru start, masih slow.", "Jam segini rawan.", "Sepi kayak perasaan gw.", "Volume masih pelan.."],
+    "LONDON": ["Trader Eropa pada bangun.", "Udah sore, mulai setup😾.", "Volume naik, mulai panas🔥.", "Ini jamnya breakout.", "Mulai kelihatan volumenya."],
+    "NY": ["Good afternoon!🙀", "Volume gila💥.", "Market lagi liar☠️, pegangan!", "Ini jamnya whale bermain.", "Tetep waspada ya⚠️"]
 }
 
 
