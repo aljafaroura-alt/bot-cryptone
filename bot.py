@@ -101,6 +101,8 @@ _oi_history_cache = {}
 _oi_history_time = {}
 _history_cache = {}
 _history_cache_time = {}
+_last_predator_scan = 0
+_predator_history = {}
 
 # ========== SNIPER CONFIG ==========
 SNIPER_CONFIG = {
@@ -379,6 +381,278 @@ def get_session_status(wib_hour: int, wib_min: int) -> dict:
         sessions["Asia"] = ("LEWAT", None)
 
     return sessions
+
+# ========== ULTIMATE PREDATOR ==========
+
+def get_price_momentum(coin, minutes=5):
+    """Hitung kecepatan pergerakan harga (% per menit)"""
+    try:
+        end_ms = int(time.time() * 1000)
+        start_ms = end_ms - (minutes * 60 * 1000)
+        candles = info.candles_snapshot(coin, "1m", start_ms, end_ms)
+        if len(candles) < 2:
+            return 0
+        
+        first_price = float(candles[0]['c'])
+        last_price = float(candles[-1]['c'])
+        if first_price == 0:
+            return 0
+        
+        total_change = ((last_price - first_price) / first_price * 100)
+        return total_change / minutes  # % per menit
+    except:
+        return 0
+
+def calculate_predator_score(coin):
+    """Hitung score ultimate predator (0-100)"""
+    try:
+        ctx, mark = get_ctx(coin)
+        if not ctx or mark == 0:
+            return None
+        
+        funding = get_funding_pct(ctx)
+        oi_usd = get_oi_usd(ctx, mark)
+        ob_delta = get_ob_delta(coin)
+        
+        # OI change
+        oi_prev = OI_HISTORY.get(f"{coin}_predator", oi_usd)
+        oi_change = ((oi_usd - oi_prev) / oi_prev * 100) if oi_prev > 0 else 0
+        OI_HISTORY[f"{coin}_predator"] = oi_usd
+        
+        # CVD
+        cvd_now = get_cvd(coin, 1)
+        cvd_prev = _cvd_cache.get(f"{coin}_predator", cvd_now)
+        cvd_change = cvd_now - cvd_prev
+        _cvd_cache[f"{coin}_predator"] = cvd_now
+        
+        # Momentum
+        momentum = get_price_momentum(coin, 5)
+        
+        # Volume spike
+        vol_now = float(ctx.get("dayNtlVlm") or 0)
+        vol_prev = _predator_history.get(f"{coin}_vol", vol_now)
+        vol_spike = vol_now / vol_prev if vol_prev > 0 else 1
+        _predator_history[f"{coin}_vol"] = vol_now
+        
+        # RAIN DETECTOR (mendung sebelum hujan)
+        rain_score = 0
+        if abs(ob_delta) > 25:
+            rain_score += 25
+        elif abs(ob_delta) > 15:
+            rain_score += 15
+        
+        if abs(cvd_change) > 15:
+            rain_score += 25
+        elif abs(cvd_change) > 8:
+            rain_score += 15
+        
+        if vol_spike > 2.5:
+            rain_score += 25
+        elif vol_spike > 1.5:
+            rain_score += 15
+        
+        if abs(oi_change) > 8:
+            rain_score += 25
+        elif abs(oi_change) > 4:
+            rain_score += 15
+        
+        # HUNTER MODE (deteksi prey)
+        hunter_score = 0
+        if ob_delta > 15 and funding < 0:
+            hunter_score += 30  # whale long positioning
+        elif ob_delta < -15 and funding > 0:
+            hunter_score += 30  # whale short positioning
+        
+        if cvd_change > 10 and oi_change > 3:
+            hunter_score += 25  # smart money masuk
+        
+        if vol_spike > 2 and abs(ob_delta) > 10:
+            hunter_score += 20
+        
+        # FLOW PREDICTOR (arah akan berubah)
+        flow_score = 0
+        if funding > 0.03 and ob_delta < -10:
+            flow_score += 30  # akan bearish
+        elif funding < -0.03 and ob_delta > 10:
+            flow_score += 30  # akan bullish
+        
+        if cvd_change < -10 and oi_change > 5:
+            flow_score += 25  # distribution
+        elif cvd_change > 10 and oi_change < -5:
+            flow_score += 25  # accumulation
+        
+        # KILL SHOT (momentum maksimal)
+        kill_score = 0
+        if abs(ob_delta) > 40:
+            kill_score += 35
+        elif abs(ob_delta) > 25:
+            kill_score += 20
+        
+        if abs(momentum) > 1.5:
+            kill_score += 35
+        elif abs(momentum) > 0.8:
+            kill_score += 20
+        
+        if vol_spike > 4:
+            kill_score += 30
+        elif vol_spike > 2.5:
+            kill_score += 15
+        
+        # Tentukan arah
+        total_bullish = 0
+        total_bearish = 0
+        
+        if ob_delta > 0:
+            total_bullish += abs(ob_delta) / 2
+        else:
+            total_bearish += abs(ob_delta) / 2
+        
+        if cvd_change > 0:
+            total_bullish += cvd_change
+        else:
+            total_bearish += abs(cvd_change)
+        
+        if funding < 0:
+            total_bullish += abs(funding) * 100
+        else:
+            total_bearish += funding * 100
+        
+        if momentum > 0:
+            total_bullish += momentum * 20
+        else:
+            total_bearish += abs(momentum) * 20
+        
+        if total_bullish > total_bearish:
+            direction = "BULLISH"
+            direction_emoji = "🐋"
+            kill_emoji = "💀"
+        elif total_bearish > total_bullish:
+            direction = "BEARISH"
+            direction_emoji = "🐻"
+            kill_emoji = "💀"
+        else:
+            direction = "SIDEWAYS"
+            direction_emoji = "⚡"
+            kill_emoji = "⚪"
+        
+        # Confidence
+        total_score = total_bullish + total_bearish
+        if total_score > 0:
+            confidence = min(99, int((max(total_bullish, total_bearish) / total_score) * 100))
+        else:
+            confidence = 50
+        
+        # Rain level
+        if rain_score >= 60:
+            rain_level = "HEAVY CLOUDS"
+            rain_emoji = "🌧️🌧️"
+        elif rain_score >= 35:
+            rain_level = "LIGHT CLOUDS"
+            rain_emoji = "🌧️"
+        else:
+            rain_level = "CLEAR"
+            rain_emoji = "☀️"
+        
+        # Target price
+        if direction == "BULLISH":
+            target = mark * (1 + min(3.0, abs(ob_delta)/30 + abs(cvd_change)/50) / 100)
+            target_pct = ((target - mark) / mark * 100)
+        elif direction == "BEARISH":
+            target = mark * (1 - min(3.0, abs(ob_delta)/30 + abs(cvd_change)/50) / 100)
+            target_pct = ((target - mark) / mark * 100)
+        else:
+            target = mark
+            target_pct = 0
+        
+        # ETA (perkiraan waktu)
+        if abs(momentum) > 0:
+            eta_minutes = int(abs(target_pct) / abs(momentum) * 60) if momentum != 0 else 60
+            eta_minutes = max(15, min(120, eta_minutes))
+        else:
+            eta_minutes = 60
+        
+        # Kill shot confirmed?
+        kill_shot = kill_score >= 50 and confidence >= 70
+        
+        return {
+            "coin": coin,
+            "direction": direction,
+            "direction_emoji": direction_emoji,
+            "confidence": confidence,
+            "target": target,
+            "target_pct": target_pct,
+            "eta_minutes": eta_minutes,
+            "rain_level": rain_level,
+            "rain_emoji": rain_emoji,
+            "rain_score": rain_score,
+            "hunter_score": hunter_score,
+            "flow_score": flow_score,
+            "kill_score": kill_score,
+            "kill_shot": kill_shot,
+            "kill_emoji": kill_emoji,
+            "price": mark,
+            "momentum": momentum,
+            "ob_delta": ob_delta,
+            "cvd_change": cvd_change,
+            "vol_spike": vol_spike,
+            "funding": funding,
+            "oi_change": oi_change
+        }
+        
+    except Exception as e:
+        print(f"Predator error {coin}: {e}")
+        return None
+
+def ultimate_predator_scan():
+    """Scan semua coin dan kirim sinyal terkuat"""
+    try:
+        all_mids = info.all_mids()
+        coins = list(all_mids.keys())[:30]
+        
+        results = []
+        for coin in coins:
+            pred = calculate_predator_score(coin)
+            if pred and pred["confidence"] >= 65:
+                results.append(pred)
+            time.sleep(0.1)
+        
+        if not results:
+            return
+        
+        # Sort by confidence
+        results.sort(key=lambda x: x["confidence"], reverse=True)
+        
+        # Kirim top 3
+        for pred in results[:3]:
+            if pred["direction"] == "BULLISH":
+                target_display = f"🎯 ${pred['target']:,.0f} (+{pred['target_pct']:.1f}%)"
+            elif pred["direction"] == "BEARISH":
+                target_display = f"🎯 ${pred['target']:,.0f} ({pred['target_pct']:.1f}%)"
+            else:
+                target_display = "🎯 Range trade"
+            
+            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
+{pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
+{pred['kill_emoji']} KILL SHOT: {'✅ CONFIRMED' if pred['kill_shot'] else '⏳ WAITING'}
+
+{pred['direction_emoji']} {target_display}
+⏱️ ETA: {pred['eta_minutes']} minutes
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📡 METRICS:
+OB: {pred['ob_delta']:+.0f}% | CVD: {pred['cvd_change']:+.0f}M
+Vol: {pred['vol_spike']:.1f}x | OI: {pred['oi_change']:+.0f}%
+Funding: {pred['funding']:+.4f}% | Momentum: {pred['momentum']:+.2f}%/m
+
+💀 FIRE!"""
+            
+            send_to_both(teks)
+            time.sleep(1)
+        
+    except Exception as e:
+        print(f"Ultimate predator error: {e}")
 
 
 # ============================================================
@@ -4615,6 +4889,7 @@ def run_scheduler():
     last_evaluation = 0
     last_smart_money_check = 0
     last_learning_eval = 0
+    last_predator_scan = 0
 
     while True:
         try:
@@ -4645,6 +4920,11 @@ def run_scheduler():
             if now - last_learning_eval >= 7200:
                 evaluate_signal_outcomes()
                 last_learning_eval = now
+
+            # ========== ULTIMATE PREDATOR (tiap 30 menit) ==========
+             if now - last_predator_scan >= 1800:
+                 ultimate_predator_scan()
+                 last_predator_scan = now
 
             # Smart money flow (adaptif)
             flow_interval = 3600
