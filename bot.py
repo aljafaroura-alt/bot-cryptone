@@ -125,7 +125,7 @@ _wallet_last_alert = {}     # {address_coin: timestamp} cooldown 5 menit
 WALLET_TRACKER_FILE = "wallet_tracker_state.json"
 _wallet_discovery_last = 0  # Timestamp last auto-discovery
 WALLET_DISCOVERY_INTERVAL = 3600  # Re-discover tiap 1 jam
-WALLET_MAX_TRACK = 5     # Max wallet yang ditrack sekaligus
+WALLET_MAX_TRACK = 7     # Max wallet yang ditrack sekaligus
 
 # ========== SNIPER CONFIG ==========
 SNIPER_CONFIG = {
@@ -5501,7 +5501,7 @@ def fetch_high_oi_wallets(limit: int = 10) -> list:
                         sz = float(t.get("sz", 0))
                         price = float(mids.get(coin, 0))
                         notional = sz * price
-                        if notional >= 100_000:  # Filter: min $10K per trade
+                        if notional >= 90_000:  # Filter: min $10K per trade
                             found_wallets[addr] = found_wallets.get(addr, 0) + notional
                 time.sleep(0.5)
             except Exception:
