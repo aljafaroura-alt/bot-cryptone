@@ -47,4 +47,3 @@ jobs:
         env:
           TOKEN: ${{ secrets.TOKEN }}
         run: python bot.py
-```
