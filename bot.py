@@ -5640,7 +5640,6 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
 
 
 def scan_wallet(address: str, label: str):
-    """Scan satu wallet, detect semua perubahan, kirim alert"""
     global _wallet_last_positions, _wallet_last_alert
 
     current = get_wallet_positions(address)
@@ -5676,8 +5675,11 @@ def scan_wallet(address: str, label: str):
                 alerts.append((coin, "SIZE_UP", {**cur_pos, "prev_size": prev_size}))
             elif cur_size < prev_size - threshold:
                 alerts.append((coin, "SIZE_DOWN", {**cur_pos, "prev_size": prev_size}))
-                if len(alerts) >= 3:
-    break
+
+        # ===== TAMBAHKAN DENGAN INDEBTASI YANG BENAR =====
+        if len(alerts) >= 3:
+            break
+        # ===============================================
 
     for coin, change_type, data in alerts:
         msg = format_wallet_alert(label, address, coin, change_type, data)
