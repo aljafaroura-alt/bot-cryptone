@@ -5562,15 +5562,6 @@ def auto_discover_wallets():
 
     logger.info(f"[WALLET] Discovery done: {old_count} → {len(WATCHED_WALLETS)} wallets tracked")
 
-if len(final_wallets) > 0:
-    names = ", ".join(list(final_wallets.values())[:5])
-    send_to_both(
-        f"🔍 WALLET DISCOVERY UPDATE\n"
-        f"⏰ {get_wib()}\n"
-        f"━━━━━━━━━━━━━━━━━\n"
-        f"📡 Tracking {len(final_wallets)} smart money wallets\n"
-        f"🏆 Top: {names}{'...' if len(final_wallets) > 5 else ''}"
-    )
 
 def get_wallet_positions(address: str) -> dict:
     """Fetch open perp positions dari address Hyperliquid"""
