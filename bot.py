@@ -5501,7 +5501,7 @@ def fetch_high_oi_wallets(limit: int = 10) -> list:
                         sz = float(t.get("sz", 0))
                         price = float(mids.get(coin, 0))
                         notional = sz * price
-                        if notional >= 10_000:  # Filter: min $10K per trade
+                        if notional >= 50_000:  # Filter: min $10K per trade
                             found_wallets[addr] = found_wallets.get(addr, 0) + notional
                 time.sleep(0.5)
             except Exception:
@@ -5661,7 +5661,7 @@ def scan_wallet(address: str, label: str):
 
         with state_lock:
             last_alert = _wallet_last_alert.get(cooldown_key, 0)
-        if now - last_alert < 300:
+        if now - last_alert < 600:
             continue
 
         if cur_pos and not prv_pos:
