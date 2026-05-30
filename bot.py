@@ -2041,7 +2041,6 @@ def calculate_rr(entry, sl, tp):
     rr = reward / risk if risk > 0 else 0
     return risk, reward, rr
 
-
 def run_confluence_scanner():
     global _conf_scanner_running
     _conf_scanner_running = True
@@ -2067,6 +2066,15 @@ def run_confluence_scanner():
                     ob_delta = get_ob_delta(coin)
                     volume = float(ctx.get("dayNtlVlm") or 0)
                     price_change = get_change(ctx)
+                    
+                    # === AMBIL REGIME ===
+                    regime_conf = get_market_regime()
+                    regime_emoji_conf = {
+                        "TRENDING_UP": "🚀",
+                        "TRENDING_DOWN": "📉",
+                        "VOLATILE": "⚡",
+                        "RANGING": "😴"
+                    }.get(regime_conf, "❓")
 
                     if volume < CONFLUENCE_CONFIG["min_volume_24h"]:
                         continue
@@ -2092,45 +2100,88 @@ def run_confluence_scanner():
 
                     is_in_fvg = fvg and mark >= fvg['low'] and mark <= fvg['high']
 
-                    # EARLY WARNING (potensi setup dalam 1-2 jam)
+                    # === EARLY WARNING (potensi setup dalam 1-2 jam) ===
                     if volume >= CONFLUENCE_CONFIG["min_volume_24h"]:
                         if coin not in _last_early_warning or now - _last_early_warning[coin] > 3600:
                             if (demand or supply or fvg) and abs(ob_delta) > 15:
                                 _last_early_warning[coin] = now
                                 potensi = "LONG" if ob_delta > 0 else "SHORT"
                                 zone_info = zone_range or (f"FVG ${fvg['low']:.4f}-${fvg['high']:.4f}" if fvg else "-")
+                                
+                                # Regime-based advice untuk early warning
+                                if regime_conf == "TRENDING_UP" and potensi == "LONG":
+                                    extra_advice = " 🔥 Trending UP + LONG = high prob!"
+                                elif regime_conf == "TRENDING_DOWN" and potensi == "SHORT":
+                                    extra_advice = " 🔥 Trending DOWN + SHORT = high prob!"
+                                elif regime_conf == "VOLATILE":
+                                    extra_advice = " ⚡ Volatile — eksekusi cepet!"
+                                elif regime_conf == "RANGING":
+                                    extra_advice = " 😴 Ranging — jangan FOMO breakout!"
+                                else:
+                                    extra_advice = ""
+                                
                                 teks = f"""🔍 EARLY WARNING | {coin}
 ─────────────────────────────────
+📡 Regime: {regime_emoji_conf} {regime_conf}
 💰 Harga: ${mark:.4f} ({price_change:+.1f}%)
 📦 Volume: ${volume/1e6:.1f}M
 📡 OB Delta: {ob_delta:+.0f}%
 📍 Zone: {zone_info}
-💡 Potensi {potensi} dalam 1-2 jam!"""
+💡 Potensi {potensi} dalam 1-2 jam!{extra_advice}"""
                                 bot.send_message(USER_ID, teks)
                                 logger.info(f"[CONFLUENCE] Early warning: {coin}")
                                 time.sleep(1)
 
-                    # LONG CONFLUENCE
+                    # === LONG CONFLUENCE dengan regime-based SL/TP ===
                     if (is_in_zone and zone_type == "demand") or (is_in_fvg and fvg and fvg['type'] == "bullish"):
-                        # Skip kalau OB sangat bearish (bukan cuma < 3)
+                        # Skip kalau OB sangat bearish
                         if ob_delta < -20:
                             continue
                         if funding > CONFLUENCE_CONFIG["max_funding"]:
                             continue
 
                         entry = mark
-                        if demand:
-                            sl = demand['low'] * 0.995
-                        elif fvg:
-                            sl = fvg['low'] * 0.995
+                        
+                        # Regime-based multiplier untuk LONG
+                        if regime_conf == "TRENDING_UP":
+                            tp_mult_conf = 1.05      # TP lebih jauh
+                            sl_mult_conf = 0.995     # SL normal
+                            rr_min = 2.0
+                            regime_note = "🚀 TRENDING UP → target lebih jauh!"
+                        elif regime_conf == "VOLATILE":
+                            tp_mult_conf = 1.02      # TP lebih dekat
+                            sl_mult_conf = 0.998     # SL lebih ketat
+                            rr_min = 1.5
+                            regime_note = "⚡ VOLATILE → ambil profit cepet!"
+                        elif regime_conf == "RANGING":
+                            tp_mult_conf = 1.03      # TP medium
+                            sl_mult_conf = 0.996     # SL medium
+                            rr_min = 1.5
+                            regime_note = "😴 RANGING → jangan terlalu agresif!"
+                        elif regime_conf == "TRENDING_DOWN":
+                            tp_mult_conf = 1.02      # TP lebih kecil (counter-trend)
+                            sl_mult_conf = 0.998     # SL lebih ketat
+                            rr_min = 1.2
+                            regime_note = "⚠️ COUNTER-TREND LONG → SL ketat!"
                         else:
-                            sl = mark * 0.98
-                        tp = mark * 1.04
+                            tp_mult_conf = 1.04
+                            sl_mult_conf = 0.995
+                            rr_min = 1.5
+                            regime_note = ""
+                        
+                        if demand:
+                            sl = demand['low'] * sl_mult_conf
+                        elif fvg:
+                            sl = fvg['low'] * sl_mult_conf
+                        else:
+                            sl = mark * sl_mult_conf
+                        tp = mark * tp_mult_conf
 
                         risk, reward, rr = calculate_rr(entry, sl, tp)
-                        if rr >= 1.5:
+                        if rr >= rr_min:
                             teks = f"""🔥 LONG CONFLUENCE | {coin}
 ─────────────────────────────────
+📡 Regime: {regime_emoji_conf} {regime_conf}
 💰 Harga: ${mark:.4f} ✅ MASUK ZONE!
 📦 Volume: ${volume/1e6:.1f}M
 📡 OB Delta: {ob_delta:+.0f}%
@@ -2139,13 +2190,14 @@ def run_confluence_scanner():
 🎯 ENTRY: ${entry:.4f}
 🛑 SL: ${sl:.4f} (-{risk:.1f}%)
 🎯 TP: ${tp:.4f} (+{reward:.1f}%)
-🔥 R:R = 1:{rr:.1f}"""
+🔥 R:R = 1:{rr:.1f}
+💡 {regime_note}"""
                             bot.send_message(USER_ID, teks)
                             _last_confluence_alert[coin] = now
                             logger.info(f"[CONFLUENCE] LONG alert: {coin}")
                             time.sleep(2)
 
-                    # SHORT CONFLUENCE
+                    # === SHORT CONFLUENCE dengan regime-based SL/TP ===
                     if (is_in_zone and zone_type == "supply") or (is_in_fvg and fvg and fvg['type'] == "bearish"):
                         # Skip kalau OB sangat bullish
                         if ob_delta > 20:
@@ -2154,18 +2206,47 @@ def run_confluence_scanner():
                             continue
 
                         entry = mark
-                        if supply:
-                            sl = supply['high'] * 1.005
-                        elif fvg:
-                            sl = fvg['high'] * 1.005
+                        
+                        # Regime-based multiplier untuk SHORT
+                        if regime_conf == "TRENDING_DOWN":
+                            tp_mult_conf = 0.95      # TP lebih jauh (turun)
+                            sl_mult_conf = 1.005     # SL normal
+                            rr_min = 2.0
+                            regime_note = "📉 TRENDING DOWN → target lebih jauh!"
+                        elif regime_conf == "VOLATILE":
+                            tp_mult_conf = 0.98      # TP lebih dekat
+                            sl_mult_conf = 1.003     # SL lebih ketat
+                            rr_min = 1.5
+                            regime_note = "⚡ VOLATILE → ambil profit cepet!"
+                        elif regime_conf == "RANGING":
+                            tp_mult_conf = 0.97      # TP medium
+                            sl_mult_conf = 1.004     # SL medium
+                            rr_min = 1.5
+                            regime_note = "😴 RANGING → jangan terlalu agresif!"
+                        elif regime_conf == "TRENDING_UP":
+                            tp_mult_conf = 0.98      # TP lebih kecil (counter-trend)
+                            sl_mult_conf = 1.003     # SL lebih ketat
+                            rr_min = 1.2
+                            regime_note = "⚠️ COUNTER-TREND SHORT → SL ketat!"
                         else:
-                            sl = mark * 1.02
-                        tp = mark * 0.96
+                            tp_mult_conf = 0.96
+                            sl_mult_conf = 1.005
+                            rr_min = 1.5
+                            regime_note = ""
+                        
+                        if supply:
+                            sl = supply['high'] * sl_mult_conf
+                        elif fvg:
+                            sl = fvg['high'] * sl_mult_conf
+                        else:
+                            sl = mark * sl_mult_conf
+                        tp = mark * tp_mult_conf
 
                         risk, reward, rr = calculate_rr(entry, sl, tp)
-                        if rr >= 1.5:
+                        if rr >= rr_min:
                             teks = f"""💀 SHORT CONFLUENCE | {coin}
 ─────────────────────────────────
+📡 Regime: {regime_emoji_conf} {regime_conf}
 💰 Harga: ${mark:.4f} ✅ MASUK ZONE!
 📉 Volume: ${volume/1e6:.1f}M
 📡 OB Delta: {ob_delta:+.0f}%
@@ -2174,13 +2255,14 @@ def run_confluence_scanner():
 🎯 ENTRY: ${entry:.4f}
 🛑 SL: ${sl:.4f} (+{risk:.1f}%)
 🎯 TP: ${tp:.4f} (-{reward:.1f}%)
-🔥 R:R = 1:{rr:.1f}"""
+🔥 R:R = 1:{rr:.1f}
+💡 {regime_note}"""
                             bot.send_message(USER_ID, teks)
                             _last_confluence_alert[coin] = now
                             logger.info(f"[CONFLUENCE] SHORT alert: {coin}")
                             time.sleep(2)
 
-                    # FIXED: Sleep per coin untuk hindari rate limit
+                    # Sleep per coin untuk hindari rate limit
                     time.sleep(0.5)
 
                 except Exception as e:
@@ -2193,12 +2275,6 @@ def run_confluence_scanner():
         except Exception as e:
             logger.error(f"[CONFLUENCE] Error: {e}")
             time.sleep(60)
-
-
-def start_confluence_scanner():
-    conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
-    conf_thread.start()
-    logger.info("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
 
 
 
@@ -3325,6 +3401,7 @@ def entry(message):
         funding = get_funding_pct(ctx)
         oi_usd = get_oi_usd(ctx, mark)
         ob_delta = get_ob_delta(coin)
+        regime = get_market_regime()
 
         bid_wall_usd, bid_wall_px = get_bid_wall_level(coin)
         ask_wall_usd, ask_wall_px = get_ask_wall_level(coin)
@@ -3355,9 +3432,9 @@ def entry(message):
         else:
             bias, emoji, score = "NEUTRAL", "⚪", max(long_score, short_score)
 
-        # SMC analysis — fetch semua TF dulu
+        # SMC analysis
         m15 = analyze_tf(coin, "15m")
-        m5  = analyze_tf(coin, "5m")
+        m5 = analyze_tf(coin, "5m")
 
         # Format OI
         if oi_usd >= 1000:
@@ -3367,8 +3444,19 @@ def entry(message):
         else:
             oi_display = f"${oi_usd*1000:.0f}K"
 
-        # Build output
-        teks = f"🎯 ENTRY • {coin}\n⏰ {get_wib()}\n"
+        # Regime emoji
+        regime_emoji = {
+            "TRENDING_UP": "🚀",
+            "TRENDING_DOWN": "📉",
+            "VOLATILE": "⚡",
+            "RANGING": "😴"
+        }.get(regime, "❓")
+
+        # === BUILD OUTPUT ===
+        teks = f"🎯 ENTRY • {coin}\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "─────────────────────────────────\n"
+        teks += f"📡 Regime: {regime_emoji} {regime}\n"
         teks += "─────────────────────────────────\n"
         teks += f"💰 {fmt_price(mark)} | OI {oi_display}\n"
         teks += f"📡 OB {ob_delta:+.1f}% | Fund {funding:.4f}%\n"
@@ -3378,30 +3466,34 @@ def entry(message):
             teks += f"🦈 Ask W: ${ask_wall_usd/1e6:.2f}M @ {fmt_price(ask_wall_px)}\n"
         teks += "─────────────────────────────────\n"
 
-        # Single source MTF — pakai analyze_tf (sama dengan warroom)
+        # MTF Conflict
         conflict, bias_h1, bias_m15, bias_m5, fvg_info, conflict_type = get_mtf_conflict(coin)
 
-        # SMC trigger dari M5/M15
+        # SMC zone & trigger
         smc_trigger = None
         smc_zone = None
-        if m5 and m5["last_event"]:
+        if m5 and m5.get("last_event"):
             smc_trigger = m5["last_event"]
-        elif m15 and m15["last_event"]:
+        elif m15 and m15.get("last_event"):
             smc_trigger = m15["last_event"]
         for tf_result in [m5, m15]:
-            if tf_result and tf_result["in_ob"] and tf_result["ob"]:
-                smc_zone = tf_result["ob"]; break
-            elif tf_result and tf_result["in_fvg"] and tf_result["fvg"]:
-                smc_zone = tf_result["fvg"]; break
+            if tf_result and tf_result.get("in_ob") and tf_result.get("ob"):
+                smc_zone = tf_result["ob"]
+                break
+            elif tf_result and tf_result.get("in_fvg") and tf_result.get("fvg"):
+                smc_zone = tf_result["fvg"]
+                break
 
-        # Display TF — satu kali, satu source
-        def bf(b): return "🟢 BULLISH" if b=="BULLISH" else "🔴 BEARISH" if b=="BEARISH" else "⚪ NEUTRAL"
+        # Display TF
+        def bf(b):
+            return "🟢 BULLISH" if b == "BULLISH" else "🔴 BEARISH" if b == "BEARISH" else "⚪ NEUTRAL"
+
         teks += f"📊 H1 : {bf(bias_h1)}\n"
         teks += f"📊 M15: {bf(bias_m15)}\n"
         m5_event_str = f" | {smc_trigger}" if smc_trigger else ""
         teks += f"📊 M5 : {bf(bias_m5)}{m5_event_str}\n"
         if smc_zone:
-            zone_label = "OB" if "ob" in smc_zone.get("type","") else "FVG"
+            zone_label = "OB" if "ob" in smc_zone.get("type", "") else "FVG"
             teks += f"📍 {smc_zone['type'].upper().replace('_',' ')} ({zone_label}): {fmt_price(smc_zone['low'])} - {fmt_price(smc_zone['high'])}\n"
         elif fvg_info:
             teks += f"📍 {fvg_info}\n"
@@ -3412,24 +3504,24 @@ def entry(message):
         else:
             teks += "✅ TF Align\n\n"
 
-        # Ambil M5 bias dari get_mtf_conflict result
+        # SMC agrees check
         m5_result = m5["bias"] if m5 else "NEUTRAL"
-        m5_event_tag = m5["last_event"] if m5 and m5["last_event"] else None
-
+        m5_event_tag = m5["last_event"] if m5 and m5.get("last_event") else None
         smc_agrees = not conflict and (
             (bias == "LONG" and (bias_h1 == "BULLISH" or m5_result == "BULLISH")) or
             (bias == "SHORT" and (bias_h1 == "BEARISH" or m5_result == "BEARISH"))
         )
 
-        # Setup entry
+        # === SETUP ENTRY ===
         if bias in ["LONG", "SHORT"] and score >= 50:
             sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, bias)
+
             if sl_pct < 0.3:
                 sl_p = mark * (0.997 if bias == "LONG" else 1.003)
                 sl_pct = 0.3
                 rr = tp_pct / sl_pct
 
-            # Override SL dari zone SMC
+            # Override SL dari SMC zone
             if smc_zone and bias == "LONG" and smc_zone["low"] < mark:
                 sl_smc = smc_zone["low"] * 0.997
                 sl_pct_smc = (mark - sl_smc) / mark * 100
@@ -3443,6 +3535,7 @@ def entry(message):
                     sl_p, sl_pct = sl_smc, sl_pct_smc
                     rr = tp_pct / sl_pct if sl_pct > 0 else rr
 
+            # Confirm tag
             if not smc_agrees:
                 confirm_tag = "⚠️ DERIV ONLY"
             elif bias_h1 in ["BULLISH", "BEARISH"]:
@@ -3450,8 +3543,10 @@ def entry(message):
             else:
                 event_str = f" ({m5_event_tag})" if m5_event_tag else ""
                 confirm_tag = f"✅ M5 ALIGN{event_str}"
+
             teks += f"{emoji} {bias} SETUP • Score {score} | {confirm_tag}\n\n"
             teks += f"ENTRY : {fmt_price(mark)}\n"
+
             if bias == "LONG":
                 teks += f"SL    : {fmt_price(sl_p)} (-{sl_pct:.2f}%)\n"
                 teks += f"TP    : {fmt_price(tp_p)} (+{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
@@ -3459,9 +3554,26 @@ def entry(message):
                 teks += f"SL    : {fmt_price(sl_p)} (+{sl_pct:.2f}%)\n"
                 teks += f"TP    : {fmt_price(tp_p)} (-{tp_pct:.2f}%) | RR 1:{rr:.1f}\n"
 
+            # Rekomendasi berdasarkan regime
+            if regime == "TRENDING_UP" and bias == "LONG":
+                rr_advice = "🚀 TRENDING UP + LONG → gas pol!"
+            elif regime == "TRENDING_DOWN" and bias == "SHORT":
+                rr_advice = "📉 TRENDING DOWN + SHORT → gas pol!"
+            elif regime == "TRENDING_UP" and bias == "SHORT":
+                rr_advice = "⚠️ COUNTER-TREND SHORT — SL lebih lebar"
+            elif regime == "TRENDING_DOWN" and bias == "LONG":
+                rr_advice = "⚠️ COUNTER-TREND LONG — SL lebih lebar"
+            elif regime == "VOLATILE":
+                rr_advice = "⚡ VOLATILE — eksekusi cepet, jangan terlalu lama"
+            elif regime == "RANGING":
+                rr_advice = "😴 RANGING — ambil profit di level support/resistance"
+            else:
+                rr_advice = "📊 ikutin plan"
+
             valid_tag = "✅ VALID — GAS" if rr >= 1.5 and smc_agrees else \
                         "✅ VALID" if rr >= 1.5 else "⚠️ RR KECIL"
-            teks += f"\n{valid_tag}"
+            teks += f"\n{valid_tag}\n💡 {rr_advice}"
+
         else:
             teks += f"{emoji} {bias} • Score {score}\n"
             teks += f"Belum ada setup valid (min score 50)\n"
@@ -3475,7 +3587,6 @@ def entry(message):
     except Exception as e:
         logger.error(f"[ENTRY] Error: {e}")
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
-
 
 # ============================================================
 # SMC MULTI-TIMEFRAME ENGINE
@@ -3781,6 +3892,7 @@ def format_tf_line(label, result):
     return f"{label}: {bias_emoji} {result['bias']} | {result['structure']}{event}{zone_tag}"
 
 
+#======== WARROOM ===========
 @bot.message_handler(commands=['warroom'])
 def warroom(message):
     try:
@@ -3816,6 +3928,10 @@ def warroom(message):
         ob_delta = get_ob_delta(coin)
         bid_wall_usd, _ = get_bid_wall_level(coin)
         ask_wall_usd, _ = get_ask_wall_level(coin)
+        
+        # === AMBIL REGIME ===
+        regime = get_market_regime()
+        regime_emoji = {"TRENDING_UP":"🚀","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
 
         long_score, short_score = calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd)
         gap = abs(long_score - short_score)
@@ -3832,9 +3948,11 @@ def warroom(message):
         # Format OI
         oi_display = f"${oi_usd/1000:.1f}B" if oi_usd >= 1000 else f"${oi_usd:.1f}M"
 
-        # Build output
+        # === BUILD OUTPUT ===
         teks = f"🧠 WARROOM • {coin}\n"
         teks += f"⏰ {get_wib()} | {get_sesi()}\n"
+        teks += "─────────────────────────────────\n"
+        teks += f"📡 Regime: {regime_emoji} {regime}\n"
         teks += "─────────────────────────────────\n"
         teks += f"💰 {fmt_price(mark)} | OI {oi_display} | {change:+.2f}%\n"
         teks += f"📦 Vol ${vol:.0f}M | Fund {funding:.4f}%\n"
@@ -3872,7 +3990,7 @@ def warroom(message):
 
         teks += "─────────────────────────────────\n"
 
-        # Final verdict
+        # === FINAL VERDICT ===
         smc_bull = smc["dominant_bias"] == "BULLISH"
         smc_bear = smc["dominant_bias"] == "BEARISH"
         smc_neutral = smc["dominant_bias"] == "NEUTRAL"
@@ -3917,6 +4035,28 @@ def warroom(message):
 
         else:
             teks += f"⚪ NEUTRAL | Belum ada setup valid"
+
+        # === REKOMENDASI RR BERDASARKAN REGIME ===
+        teks += "\n─────────────────────────────────\n"
+        
+        if regime == "TRENDING_UP":
+            if deriv_bias == "LONG":
+                rr_advice = f"{regime_emoji} TRENDING UP + LONG → Target RR minimal 3:1\n🎯 /entry untuk eksekusi"
+            else:
+                rr_advice = f"{regime_emoji} TRENDING UP → Prioritaskan LONG\n⚠️ SHORT hanya jika ada sinyal reversal kuat"
+        elif regime == "TRENDING_DOWN":
+            if deriv_bias == "SHORT":
+                rr_advice = f"{regime_emoji} TRENDING DOWN + SHORT → Target RR minimal 3:1\n🎯 /entry untuk eksekusi"
+            else:
+                rr_advice = f"{regime_emoji} TRENDING DOWN → Prioritaskan SHORT\n⚠️ LONG hanya jika ada sinyal reversal kuat"
+        elif regime == "VOLATILE":
+            rr_advice = f"{regime_emoji} VOLATILE → SL 1.5-2x ATR, target RR minimal 1.5:1\n⚡ Eksekusi cepet, jangan terlalu lama"
+        elif regime == "RANGING":
+            rr_advice = f"{regime_emoji} RANGING → Ambil profit di support/resistance\n📊 RR 1.5:1 cukup, jangan FOMO breakout"
+        else:
+            rr_advice = f"{regime_emoji} {regime} → /entry untuk level SL/TP detail"
+
+        teks += f"💡 {rr_advice}"
 
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
 
@@ -4429,24 +4569,48 @@ def squeeze(message):
     try:
         coin = get_coin(message)
         msg = bot.reply_to(message, f"⚡ Scanning squeeze {coin}...")
+
         ctx, mark = get_ctx(coin)
         if not ctx:
             return bot.edit_message_text(f"❌ {coin} ga ada", msg.chat.id, msg.message_id)
+
         funding = get_funding_pct(ctx)
         oi_usd = get_oi_usd(ctx, mark)
+        
+        # === AMBIL REGIME UNTUK MULTIPLIER ===
+        regime = get_market_regime()
+        regime_emoji = {"TRENDING_UP":"🚀","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
+        
+        # Regime-based multiplier untuk target squeeze
+        if regime in ["TRENDING_UP", "TRENDING_DOWN"]:
+            squeeze_mult = 1.5      # target lebih jauh di trending
+            advice = "Trending market — squeeze bisa lebih jauh!"
+        elif regime == "VOLATILE":
+            squeeze_mult = 0.7      # target lebih deket (whipsaw)
+            advice = "Volatile — ambil profit lebih cepet!"
+        elif regime == "RANGING":
+            squeeze_mult = 0.8      # target medium
+            advice = "Ranging — jangan FOMO, harga bisa balik"
+        else:
+            squeeze_mult = 1.0
+            advice = "Normal — ikutin plan"
+
         l2 = info.l2_snapshot(coin)
         bids = l2['levels'][0]
         asks = l2['levels'][1]
         big_bid = next((float(b['px'])*float(b['sz']) for b in bids[:10] if float(b['px'])*float(b['sz']) > 500_000), 0)
         big_ask = next((float(a['px'])*float(a['sz']) for a in asks[:10] if float(a['px'])*float(a['sz']) > 500_000), 0)
+        
         levels = []
         for lev, w in [(20,0.5),(10,0.3),(5,0.2)]:
             levels.append({"price": mark*(1-0.99/lev), "size": oi_usd*w*0.5, "type":"Long"})
             levels.append({"price": mark*(1+0.99/lev), "size": oi_usd*w*0.5, "type":"Short"})
+        
         above = sorted([l for l in levels if l['price'] > mark], key=lambda x: x['price'])
         below = sorted([l for l in levels if l['price'] < mark], key=lambda x: x['price'], reverse=True)
         short_liq = above[0] if above else {"price": 0, "size": 0}
         long_liq = below[0] if below else {"price": 0, "size": 0}
+        
         short_score = long_score = 0
         if funding > 0.05: short_score += 40
         elif funding < -0.05: long_score += 40
@@ -4454,21 +4618,49 @@ def squeeze(message):
         if long_liq['size'] > 50: long_score += 30
         if big_ask < 1_000_000 and big_ask > 0: short_score += 30
         if big_bid < 1_000_000 and big_bid > 0: long_score += 30
-        teks = f"⚡ SQUEEZE SCAN • {coin}\n⏰ {get_wib()}\n─────────────────\n💰 Harga: {fmt_price(mark)}\n💰 Fund : {funding:.4f}%\n📊 OI   : ${oi_usd:.0f}M\n─────────────────\n"
+        
+        # === BUILD OUTPUT ===
+        teks = f"⚡ SQUEEZE SCAN • {coin}\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += "─────────────────────────────────\n"
+        teks += f"📡 Regime: {regime_emoji} {regime}\n"
+        teks += "─────────────────────────────────\n"
+        teks += f"💰 Harga: {fmt_price(mark)}\n"
+        teks += f"💰 Fund : {funding:.4f}%\n"
+        teks += f"📊 OI   : ${oi_usd:.0f}M\n"
+        teks += "─────────────────────────────────\n"
+        
         if short_score >= 70:
-            pct = (short_liq['price']/mark - 1)*100
-            teks += f"🚨 SHORT SQUEEZE ALERT\n🎯 Target: {fmt_price(short_liq['price'])} (+{pct:.1f}%)\n🛑 SL: di bawah {fmt_price(long_liq['price'])}\n📊 Score: {short_score}%"
+            # APPLY REGIME MULTIPLIER KE TARGET
+            pct = (short_liq['price']/mark - 1) * 100 * squeeze_mult
+            target_price = mark * (1 + pct/100)
+            teks += f"🚨 SHORT SQUEEZE ALERT!\n"
+            teks += f"🎯 Target: {fmt_price(target_price)} (+{pct:.1f}%)\n"
+            teks += f"🛑 SL: di bawah {fmt_price(long_liq['price'])}\n"
+            teks += f"📊 Score: {short_score}%\n"
+            teks += f"💡 {advice}"
         elif long_score >= 70:
-            pct = (long_liq['price']/mark - 1)*100
-            teks += f"🚨 LONG SQUEEZE ALERT\n🎯 Target: {fmt_price(long_liq['price'])} ({pct:.1f}%)\n🛑 SL: di atas {fmt_price(short_liq['price'])}\n📊 Score: {long_score}%"
+            # APPLY REGIME MULTIPLIER KE TARGET
+            pct = (long_liq['price']/mark - 1) * 100 * squeeze_mult
+            target_price = mark * (1 + pct/100)
+            teks += f"🚨 LONG SQUEEZE ALERT!\n"
+            teks += f"🎯 Target: {fmt_price(target_price)} ({pct:.1f}%)\n"
+            teks += f"🛑 SL: di atas {fmt_price(short_liq['price'])}\n"
+            teks += f"📊 Score: {long_score}%\n"
+            teks += f"💡 {advice}"
         else:
-            teks += f"😴 NO SETUP\nShort {short_score}% | Long {long_score}%\nTunggu funding ekstrem"
-        teks += f"\n\n─────────────────\n🎯 /entry {coin} | /warroom {coin}"
+            teks += f"😴 NO SETUP\n"
+            teks += f"Short {short_score}% | Long {long_score}%\n"
+            teks += f"Tunggu funding ekstrem ( >0.05 atau <-0.05 )\n"
+            teks += f"\n💡 {advice}"
+        
+        teks += f"\n\n─────────────────────────────────\n"
+        teks += f"🎯 /entry {coin} | /warroom {coin}"
+
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
-
-
 # ---------- CORRELATION ----------
 @bot.message_handler(commands=['correlation', 'corr'])
 def correlation_analysis(message):
