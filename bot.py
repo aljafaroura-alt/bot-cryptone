@@ -3348,8 +3348,8 @@ def stop_hunt_trap(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
 
+#============= ENTRY ============
 
-# ---------- ENTRY ----------
 @bot.message_handler(commands=['entry'])
 def entry(message):
     try:
@@ -3446,36 +3446,36 @@ def entry(message):
         teks += "─────────────────────────────────\n"
 
         # ========== MULTI-TIMEFRAME CONFLICT DETECTION ==========
-conflict, bias_h1, bias_m15, bias_m5, fvg_info, conflict_type = get_mtf_conflict(coin)
+        conflict, bias_h1, bias_m15, bias_m5, fvg_info, conflict_type = get_mtf_conflict(coin)
 
-# Tambahkan informasi multi-timeframe ke teks
-teks += "📊 H1 : " + ("🟢 BULLISH" if bias_h1 == "BULLISH" else "🔴 BEARISH" if bias_h1 == "BEARISH" else "⚪ NEUTRAL") + "\n"
-teks += "📊 M15: " + ("🟢 BULLISH" if bias_m15 == "BULLISH" else "🔴 BEARISH" if bias_m15 == "BEARISH" else "⚪ NEUTRAL") + "\n"
-teks += "📊 M5 : " + ("🟢 BULLISH" if bias_m5 == "BULLISH" else "🔴 BEARISH" if bias_m5 == "BEARISH" else "⚪ NEUTRAL") + "\n"
-if fvg_info:
-    teks += f"📍 {fvg_info}\n"
-teks += "─────────────────────────────────\n"
+        # Tambahkan informasi multi-timeframe ke teks
+        teks += "📊 H1 : " + ("🟢 BULLISH" if bias_h1 == "BULLISH" else "🔴 BEARISH" if bias_h1 == "BEARISH" else "⚪ NEUTRAL") + "\n"
+        teks += "📊 M15: " + ("🟢 BULLISH" if bias_m15 == "BULLISH" else "🔴 BEARISH" if bias_m15 == "BEARISH" else "⚪ NEUTRAL") + "\n"
+        teks += "📊 M5 : " + ("🟢 BULLISH" if bias_m5 == "BULLISH" else "🔴 BEARISH" if bias_m5 == "BEARISH" else "⚪ NEUTRAL") + "\n"
+        if fvg_info:
+            teks += f"📍 {fvg_info}\n"
+        teks += "─────────────────────────────────\n"
 
-if conflict:
-    teks += f"⚠️ CONFLICT — {conflict_type}\n"
-    teks += "🎯 DERIV ONLY — Risiko tinggi\n\n"
-else:
-    teks += "✅ TF Align — Valid\n\n"
+        if conflict:
+            teks += f"⚠️ CONFLICT — {conflict_type}\n"
+            teks += "🎯 DERIV ONLY — Risiko tinggi\n\n"
+        else:
+            teks += "✅ TF Align — Valid\n\n"
 
-# SMC context – keep the same indentation level (4 spaces)
-h1_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(h1_bias, "⚪")
-m5_bias = m5["bias"] if m5 else "?"
-m5_event = m5["last_event"] if m5 and m5["last_event"] else "-"
-m5_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(m5_bias, "⚪")
-m15_bias = m15["bias"] if m15 else "?"
-m15_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(m15_bias, "⚪")
+        # SMC context
+        h1_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(h1_bias, "⚪")
+        m5_bias = m5["bias"] if m5 else "?"
+        m5_event = m5["last_event"] if m5 and m5["last_event"] else "-"
+        m5_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(m5_bias, "⚪")
+        m15_bias = m15["bias"] if m15 else "?"
+        m15_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(m15_bias, "⚪")
 
-teks += f"📊 H1 : {h1_emoji} {h1_bias} | {h1_struct}\n"
-teks += f"📊 M15: {m15_emoji} {m15_bias}\n"
-teks += f"📊 M5 : {m5_emoji} {m5_bias}"
-if smc_trigger:
-    teks += f" | {smc_trigger}"
-teks += "\n"
+        teks += f"📊 H1 : {h1_emoji} {h1_bias} | {h1_struct}\n"
+        teks += f"📊 M15: {m15_emoji} {m15_bias}\n"
+        teks += f"📊 M5 : {m5_emoji} {m5_bias}"
+        if smc_trigger:
+            teks += f" | {smc_trigger}"
+        teks += "\n"
 
         if smc_zone:
             zone_type = "OB" if "ob" in smc_zone.get("type", "") else "FVG"
