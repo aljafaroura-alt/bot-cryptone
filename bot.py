@@ -2276,7 +2276,11 @@ def run_confluence_scanner():
             logger.error(f"[CONFLUENCE] Error: {e}")
             time.sleep(60)
 
-
+def start_confluence_scanner():
+    conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
+    conf_thread.start()
+    logger.info("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
+    
 
 # ============================================================
 # LEARNING ENGINE (ADAPTIVE WEIGHTS + SIGNAL TRACKING)
