@@ -820,41 +820,74 @@ def get_atr(coin, period=14, timeframe="15m"):
 
 
 def get_adaptive_sltp(coin, price, direction="LONG"):
+    """Regime-based ATR SL/TP — RR bisa 3x+ di trending"""
     sl_pct_fallback, tp_pct_fallback = get_volatility_params(coin)
-    atr = get_atr(coin)
-
+    
+    # === REGIME-BASED MULTIPLIER ===
+    regime = get_market_regime()
+    
+    # Default: balanced
+    sl_mult = 1.0
+    tp_mult = 2.5
+    min_rr = 1.8
+    
+    if regime == "VOLATILE":
+        sl_mult = 1.3
+        tp_mult = 2.0
+        min_rr = 1.5
+    elif regime == "TRENDING_UP" and direction == "LONG":
+        sl_mult = 0.7
+        tp_mult = 4.0
+        min_rr = 3.0
+    elif regime == "TRENDING_DOWN" and direction == "SHORT":
+        sl_mult = 0.7
+        tp_mult = 4.0
+        min_rr = 3.0
+    elif regime == "TRENDING_UP" and direction == "SHORT":
+        sl_mult = 1.2
+        tp_mult = 1.5
+        min_rr = 1.2
+    elif regime == "TRENDING_DOWN" and direction == "LONG":
+        sl_mult = 1.2
+        tp_mult = 1.5
+        min_rr = 1.2
+    elif regime == "RANGING":
+        sl_mult = 1.0
+        tp_mult = 2.0
+        min_rr = 1.5
+    else:
+        sl_mult = 1.0
+        tp_mult = 2.5
+        min_rr = 1.8
+    
+    # Prioritaskan ATR 1h
+    atr = get_atr(coin, period=14, timeframe="1h")
+    if not atr:
+        atr = get_atr(coin, period=14, timeframe="15m")
+    
     if atr and atr > 0 and price > 0:
         atr_pct = (atr / price) * 100
-        sl_pct = max(0.3, min(3.0, atr_pct * 1.5))
-        tp_pct = max(0.5, min(6.0, atr_pct * 2.5))
-
-        if tp_pct / sl_pct < 1.5:
-            tp_pct = sl_pct * 1.8
-
-        rr = tp_pct / sl_pct
-
-        if direction == "LONG":
-            sl_price = price * (1 - sl_pct / 100)
-            tp_price = price * (1 + tp_pct / 100)
-        else:
-            sl_price = price * (1 + sl_pct / 100)
-            tp_price = price * (1 - tp_pct / 100)
-
-        return sl_price, sl_pct, tp_price, tp_pct, rr
+        sl_pct = max(0.3, min(4.0, atr_pct * 1.5 * sl_mult))
+        tp_pct = max(0.5, min(12.0, atr_pct * 2.5 * tp_mult))
     else:
-        sl_pct = sl_pct_fallback
-        tp_pct = tp_pct_fallback
+        sl_pct = sl_pct_fallback * sl_mult
+        tp_pct = tp_pct_fallback * tp_mult
+    
+    # Force minimal RR
+    rr = tp_pct / sl_pct
+    if rr < min_rr:
+        tp_pct = sl_pct * min_rr
+        tp_pct = min(12.0, tp_pct)
         rr = tp_pct / sl_pct
-
-        if direction == "LONG":
-            sl_price = price * (1 - sl_pct / 100)
-            tp_price = price * (1 + tp_pct / 100)
-        else:
-            sl_price = price * (1 + sl_pct / 100)
-            tp_price = price * (1 - tp_pct / 100)
-
-        return sl_price, sl_pct, tp_price, tp_pct, rr
-
+    
+    if direction == "LONG":
+        sl_price = price * (1 - sl_pct / 100)
+        tp_price = price * (1 + tp_pct / 100)
+    else:
+        sl_price = price * (1 + sl_pct / 100)
+        tp_price = price * (1 - tp_pct / 100)
+    
+    return sl_price, sl_pct, tp_price, tp_pct, rr
 
 
 # ============================================================
