@@ -96,6 +96,12 @@ _ob_cache = {}
 _ob_delta_ema = {}  # EMA smoothing untuk OB delta (cegah flip cepat)
 _ob_cache_time = {}
 
+_last_predator_scan = 0
+_last_divergence_check = 0
+_last_cvd_check = 0
+_last_smart_money_check = 0
+_auto_sniper_enabled = False 
+
 # Learning engine
 LEARNING_FILE_PATH = LEARNING_FILE
 LEARNING_WEIGHTS = {"funding": 1.0, "ob_delta": 1.0, "wall": 1.0, "liquidity": 1.0}
