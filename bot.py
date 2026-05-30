@@ -1889,6 +1889,64 @@ def get_candles_cached(coin, timeframe, limit=50):
         cache[coin] = []  # Cache failure biar ga repeat terus
         return []
 
+# ========== MULTI-TIMEFRAME CONFLICT DETECTION ==========
+def get_mtf_conflict(coin):
+    """
+    Analisis multi-timeframe untuk deteksi conflict.
+    Returns: (conflict_detected, bias_h1, bias_m15, bias_m5, fvg_info, conflict_type)
+    """
+    try:
+        # Ambil candles H1, M15, M5 (gunakan cache)
+        candles_h1 = get_candles_cached(coin, "1h", 30)
+        candles_m15 = get_candles_cached(coin, "15m", 30)
+        candles_m5 = get_candles_cached(coin, "5m", 30)
+        
+        if len(candles_h1) < 10 or len(candles_m15) < 10 or len(candles_m5) < 10:
+            return False, "UNKNOWN", "UNKNOWN", "UNKNOWN", None, None
+        
+        def get_trend(candles):
+            # Deteksi trend dari 5 candle terakhir
+            if len(candles) < 5:
+                return "NEUTRAL"
+            recent = candles[-5:]
+            highs = [float(c['h']) for c in recent]
+            lows = [float(c['l']) for c in recent]
+            if highs[-1] > highs[-2] and lows[-1] > lows[-2]:
+                return "BULLISH"
+            elif highs[-1] < highs[-2] and lows[-1] < lows[-2]:
+                return "BEARISH"
+            else:
+                return "NEUTRAL"
+        
+        bias_h1 = get_trend(candles_h1)
+        bias_m15 = get_trend(candles_m15)
+        bias_m5 = get_trend(candles_m5)
+        
+        # Cek FVG (opsional, reuse fungsi find_fvg dari confluence)
+        fvg_info = None
+        try:
+            fvg = find_fvg(coin)
+            if fvg:
+                fvg_info = f"{fvg['type'].upper()} FVG: ${fvg['low']:.4f} - ${fvg['high']:.4f}"
+        except:
+            pass
+        
+        # Deteksi conflict: H1 vs M15/M5
+        conflict_detected = False
+        conflict_type = None
+        if bias_h1 == "BEARISH" and (bias_m15 == "BULLISH" or bias_m5 == "BULLISH"):
+            conflict_detected = True
+            conflict_type = "SMC BULLISH vs Deriv SHORT"
+        elif bias_h1 == "BULLISH" and (bias_m15 == "BEARISH" or bias_m5 == "BEARISH"):
+            conflict_detected = True
+            conflict_type = "SMC BEARISH vs Deriv LONG"
+        
+        return conflict_detected, bias_h1, bias_m15, bias_m5, fvg_info, conflict_type
+        
+    except Exception as e:
+        print(f"MTF conflict error: {e}")
+        return False, "UNKNOWN", "UNKNOWN", "UNKNOWN", None, None
+
 
 def find_demand_zone(coin):
     """Cari demand zone (support) dari struktur candle H4"""
@@ -3386,6 +3444,23 @@ def entry(message):
         if ask_wall_usd > 0:
             teks += f"🦈 Ask W: ${ask_wall_usd/1e6:.2f}M @ {fmt_price(ask_wall_px)}\n"
         teks += "─────────────────────────────────\n"
+
+        # ========== MULTI-TIMEFRAME CONFLICT DETECTION ==========
+conflict, bias_h1, bias_m15, bias_m5, fvg_info, conflict_type = get_mtf_conflict(coin)
+
+# Tambahkan informasi multi-timeframe ke teks
+teks += "📊 H1 : " + ("🟢 BULLISH" if bias_h1 == "BULLISH" else "🔴 BEARISH" if bias_h1 == "BEARISH" else "⚪ NEUTRAL") + "\n"
+teks += "📊 M15: " + ("🟢 BULLISH" if bias_m15 == "BULLISH" else "🔴 BEARISH" if bias_m15 == "BEARISH" else "⚪ NEUTRAL") + "\n"
+teks += "📊 M5 : " + ("🟢 BULLISH" if bias_m5 == "BULLISH" else "🔴 BEARISH" if bias_m5 == "BEARISH" else "⚪ NEUTRAL") + "\n"
+if fvg_info:
+    teks += f"📍 {fvg_info}\n"
+teks += "─────────────────────────────────\n"
+
+if conflict:
+    teks += f"⚠️ CONFLICT — {conflict_type}\n"
+    teks += "🎯 DERIV ONLY — Risiko tinggi\n\n"
+else:
+    teks += "✅ TF Align — Valid\n\n"
 
         # SMC context
         h1_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(h1_bias, "⚪")
