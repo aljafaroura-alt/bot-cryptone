@@ -1,21 +1,21 @@
 
 name: Bot Cryptone 24/7
 
-concurrency:
-  group: bot-cryptone
-  cancel-in-progress: true
-
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/20 * * * *'  # tiap 20 menit (biar ga bentrok)
+
+concurrency:
+  group: bot-cryptone
+  cancel-in-progress: false  # biar ga matiin proses lama
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 350
     
     steps:
       - name: Checkout repo
@@ -23,13 +23,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      
-      - name: Restore bot state (anti pikun)
+      - name: Restore cached state files
         uses: actions/cache@v3
         with:
           path: |
@@ -37,13 +31,26 @@ jobs:
             learning_data.json
             predictions.json
             wallet_tracker_state.json
-          key: bot-state-${{ runner.os }}
-          restore-keys: bot-state-
-
+          key: bot-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: bot-state-${{ runner.os }}-
+      
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
       
       - name: Run bot
         env:
           TOKEN: ${{ secrets.TOKEN }}
         run: python bot.py
+      
+      - name: Save state files after run
+        if: always()
+        uses: actions/cache/save@v3
+        with:
+          path: |
+            oi_history_persist.json
+            learning_data.json
+            predictions.json
+            wallet_tracker_state.json
+          key: bot-state-${{ runner.os }}-${{ github.run_id }}
