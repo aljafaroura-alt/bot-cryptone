@@ -3065,6 +3065,7 @@ GM/GN 😼 {user}
 🎰 ANALISIS PRO
 /delta | /trap | /cluster
 /liqmap | /correlation | /sentiment
+/smartflow
 
 🐋 WHALE INTEL
 /whale | /whalescan | /whalewall
@@ -6171,6 +6172,9 @@ def status_cmd(message):
     # ===== PREDATOR STATUS =====
     predator_text = "✅ ON (tiap 30 menit)" if _last_predator_scan > 0 else "🟡 IDLE"
     
+    # ===== WARROOM ALERT STATUS =====
+    warroom_alert_status = "✅ ON (≥70, tiap 15m)" if _warroom_alert_running else "❌ OFF"
+    
     # ===== COPYTRADE STATUS DENGAN MODE =====
     ct_total = len(WATCHED_WALLETS)
     ct_manual = len(MANUAL_WALLETS)
@@ -6193,7 +6197,7 @@ def status_cmd(message):
     
     teks = f"""⚙️ SYSTEM STATUS
 ─────────────────────────────────
-😼 Bot       : ✅ ONLINE [{token_src}]
+🦄 Bot       : ✅ ONLINE [{token_src}]
 🔑 Token     : {token_preview}
 ⏱️ Uptime    : {uptime}
 📡 Session   : {session_text}
@@ -6207,6 +6211,7 @@ def status_cmd(message):
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
 🦈 PREDATOR  : {predator_text}
+🔔 WARROOM   : {warroom_alert_status}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
 🤝 COPYTRADE : {copytrade_text}
@@ -6218,7 +6223,6 @@ def status_cmd(message):
         teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n   Funding avg: {mood_data['funding']:+.4f}%\n   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
     teks += "─────────────────────────────────\n✅ Semua sistem normal"
     bot.send_message(chat_id, teks)
-  
 # ---------- COPYTRADE ----------
 @bot.message_handler(commands=['copytrade'])
 def copytrade_cmd(message):
