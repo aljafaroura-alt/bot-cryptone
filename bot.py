@@ -3202,9 +3202,9 @@ def check_entry_alert():
 📊 {a['alignment']}/3 TF align
 
 🎯 ENTRY: {fmt_price(a['price'])}
-🛑 SL: {fmt_price(a['sl'])} ({'%.2f' % a['sl_pct']}%)
+⛔ SL: {fmt_price(a['sl'])} ({'%.2f' % a['sl_pct']}%)
 ✅ TP: {fmt_price(a['tp'])} (+{'%.2f' % a['tp_pct']}%)
-⚖️ RR: 1:{a['rr']:.1f}
+⚓ RR: 1:{a['rr']:.1f}
 
 💡 /entry {a['coin']} | /warroom {a['coin']}"""
                 
@@ -3376,11 +3376,11 @@ def session_cmd(message):
 ⏰ SESSION {coin} • {wib_now.strftime('%d/%m %H:%M')} WIB
 ─────────────────────────────────
 
-{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥🔥", "NY")}
+{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥🌡️", "NY")}
 
-{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🔥🔥", "London")}
+{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌬️🔥", "London")}
 
-{fmt_session("ASIA", "🇯🇵", "07:00-15:00", "🥱", "Asia")}
+{fmt_session("ASIA", "🇯🇵", "07:00-15:00", "❄️", "Asia")}
 
 ─────────────────────────────────
 📡 {now_label}
@@ -3409,7 +3409,7 @@ def ping(message):
         now = get_wib()
         teks = f"""🏓 PONG!
 ━━━━━━━━━━━━━━━━━━━━━━
-📡 Status     : ✅ ONLINE
+🔋 Status     : ✅ ONLINE
 ⚡ Response   : {response_ms:.0f}ms
 🕐 WIB        : {now}
 ⏱️ Uptime     : {uptime}
@@ -3417,7 +3417,7 @@ def ping(message):
 🔗 Telegram   : {tg_status}
 🔗 Hyperliquid: {hl_status}
 ━━━━━━━━━━━━━━━━━━━━━━
-💡 Bot sehat, siap membantu! 🚀"""
+💡 Bot sehat, siap membantu! 📟"""
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
@@ -3435,7 +3435,7 @@ def screener(message):
         bot.send_message(message.chat.id, cached_results)
         return
     
-    msg = bot.send_message(message.chat.id, "📊 MEMBANGUN MARKET DASHBOARD PRO (fast mode)...")
+    msg = bot.send_message(message.chat.id, "☎️ MEMBANGUN MARKET DASHBOARD PRO (fast mode)...")
     
     try:
         start_total = time.time()
@@ -3518,7 +3518,7 @@ def screener(message):
         
         # ========== 5. REGIME ==========
         regime = get_market_regime()
-        regime_emoji = {"TRENDING_UP":"📈","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
+        regime_emoji = {"TRENDING_UP":"⬆️","TRENDING_DOWN":"⬇️","VOLATILE":"↕️","RANGING":"↔️"}.get(regime,"❓")
         
         # ========== 6. TOP LONG & SHORT ==========
         long_candidates = [c for c in all_coins_data if c["long_score"] >= 35]
@@ -3580,20 +3580,20 @@ def screener(message):
         txt = f"🧠 MARKET DASHBOARD PRO ⚡({elapsed:.1f}s)\n"
         txt += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         txt += f"⏰ {get_wib()} | {get_sesi()}\n\n"
-        txt += f"🌡️ REGIME: {regime_emoji} {regime}\n"
-        txt += f"📊 MARKET BREADTH\n"
+        txt += f"📡 REGIME: {regime_emoji} {regime}\n"
+        txt += f"📑 MARKET BREADTH\n"
         txt += f"   🟢 Bullish: {bullish}  |  🔴 Bearish: {bearish}  |  ⚪ Neutral: {neutral}\n"
         txt += f"   Bias: {breadth_bias}\n"
         txt += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         
         if top_long:
-            txt += f"🔥 TOP LONG SETUPS\n"
+            txt += f"🔺 TOP LONG SETUPS\n"
             for i, c in enumerate(top_long[:3], 1):
                 heat = heat_level(c["long_score"])
                 txt += f"{i}. {c['coin']} | Score {c['long_score']} {heat}\n"
                 txt += f"   📡 Delta +{c['ob_delta']:.0f}%"
                 if c["bid_wall"] > 30000:
-                    txt += f" | 🐋 Wall ${c['bid_wall']/1000:.0f}K"
+                    txt += f" | 🟩 Wall ${c['bid_wall']/1000:.0f}K"
                 if c["funding"] < -0.01:
                     txt += f" | ❄️ Fund {c['funding']:.4f}%"
                 if c["oi"] > 20:
@@ -3607,13 +3607,13 @@ def screener(message):
                 txt += "\n\n"
         
         if top_short:
-            txt += f"🔴 TOP SHORT SETUPS\n"
+            txt += f"🔻 TOP SHORT SETUPS\n"
             for i, c in enumerate(top_short[:3], 1):
                 heat = heat_level(c["short_score"])
                 txt += f"{i}. {c['coin']} | Score {c['short_score']} {heat}\n"
                 txt += f"   📡 Delta {c['ob_delta']:.0f}%"
                 if c["ask_wall"] > 30000:
-                    txt += f" | 🦈 Wall ${c['ask_wall']/1000:.0f}K"
+                    txt += f" | 🟥 Wall ${c['ask_wall']/1000:.0f}K"
                 if c["funding"] > 0.01:
                     txt += f" | 🔥 Fund +{c['funding']:.4f}%"
                 txt += "\n\n"
@@ -3665,7 +3665,7 @@ def price(message):
             ctx, _ = get_ctx(coin)
             change = get_change(ctx) if ctx else 0
             arrow = "▲" if change >= 0 else "▼"
-            txt = f"💰 {coin}\n─────────────────\n{fmt_price(p)}\n24h {arrow}{abs(change):.2f}%\n\n⏰ {get_wib()}"
+            txt = f"💵 {coin}\n─────────────────\n{fmt_price(p)}\n24h {arrow}{abs(change):.2f}%\n\n⏰ {get_wib()}"
             bot.reply_to(message, txt)
         else:
             bot.reply_to(message, f"❌ {coin} tidak ada di HL")
@@ -3683,9 +3683,9 @@ def funding(message):
             return bot.reply_to(message, f"❌ {coin} tidak ada")
         rate = float(data[0]["fundingRate"]) * 100
         arah = "🟢 Long bayar Short" if rate > 0 else "🔴 Short bayar Long"
-        if abs(rate) > 0.05: level = "🔥🔥 EKSTREM"
+        if abs(rate) > 0.05: level = "⚡ EKSTREM"
         elif abs(rate) > 0.02: level = "🔥 TINGGI"
-        elif abs(rate) > 0.01: level = "⚠️ ELEVATED"
+        elif abs(rate) > 0.01: level = "❄️ ELEVATED"
         else: level = "✅ Normal"
         rate_8h = rate * 8
         txt = f"💰 FUNDING • {coin}\n─────────────────\n/jam  : {rate:.4f}%\n/8jam : {rate_8h:.4f}%\nArah  : {arah}\nLevel : {level}\n\n⏰ {get_wib()}"
@@ -3705,7 +3705,7 @@ def oi(message):
         oi_usd = get_oi_usd(ctx, mark)
         funding = get_funding_pct(ctx)
         change = get_change(ctx)
-        if oi_usd > 1000: w = "🔥🔥 SANGAT TINGGI"
+        if oi_usd > 1000: w = "🔥🚨 SANGAT TINGGI"
         elif oi_usd > 500: w = "🔥 TINGGI"
         elif oi_usd > 100: w = "🟡 SEDANG"
         else: w = "✅ Normal"
@@ -3819,7 +3819,7 @@ def orderbook_delta(message):
         elif delta < -10: bias = "🔴 ASK DOM"; insight = "Seller dominan"
         else: bias = "⚪ BALANCED"; insight = "Sideways"
         bar_bid = "█" * int(bid_pct / 10) + "░" * (10 - int(bid_pct / 10))
-        txt = f"📊 OB DELTA • {coin}\n─────────────────\nHarga {fmt_price(mid)}\nSpread {spread_pct:.4f}%\nDelta {delta:+.1f}%\n─────────────────\n🟢 BID ${bid_vol:,.0f} [{bid_pct:.0f}%]\n{bar_bid}\n🔴 ASK ${ask_vol:,.0f} [{100-bid_pct:.0f}%]\n─────────────────\n{bias}\n💡 {insight}\n\n⏰ {get_wib()}"
+        txt = f"💹 OB DELTA • {coin}\n─────────────────\nHarga {fmt_price(mid)}\nSpread {spread_pct:.4f}%\nDelta {delta:+.1f}%\n─────────────────\n🟢 BID ${bid_vol:,.0f} [{bid_pct:.0f}%]\n{bar_bid}\n🔴 ASK ${ask_vol:,.0f} [{100-bid_pct:.0f}%]\n─────────────────\n{bias}\n💡 {insight}\n\n⏰ {get_wib()}"
         bot.edit_message_text(txt, msg.chat.id, msg.message_id)
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
@@ -3872,7 +3872,7 @@ def stop_hunt_trap(message):
 def entry(message):
     try:
         if check_command_cooldown(message.from_user.id, "entry"):
-            bot.reply_to(message, f"⏳ Tunggu {COMMAND_COOLDOWN_SEC}s sebelum /entry lagi")
+            bot.reply_to(message, f"🚨 Tunggu {COMMAND_COOLDOWN_SEC}s sebelum /entry lagi")
             return
         coin = get_coin(message)
         msg = bot.reply_to(message, f"🎯 Analyzing entry {coin} — H1→M5...")
@@ -3932,7 +3932,7 @@ def entry(message):
             "TRENDING_UP": "🚀",
             "TRENDING_DOWN": "📉",
             "VOLATILE": "⚡",
-            "RANGING": "😴"
+            "RANGING": "↔️"
         }.get(regime, "❓")
 
         # === BUILD OUTPUT ===
@@ -3944,9 +3944,9 @@ def entry(message):
         teks += f"💰 {fmt_price(mark)} | OI {oi_display}\n"
         teks += f"📡 OB {ob_delta:+.1f}% | Fund {funding:.4f}%\n"
         if bid_wall_usd > 0:
-            teks += f"🐋 Bid W: ${bid_wall_usd/1e6:.2f}M @ {fmt_price(bid_wall_px)}\n"
+            teks += f"🟩 Bid W: ${bid_wall_usd/1e6:.2f}M @ {fmt_price(bid_wall_px)}\n"
         if ask_wall_usd > 0:
-            teks += f"🦈 Ask W: ${ask_wall_usd/1e6:.2f}M @ {fmt_price(ask_wall_px)}\n"
+            teks += f"🟥 Ask W: ${ask_wall_usd/1e6:.2f}M @ {fmt_price(ask_wall_px)}\n"
         teks += "─────────────────────────────────\n"
 
         # MTF Conflict
@@ -3971,10 +3971,10 @@ def entry(message):
         def bf(b):
             return "🟢 BULLISH" if b == "BULLISH" else "🔴 BEARISH" if b == "BEARISH" else "⚪ NEUTRAL"
 
-        teks += f"📊 H1 : {bf(bias_h1)}\n"
-        teks += f"📊 M15: {bf(bias_m15)}\n"
+        teks += f"1️⃣ H1 : {bf(bias_h1)}\n"
+        teks += f"2️⃣ M15: {bf(bias_m15)}\n"
         m5_event_str = f" | {smc_trigger}" if smc_trigger else ""
-        teks += f"📊 M5 : {bf(bias_m5)}{m5_event_str}\n"
+        teks += f"3️⃣ M5 : {bf(bias_m5)}{m5_event_str}\n"
         if smc_zone:
             zone_label = "OB" if "ob" in smc_zone.get("type", "") else "FVG"
             teks += f"📍 {smc_zone['type'].upper().replace('_',' ')} ({zone_label}): {fmt_price(smc_zone['low'])} - {fmt_price(smc_zone['high'])}\n"
@@ -4020,12 +4020,12 @@ def entry(message):
 
             # Confirm tag
             if not smc_agrees:
-                confirm_tag = "⚠️ DERIV ONLY"
+                confirm_tag = "🚨 DERIV ONLY"
             elif bias_h1 in ["BULLISH", "BEARISH"]:
                 confirm_tag = "✅ SMC KONFIRM"
             else:
                 event_str = f" ({m5_event_tag})" if m5_event_tag else ""
-                confirm_tag = f"✅ M5 ALIGN{event_str}"
+                confirm_tag = f"☑️ M5 ALIGN{event_str}"
 
             teks += f"{emoji} {bias} SETUP • Score {score} | {confirm_tag}\n\n"
             teks += f"ENTRY : {fmt_price(mark)}\n"
@@ -4049,9 +4049,9 @@ def entry(message):
             elif regime == "VOLATILE":
                 rr_advice = "⚡ VOLATILE — eksekusi cepet, jangan terlalu lama"
             elif regime == "RANGING":
-                rr_advice = "😴 RANGING — ambil profit di level support/resistance"
+                rr_advice = "↔️ RANGING — ambil profit di level support/resistance"
             else:
-                rr_advice = "📊 ikutin plan"
+                rr_advice = "🚸 ikutin plan"
 
             valid_tag = "✅ VALID — GAS" if rr >= 1.5 and smc_agrees else \
                         "✅ VALID" if rr >= 1.5 else "⚠️ RR KECIL"
@@ -4433,7 +4433,7 @@ def warroom(message):
             return
         coin = parts[1].upper()
 
-        msg = bot.reply_to(message, f"🧠 Analyzing {coin} — H1→M30→M15→M5...")
+        msg = bot.reply_to(message, f"🧭 Analyzing {coin} — H1→M30→M15→M5...")
 
         # SMC multi-TF analysis
         smc = smc_full_analysis(coin)
@@ -4462,7 +4462,7 @@ def warroom(message):
         
         # === AMBIL REGIME ===
         regime = get_market_regime()
-        regime_emoji = {"TRENDING_UP":"🚀","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
+        regime_emoji = {"TRENDING_UP":"🚀","TRENDING_DOWN":"📉","VOLATILE":"🔥","RANGING":"↔️"}.get(regime,"❓")
 
         long_score, short_score = calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd)
         gap = abs(long_score - short_score)
@@ -4509,9 +4509,9 @@ def warroom(message):
 
         # Walls
         if bid_wall_usd > 0:
-            teks += f"🐋 Bid Wall: ${bid_wall_usd/1e6:.2f}M\n"
+            teks += f"🟩 Bid Wall: ${bid_wall_usd/1e6:.2f}M\n"
         if ask_wall_usd > 0:
-            teks += f"🦈 Ask Wall: ${ask_wall_usd/1e6:.2f}M\n"
+            teks += f"🟥 Ask Wall: ${ask_wall_usd/1e6:.2f}M\n"
 
         # Entry zone dari SMC
         ez = smc["entry_zone"]
@@ -4542,7 +4542,7 @@ def warroom(message):
             if smc["aligned_count"] >= 3:
                 teks += "⚡ SMC + DERIV KONFIRM — /entry untuk eksekusi"
             else:
-                teks += "⏳ Tunggu konfirmasi sebelum entry"
+                teks += "⏳‼️ Tunggu konfirmasi sebelum entry"
 
         elif smc_neutral and (deriv_long or deriv_short):
             # SMC choppy tapi deriv kuat — pakai M5 sebagai tiebreaker
@@ -4713,7 +4713,7 @@ def entrywhale(message):
         elapsed = time.time() - start_time
         
         if not whale_entries:
-            teks = f"🐋 WHALE ENTRY (SCORING)\n─────────────────────────────────\n⏰ {get_wib()}\n⚡ Scan {len(top_coins)} coins in {elapsed:.1f}s\n😴 Tidak ada whale entry dgn score ≥2 dalam 5 menit.\n"
+            teks = f"🐋 WHALE ENTRY (SCORING)\n─────────────────────────────────\n⏰ {get_wib()}\n⚡ Scan {len(top_coins)} coins in {elapsed:.1f}s\n🚸 Tidak ada whale entry dgn score ≥2 dalam 5 menit.\n"
             return bot.edit_message_text(teks, msg.chat.id, msg.message_id)
         
         whale_entries.sort(key=lambda x: x['score'], reverse=True)
@@ -4727,7 +4727,7 @@ def entrywhale(message):
             wall_str = f" | Wall ${w['wall']/1000:.0f}K" if w['wall'] > 0 else ""
             teks += f"{w['emoji']} {w['side']} {w['coin']} | Score {w['score']}\n"
             teks += f"   💰 ${w['size']:,.0f} | {fmt_price(w['price'])}\n"
-            teks += f"   📡 OB {w['ob_delta']:+.0f}% | Fund {w['funding']:+.3f}% | OI ${w['oi']:.0f}M{wall_str}\n"
+            teks += f"   💵 OB {w['ob_delta']:+.0f}% | Fund {w['funding']:+.3f}% | OI ${w['oi']:.0f}M{wall_str}\n"
             teks += f"   ✅ {', '.join(w['reasons'])}\n"
             teks += f"   ⏱️ {w['time']}s ago\n\n"
         
@@ -4744,7 +4744,7 @@ def entrywhale(message):
 def whalewall(message):
     try:
         coin = get_coin(message)
-        msg = bot.reply_to(message, f"🧱 Scanning whalewall {coin}...")
+        msg = bot.reply_to(message, f"🚧 Scanning whalewall {coin}...")
         mids = info.all_mids()
         price = float(mids.get(coin, 0))
         if price == 0:
@@ -4763,7 +4763,7 @@ def whalewall(message):
             return walls
         big_bids = sorted(parse_walls(bids), key=lambda x: x['price'], reverse=True)[:3]
         big_asks = sorted(parse_walls(asks), key=lambda x: x['price'])[:3]
-        teks = f"🧱 WHALE WALL • {coin}\n⏰ {get_wib()}\n─────────────────────────────────\n💰 Harga: {fmt_price(price)}\n🎯 Filter: > $500k\n─────────────────────────────────\n"
+        teks = f"🚧 WHALE WALL • {coin}\n⏰ {get_wib()}\n─────────────────────────────────\n💰 Harga: {fmt_price(price)}\n🎯 Filter: > $500k\n─────────────────────────────────\n"
         teks += "🔴 ASK (Resistance):\n"
         if big_asks:
             for w in big_asks:
@@ -4800,7 +4800,7 @@ def whalewall(message):
 def liqmap(message):
     try:
         coin = get_coin(message)
-        msg = bot.reply_to(message, f"💀 Scanning liqmap {coin}...")
+        msg = bot.reply_to(message, f"⛔ Scanning liqmap {coin}...")
         ctx, mark = get_ctx(coin)
         if not ctx or mark == 0:
             return bot.edit_message_text(f"❌ {coin} ga ada", msg.chat.id, msg.message_id)
@@ -4816,7 +4816,7 @@ def liqmap(message):
             levels.append({"price": short_p, "size": size, "type": "SHORT", "lev": lev})
         above = sorted([l for l in levels if l["price"] > mark], key=lambda x: x["price"])
         below = sorted([l for l in levels if l["price"] < mark], key=lambda x: x["price"], reverse=True)
-        teks = f"💀 LIQ MAP • {coin}\n─────────────────\n💰 Harga: {fmt_price(mark)}\n📊 OI: ${oi_usd:.2f}M\n─────────────────\n"
+        teks = f"⛔ LIQ MAP • {coin}\n─────────────────\n💰 Harga: {fmt_price(mark)}\n📊 OI: ${oi_usd:.2f}M\n─────────────────\n"
         for l in above[:3]:
             pct = (l["price"]-mark)/mark*100
             teks += f"⬆️ {fmt_price(l['price'])} (+{pct:.1f}%) {l['type']} {l['lev']}x | ${l['size']:.1f}M\n"
@@ -4886,9 +4886,9 @@ def whale(message):
         ratio = bids/asks if asks > 0 else 0
         big_bids = len([x for x in bids_raw if float(x["sz"])*float(x["px"]) > 500_000])
         big_asks = len([x for x in asks_raw if float(x["sz"])*float(x["px"]) > 500_000])
-        if bids > asks*2: verdict = "💚 BUY WALL DOMINAN — Akumulasi"
-        elif asks > bids*2: verdict = "❤️ SELL WALL DOMINAN — Distribusi"
-        else: verdict = "⚖️ BALANCED"
+        if bids > asks*2: verdict = "🟢 BUY WALL DOMINAN — Akumulasi"
+        elif asks > bids*2: verdict = "🔴 SELL WALL DOMINAN — Distribusi"
+        else: verdict = "⚓ BALANCED"
         txt = f"🐳 WHALE ORDERBOOK • {coin}\n─────────────────\n🟢 Buy  : ${bids:.2f}M\n🔴 Sell : ${asks:.2f}M\nRatio  : {ratio:.2f}x\nBig Buy  : {big_bids} order >$500K\nBig Sell : {big_asks} order >$500K\n─────────────────\n{verdict}\n\n⏰ {get_wib()}"
         bot.reply_to(message, txt)
     except Exception as e:
@@ -4897,7 +4897,7 @@ def whale(message):
 @bot.message_handler(commands=['whalescan'])
 def whalescan(message):
     try:
-        msg = bot.reply_to(message, "🕵️ Scanning whale activity...")
+        msg = bot.reply_to(message, "🐋 Scanning whale activity...")
         data = get_cached_meta()
         results = []
         for asset, ctx in zip(data[0]["universe"], data[1]):
@@ -4919,9 +4919,9 @@ def whalescan(message):
                     results.append((name, oi, vol, fund, change, score, get_narrative(name)))
             except: continue
         results = sorted(results, key=lambda x: x[5], reverse=True)[:7]
-        txt = f"🕵️ WHALE ACCUMULATION\n─────────────────\n{get_wib()}\n\n"
+        txt = f"🐋 WHALE ACCUMULATION\n─────────────────\n{get_wib()}\n\n"
         if not results:
-            txt += "😴 Tidak ada sinyal akumulasi kuat."
+            txt += "🚸 Tidak ada sinyal akumulasi kuat."
         else:
             for i, (name, oi, vol, fund, change, score, sector) in enumerate(results, 1):
                 bar = "🟡" * min(score, 9)
@@ -4959,9 +4959,9 @@ def market_summary(message):
         if avg_funding > 0.02:
             teks += "⚠️ Greedy market — Waspada long squeeze"
         elif avg_funding < -0.02:
-            teks += "🔥 Fear market — Siap2 short squeeze"
+            teks += "🚨 Fear market — Siap2 short squeeze"
         else:
-            teks += "✅ Neutral — Santai trading"
+            teks += "↔️ Neutral — Santai trading"
         bot.reply_to(message, teks)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {e}")
@@ -4990,8 +4990,8 @@ def heatmap(message):
         for sector, d in sorted(sd.items(), key=lambda x: x[1]["vol"], reverse=True):
             avg = sum(d["changes"]) / len(d["changes"]) if d["changes"] else 0
             avg_f = sum(d["fundings"]) / len(d["fundings"]) if d["fundings"] else 0
-            if avg > 5: heat = "🔥🔥"
-            elif avg > 2: heat = "🔥"
+            if avg > 5: heat = "‼️‼️"
+            elif avg > 2: heat = "⁉️"
             elif avg > 0: heat = "🟢"
             elif avg > -2: heat = "🟡"
             elif avg > -5: heat = "🔴"
@@ -5095,7 +5095,7 @@ def nuke(message):
         
         txt = f"💣 NUKE RADAR (NEW)\n─────────────────────────────────\n⏰ {get_wib()}\n🔥 Kriteria: OI>50M | Move>1% | VolSpike>1.8x\n─────────────────────────────────\n"
         if not candidates:
-            txt += "✅ Tidak ada potensi nuke sekarang.\n"
+            txt += "🚸 Tidak ada potensi nuke sekarang.\n"
         else:
             for i, (name, oi, fund, vol, change, score, direction) in enumerate(candidates, 1):
                 fire = "🔥" if score > 70 else "⚠️"
@@ -5163,7 +5163,7 @@ def volatility_scanner(message):
         if len(parts) > 1:
             coin = parts[1].upper()
             return volcheck_single(message, coin)
-        msg = bot.reply_to(message, "📊 Scanning volatility...")
+        msg = bot.reply_to(message, "🩺 Scanning volatility...")
         data = get_cached_meta()
         vol_list = []
         for asset, ctx in zip(data[0]["universe"], data[1]):
@@ -5184,7 +5184,7 @@ def volatility_scanner(message):
 
 def volcheck_single(message, coin):
     try:
-        msg = bot.reply_to(message, f"📊 Checking volatility {coin}...")
+        msg = bot.reply_to(message, f"🔬 Checking volatility {coin}...")
         end_time = int(time.time() * 1000)
         start_time = end_time - (10 * 60 * 1000)
         candles = info.candles_snapshot(coin, "1m", start_time, end_time)
@@ -5199,16 +5199,16 @@ def volcheck_single(message, coin):
         max_vol = max(changes) if changes else 0
         latest_change = (prices[-1] - prices[-2]) / prices[-2] * 100 if len(prices) > 1 else 0
         if avg_vol > 0.3:
-            status = "🔥🔥 VERY HIGH"
+            status = "🔥🚨 VERY HIGH"
             advice = "Hati-hati, spread lebar, slippage tinggi"
         elif avg_vol > 0.15:
-            status = "🔥 HIGH"
+            status = "🔴 HIGH"
             advice = "Volatile, cocok untuk scalping"
         elif avg_vol > 0.08:
             status = "🟡 MODERATE"
             advice = "Normal, ikutin plan"
         else:
-            status = "😴 LOW"
+            status = "🟢 LOW"
             advice = "Range trading, hindari breakout"
         bar_len = min(int(avg_vol * 20), 10)
         bar = "█" * bar_len + "░" * (10 - bar_len)
@@ -5223,7 +5223,7 @@ def volcheck_single(message, coin):
 def squeeze(message):
     try:
         coin = get_coin(message)
-        msg = bot.reply_to(message, f"⚡ Scanning squeeze {coin}...")
+        msg = bot.reply_to(message, f"💵 Scanning squeeze {coin}...")
 
         ctx, mark = get_ctx(coin)
         if not ctx:
@@ -5291,7 +5291,7 @@ def squeeze(message):
             target_price = mark * (1 + pct/100)
             teks += f"🚨 SHORT SQUEEZE ALERT!\n"
             teks += f"🎯 Target: {fmt_price(target_price)} (+{pct:.1f}%)\n"
-            teks += f"🛑 SL: di bawah {fmt_price(long_liq['price'])}\n"
+            teks += f"⛔ SL: di bawah {fmt_price(long_liq['price'])}\n"
             teks += f"📊 Score: {short_score}%\n"
             teks += f"💡 {advice}"
         elif long_score >= 70:
@@ -5300,11 +5300,11 @@ def squeeze(message):
             target_price = mark * (1 + pct/100)
             teks += f"🚨 LONG SQUEEZE ALERT!\n"
             teks += f"🎯 Target: {fmt_price(target_price)} ({pct:.1f}%)\n"
-            teks += f"🛑 SL: di atas {fmt_price(short_liq['price'])}\n"
+            teks += f"⛔ SL: di atas {fmt_price(short_liq['price'])}\n"
             teks += f"📊 Score: {long_score}%\n"
             teks += f"💡 {advice}"
         else:
-            teks += f"😴 NO SETUP\n"
+            teks += f"🚸 NO SETUP\n"
             teks += f"Short {short_score}% | Long {long_score}%\n"
             teks += f"Tunggu funding ekstrem ( >0.05 atau <-0.05 )\n"
             teks += f"\n💡 {advice}"
@@ -5323,7 +5323,7 @@ def correlation_analysis(message):
     try:
         coin = get_coin(message)
         if coin == 'BTC':
-            return bot.reply_to(message, "😅 BTC vs BTC = 1.0")
+            return bot.reply_to(message, "🚸 BTC vs BTC = 1.0")
         msg = bot.reply_to(message, f"🔗 Analyzing correlation {coin}/BTC...")
         end_time = int(datetime.now().timestamp() * 1000)
         start_time = end_time - (100 * 5 * 60 * 1000)
@@ -5364,7 +5364,7 @@ def correlation_analysis(message):
             insight = f"{coin} punya narasi sendiri"
             risk = "LOW"
         else:
-            status = "🔄 INVERSE"
+            status = "🔵 INVERSE"
             insight = "Naik pas BTC turun, bagus buat hedging"
             risk = "LOW"
         teks = f"🔗 CORRELATION • {coin}/BTC\n⏰ {get_wib()}\n─────────────────\n📊 Korelasi: {corr:.3f}\n📈 Beta    : {beta:.2f}x\n🎯 Status  : {status}\n─────────────────\n💡 {insight}\n⚠️ Risk: {risk}\n\n⏰ {get_wib()}"
@@ -5392,7 +5392,7 @@ def sentiment(message):
         elif funding < -0.01: skor -= 1
         if change > 5: skor += 1
         elif change < -5: skor -= 1
-        if skor >= 3: emosi = "🔥🔥 EUPHORIA"
+        if skor >= 3: emosi = "🔥🚨 EUPHORIA"
         elif skor >= 2: emosi = "🔥 GREED"
         elif skor >= 1: emosi = "🟢 OPTIMIS"
         elif skor <= -3: emosi = "💀 PANIC"
@@ -5757,7 +5757,7 @@ def run_temen_scan(chat_id):
         else:  # RANGING
             thresh_change, thresh_ob, thresh_fund = 0.8, 15, 0.03
 
-        regime_emoji = {"TRENDING_UP": "🚀", "TRENDING_DOWN": "📉", "VOLATILE": "⚡", "RANGING": "😴"}.get(regime, "❓")
+        regime_emoji = {"TRENDING_UP": "🚀", "TRENDING_DOWN": "📉", "VOLATILE": "🔥", "RANGING": "↔️"}.get(regime, "❓")
         alerts = []
         for asset, ctx in zip(data[0]["universe"], data[1]):
             try:
@@ -5787,7 +5787,7 @@ def run_temen_scan(chat_id):
             except:
                 continue
         if not alerts:
-            bot.send_message(chat_id, f"😴 TEMEN • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\nNo trigger.\n{regime_emoji} {regime}: Δ>{thresh_change}% | OB>{thresh_ob}% | Fund>{thresh_fund}%")
+            bot.send_message(chat_id, f"🚭 TEMEN • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\nNo trigger.\n{regime_emoji} {regime}: Δ>{thresh_change}% | OB>{thresh_ob}% | Fund>{thresh_fund}%")
             return
         alerts.sort(key=lambda x: x['score'], reverse=True)
         top_alerts = alerts[:3]
@@ -5816,7 +5816,7 @@ def temen_on(message):
 def temen_off(message):
     global TEMEN_MODE
     TEMEN_MODE = False
-    bot.reply_to(message, "🤐 Sure, gw diem dulu... /temen again")
+    bot.reply_to(message, "😈 Sure, gw diem dulu... /temen again")
 
 @bot.message_handler(commands=['temenstatus'])
 def temen_status(message):
@@ -5956,7 +5956,7 @@ def sniper_on(message):
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
-    text = f"🐋 SNIPER {SNIPER_MODE} - ON\n─────────────────────────────────\nJagain semua koin Hyperliquid:\n1. 🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n2. 📡 OB Delta > +{cfg['delta_min']}%\n3. 💰 Funding < {cfg['funding_max']}%\nKalo 3 syarat kena = auto notif\nCooldown {cfg['cooldown']//60} menit/koin\nchoose /sniperaggro or /sniperinsane"
+    text = f"🔫 SNIPER {SNIPER_MODE} - ON\n─────────────────────────────────\nJagain semua koin Hyperliquid:\n1. 🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n2. 📡 OB Delta > +{cfg['delta_min']}%\n3. 💰 Funding < {cfg['funding_max']}%\nKalo 3 syarat kena = auto notif\nCooldown {cfg['cooldown']//60} menit/koin\nchoose /sniperaggro or /sniperinsane"
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
 @bot.message_handler(commands=['sniperaggro'])
@@ -5969,7 +5969,7 @@ def sniper_aggro(message):
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
-    text = f"🐋 SNIPER AGGRO - ON\n─────────────────────────────────\nScan semua coin Hyperliquid:\n🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n📡 OB Delta > +{cfg['delta_min']}%\n💰 Funding ≤ {cfg['funding_max']}%\n⏱️ Cooldown: {cfg['cooldown']//60} menit/koin\n─────────────────────────────────\n✅ Semua coin aktif dipantau\n🔔 Notif per coin (BTC, ETH, SOL, dll)\nSpam oke — tiap coin punya cooldown sendiri"
+    text = f"🏅 SNIPER AGGRO - ON\n─────────────────────────────────\nScan semua coin Hyperliquid:\n🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n📡 OB Delta > +{cfg['delta_min']}%\n💰 Funding ≤ {cfg['funding_max']}%\n⏱️ Cooldown: {cfg['cooldown']//60} menit/koin\n─────────────────────────────────\n✅ Semua coin aktif dipantau\n🔔 Notif per coin (BTC, ETH, SOL, dll)\nSpam oke — tiap coin punya cooldown sendiri"
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
 @bot.message_handler(commands=['sniperinsane'])
@@ -5982,7 +5982,7 @@ def sniper_insane(message):
     markup = types.InlineKeyboardMarkup()
     btn_off = types.InlineKeyboardButton("🔕 STOP SNIPER", callback_data="stopsniper")
     markup.add(btn_off)
-    text = f"🎯 SNIPER INSANE - ON\n─────────────────────────────────\nFilter ketat, sinyal paling kuat:\n🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n📡 OB Delta > +{cfg['delta_min']}%\n💰 Funding ≤ {cfg['funding_max']}%\n⏱️ Cooldown: {cfg['cooldown']//60} menit/koin\n─────────────────────────────────\n✅ Semua coin aktif dipantau\n🔔 Notif per coin (BTC, ETH, SOL, dll)\nSpam oke — tiap coin punya cooldown sendiri"
+    text = f"🎖️ SNIPER INSANE - ON\n─────────────────────────────────\nFilter ketat, sinyal paling kuat:\n🛡️ Bid Wall > ${cfg['wall_min']/1000:.0f}k\n📡 OB Delta > +{cfg['delta_min']}%\n💰 Funding ≤ {cfg['funding_max']}%\n⏱️ Cooldown: {cfg['cooldown']//60} menit/koin\n─────────────────────────────────\n✅ Semua coin aktif dipantau\n🔔 Notif per coin (BTC, ETH, SOL, dll)\nSpam oke — tiap coin punya cooldown sendiri"
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "stopsniper")
@@ -6088,13 +6088,13 @@ def report(message):
         if avg_funding > 0.05:
             funding_sentiment = "🔥 EXTREME GREED (Waspada long squeeze)"
         elif avg_funding > 0.02:
-            funding_sentiment = "😊 GREEDY (Masih aman)"
+            funding_sentiment = "🥵 GREEDY (Masih aman)"
         elif avg_funding < -0.05:
             funding_sentiment = "💀 EXTREME FEAR (Siap2 bottom)"
         elif avg_funding < -0.02:
-            funding_sentiment = "😨 FEAR (Potensi short squeeze)"
+            funding_sentiment = "😰 FEAR (Potensi short squeeze)"
         else:
-            funding_sentiment = "😎 NEUTRAL"
+            funding_sentiment = "😐 NEUTRAL"
         
         # ========== WHALE WALLS (HANYA TOP 10 COIN) ==========
         # Ambil cuma 10 coin teratas berdasarkan OI atau volume
@@ -6124,16 +6124,16 @@ def report(message):
             direction_rec = "⚠️ HATI-HATI"
             rec_reason = "Volatilitas tinggi, perbesar SL"
         else:
-            direction_rec = "⚡ RANGE"
+            direction_rec = "↔️ RANGE"
             rec_reason = "Sideways, jangan FOMO breakout"
         
         elapsed = time.time() - start_time
         
         # ========== BUILD OUTPUT ==========
-        teks = f"📊 MARKET MORNING BRIEF ⚡({elapsed:.1f}s)\n"
+        teks = f"📢 MARKET MORNING BRIEF ⚡({elapsed:.1f}s)\n"
         teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"⏰ {get_wib()} | {sesi}\n"
-        teks += f"🌡️ Regime: {regime_emoji} {regime}\n"
+        teks += f"📡 Regime: {regime_emoji} {regime}\n"
         teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
         # Top Gainers
@@ -6143,7 +6143,7 @@ def report(message):
             teks += f"{i}. {c['coin']} [{c['narrative']}] {arrow} {c['change']:+.1f}%\n"
             teks += f"   💰 {fmt_price(c['price'])} | 📊 OI ${c['oi']:.0f}M | Fund {c['funding']:+.3f}%\n"
             if c["long_conf"] > 50 and c["reasons_long"]:
-                teks += f"   ✅ Alasan: {', '.join(c['reasons_long'][:2])}\n"
+                teks += f"   🪙 Alasan: {', '.join(c['reasons_long'][:2])}\n"
             teks += "\n"
         
         # Top Losers
@@ -6157,7 +6157,7 @@ def report(message):
             teks += "\n"
         
         # Market Breadth
-        teks += f"📊 MARKET BREADTH\n"
+        teks += f"📣 MARKET BREADTH\n"
         teks += f"   🟢 Bullish: {bullish}  |  🔴 Bearish: {bearish}  |  ⚪ Neutral: {neutral}\n"
         teks += f"   Status: {breadth_status}\n\n"
         
@@ -6417,10 +6417,10 @@ def status_cmd(message):
     teks = f"""⚠️ SYSTEM STATUS
 ─────────────────────────────────
 👾 Bot       : ✅ ONLINE [{token_src}]
-🔑 Token     : {token_preview}
+🔐 Token     : {token_preview}
 ⏱️ Uptime    : {uptime}
 📡 Session   : {session_text}
-🕐 WIB       : {get_wib()}
+⏰ WIB       : {get_wib()}
 ─────────────────────────────────
 🕶️ SNIPER    : {sniper_text}
 👽 TEMEN     : {temen_text}
@@ -6430,13 +6430,14 @@ def status_cmd(message):
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
 🦈 PREDATOR  : {predator_text}
-🔔 WARROOM   : {warroom_alert_status}
+⚓ WARROOM   : {warroom_alert_status}
 🎯 ENTRY     : {entry_alert_status}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
-🤝 COPYTRADE : {copytrade_text}
+🔊 COPYTRADE : {copytrade_text}
+
 ─────────────────────────────────
-📅 SCHEDULES:{schedules_text}
+🗓️ SCHEDULES:{schedules_text}
 ─────────────────────────────────"""
     mood_data = get_market_mood_data()
     if mood_data:
@@ -6463,10 +6464,10 @@ def copytrade_cmd(message):
         teks = f"{mode_emoji} COPYTRADE STATUS [{COPYTRADE_MODE}]\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"⏰ {get_wib()}\n\n"
-        teks += f"🎯 Mode      : {COPYTRADE_MODE}\n"
+        teks += f"🌈 Mode      : {COPYTRADE_MODE}\n"
         teks += f"💰 Min size  : ${size_filter:,.0f}\n"
         teks += f"🔊 Tracking  : {total} wallets\n"
-        teks += f"🖥️ Auto      : {auto_count} (leaderboard)\n"
+        teks += f"▶️ Auto      : {auto_count} (leaderboard)\n"
         teks += f"✋ Manual    : {manual_count} (kamu set)\n"
         teks += f"⏱️ Scan      : tiap 60 detik\n"
         teks += f"🔄 Discovery : tiap {WALLET_DISCOVERY_INTERVAL//60} menit\n\n"
@@ -6520,7 +6521,7 @@ def copytrade_mode(message):
 ━━━━━━━━━━━━━━━━━━━━━━
 💰 Minimal posisi: **{size_display}**
 
-📊 **Daftar Mode:**
+🌈 **Daftar Mode:**
 🟢 **CASUAL**  → Min size $10.000 (sinyal sering)
 🟡 **PRO**     → Min size $25.000 (selektif)
 🔴 **INSANE**  → Min size $100.000 (whale only)
@@ -6551,7 +6552,7 @@ def copytrade_mode(message):
         
         teks = f"""{mode_emoji} **COPYTRADE MODE BERUBAH**
 ━━━━━━━━━━━━━━━━━━━━━━
-🎯 Mode baru: **{mode}**
+♻️ Mode baru: **{mode}**
 💰 Minimal size: **{size_display}**
 📊 Filter: Hanya posisi ≥ {size_display} yang akan dikirim notifikasi
 
@@ -6582,7 +6583,7 @@ def addwallet_cmd(message):
 
         save_wallet_state()
         addr_short = f"{wallet[:6]}...{wallet[-4:]}"
-        teks = "✅ WALLET DITAMBAHKAN\n"
+        teks = "📌 WALLET DITAMBAHKAN\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"📍 {addr_short}\n"
         teks += f"🏷️  Label   : {label}\n"
@@ -6622,7 +6623,7 @@ def removewallet_cmd(message):
         if removed_from:
             save_wallet_state()
             addr_short = f"{wallet[:6]}...{wallet[-4:]}"
-            teks = "✅ WALLET DIHAPUS\n"
+            teks = "🗑️ WALLET DIHAPUS\n"
             teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
             teks += f"📍 {addr_short}\n"
             if label_removed:
@@ -6784,7 +6785,7 @@ def cluster_open_positions(message):
             if total_short > 0 and data["short_wallets"]:
                 top_short = data["short_wallets"][0]
                 teks += f"      └ {top_short['label']}: ${top_short['notional']/1e6:.1f}M @ {fmt_price(top_short['entry'])}\n"
-            teks += f"   📊 BIAS: {bias_emoji} {bias}\n\n"
+            teks += f"   ↕️ BIAS: {bias_emoji} {bias}\n\n"
         
         teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"💡 Insight:\n"
@@ -6883,7 +6884,7 @@ def whale_sentiment(message):
         teks += f"⏰ {get_wib()}\n"
         teks += f"👤 Tracked wallets: {len(wallets_snap)}\n"
         teks += f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        teks += f"📊 TOTAL POSISI: {total_positions}\n"
+        teks += f"💵 TOTAL POSISI: {total_positions}\n"
         teks += f"🟢 LONG : {total_long} ({long_pct:.0f}%) | ${total_long_notional/1e6:.1f}M\n"
         teks += f"🔴 SHORT: {total_short} ({short_pct:.0f}%) | ${total_short_notional/1e6:.1f}M\n\n"
         teks += f"🎯 OVERALL: {overall}\n\n"
@@ -6970,7 +6971,7 @@ def run_scheduler():
                     f"🕶️ AUTO SNIPER OFF\n"
                     f"⏰ {get_wib()}\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"😴 London/NY session selesai\n"
+                    f"🚸 London/NY session selesai\n"
                     f"Sniper dimatiin otomatis"
                 )
             # ===================================================
@@ -7089,10 +7090,10 @@ def run_scheduler():
                         alert = None
                         if is_long:
                             sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "LONG")
-                            alert = f"🦈 SMART MONEY LONG • {coin} [{SNIPER_MODE}|{current_regime}]\n⏰ {get_wib()}\n📂 {narrative} | {change:+.1f}% 24h\n💰 {fmt_price(price)}\n📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n🐋 Bid Wall: ${wall_bid/1e6:.2f}M\n\n🟢 LONG\n🎯 Entry : {fmt_price(price)}\n🛑 SL    : {fmt_price(sl)} (-{sl_p:.1f}%)\n✅ TP    : {fmt_price(tp)} (+{tp_p:.1f}%)\n⚖️ R:R   : 1:{rr:.1f}"
+                            alert = f"🦈 SMART MONEY LONG • {coin} [{SNIPER_MODE}|{current_regime}]\n⏰ {get_wib()}\n🧿 {narrative} | {change:+.1f}% 24h\n💰 {fmt_price(price)}\n📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n🐋 Bid Wall: ${wall_bid/1e6:.2f}M\n\n🟢 LONG\n🎯 Entry : {fmt_price(price)}\n⛔ SL    : {fmt_price(sl)} (-{sl_p:.1f}%)\n✅ TP    : {fmt_price(tp)} (+{tp_p:.1f}%)\n⚖️ R:R   : 1:{rr:.1f}"
                         elif is_short:
                             sl, sl_p, tp, tp_p, rr = get_adaptive_sltp(coin, price, "SHORT")
-                            alert = f"🦈 SMART MONEY SHORT • {coin} [{SNIPER_MODE}|{current_regime}]\n⏰ {get_wib()}\n📂 {narrative} | {change:+.1f}% 24h\n💰 {fmt_price(price)}\n📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n🔴 Ask Wall: ${wall_ask/1e6:.2f}M\n\n🔴 SHORT\n🎯 Entry : {fmt_price(price)}\n🛑 SL    : {fmt_price(sl)} (+{sl_p:.1f}%)\n✅ TP    : {fmt_price(tp)} (-{tp_p:.1f}%)\n⚖️ R:R   : 1:{rr:.1f}"
+                            alert = f"🦈 SMART MONEY SHORT • {coin} [{SNIPER_MODE}|{current_regime}]\n⏰ {get_wib()}\n🧿 {narrative} | {change:+.1f}% 24h\n💰 {fmt_price(price)}\n📡 Delta: {delta:+.1f}% | Fund: {funding:+.4f}%\n🔴 Ask Wall: ${wall_ask/1e6:.2f}M\n\n🔴 SHORT\n🎯 Entry : {fmt_price(price)}\n⛔ SL    : {fmt_price(sl)} (+{sl_p:.1f}%)\n✅ TP    : {fmt_price(tp)} (-{tp_p:.1f}%)\n⚖️ R:R   : 1:{rr:.1f}"
                         if alert:
                             ind_data = {"funding_strong": abs(funding) > 0.02, "ob_strong": abs(delta) > 20, "wall_strong": wall_bid > 500_000 if is_long else wall_ask > 500_000}
                             track_signal_entry(coin, "LONG" if is_long else "SHORT", price, ind_data)
@@ -7390,10 +7391,10 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{side_emoji} OPEN {data['side']} {coin}\n"
-            f"📂 {narrative}\n"
-            f"💰 Size: {data['size']:.4f} ({size_display})\n"
-            f"🎯 Entry: {fmt_price(data['entry'])}\n"
-            f"⚡ Lev: {data['leverage']:.0f}x"
+            f"🧿 {narrative}\n"
+            f"📶 Size: {data['size']:.4f} ({size_display})\n"
+            f"💲 Entry: {fmt_price(data['entry'])}\n"
+            f"🔼 Lev: {data['leverage']:.0f}x"
         )
     elif change_type == "CLOSE":
         pnl = data.get("pnl", 0)
@@ -7402,9 +7403,9 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
             f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⬛ CLOSE {data['side']} {coin}\n"
-            f"📂 {narrative}\n"
-            f"💰 Size: {data['size']:.4f} ({size_display})\n"
+            f"🛑 CLOSE {data['side']} {coin}\n"
+            f"🛜 {narrative}\n"
+            f"📶 Size: {data['size']:.4f} ({size_display})\n"
             f"{pnl_emoji} PnL: ${pnl:+.2f}"
         )
     elif change_type == "SIZE_UP":
@@ -7413,9 +7414,9 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⬆️ SIZE UP {data['side']} {coin}\n"
-            f"📂 {narrative}\n"
-            f"💰 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
-            f"🎯 Entry: {fmt_price(data['entry'])}"
+            f"🧿 {narrative}\n"
+            f"📶 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
+            f"💲 Entry: {fmt_price(data['entry'])}"
         )
     elif change_type == "SIZE_DOWN":
         return (
@@ -7423,9 +7424,9 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⬇️ SIZE DOWN {data['side']} {coin}\n"
-            f"📂 {narrative}\n"
-            f"💰 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
-            f"🎯 Entry: {fmt_price(data['entry'])}"
+            f"🧿 {narrative}\n"
+            f"📶 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
+            f"💲 Entry: {fmt_price(data['entry'])}"
         )
     return ""
     
@@ -7635,7 +7636,7 @@ if __name__ == "__main__":
     start_warroom_alert()
     start_entry_alert()
 
-    logger.info("🦄 HL Terminal Bot v4.0 FINAL - ONLINE")
+    logger.info("🦄🎀 HL Terminal Bot v4.0 FINAL - ONLINE")
     
     # Main polling loop
     while True:
