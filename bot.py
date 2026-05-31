@@ -3116,37 +3116,76 @@ def ping(message):
 
 
 # ---------- SCREENER ----------
+
 @bot.message_handler(commands=['screener', 'scan'])
 def screener(message):
     global last_scan, cached_results
     now = time.time()
-    if cached_results and (now - last_scan < 15):
+    
+    # Pake cache 30 detik biar gak repeat scan
+    if cached_results and (now - last_scan < 30):
         bot.send_message(message.chat.id, cached_results)
         return
-    msg = bot.send_message(message.chat.id, "📊 MEMBANGUN MARKET DASHBOARD PRO...")
+    
+    msg = bot.send_message(message.chat.id, "📊 MEMBANGUN MARKET DASHBOARD PRO (fast mode)...")
+    
     try:
-        data = get_cached_meta()
-        assets = data[0]["universe"]
-        ctxs = data[1]
+        start_total = time.time()
         
-        # Kumpulkan data semua coin
+        # ========== 1. AMBIL SEMUA DATA SEKALIGUS ==========
+        meta_data = get_cached_meta()
+        assets = meta_data[0]["universe"]
+        ctxs = meta_data[1]
+        all_mids = info.all_mids()
+        
+        # ========== 2. BATCH GET ORDERBOOK UNTUK TOP 30 COIN ==========
+        # Ambil coin dengan volume tertinggi dulu biar efisien
+        coins_with_vol = []
+        for asset, ctx in zip(assets, ctxs):
+            vol = float(ctx.get("dayNtlVlm") or 0)
+            if vol > 1_000_000:  # minimal $1M volume
+                coins_with_vol.append((asset["name"], vol))
+        
+        coins_with_vol.sort(key=lambda x: x[1], reverse=True)
+        top_coins = [c[0] for c in coins_with_vol[:40]]  # cukup 40 coin teratas
+        
+        # Batch ambil OB delta dan wall (pakai cache yang udah ada)
+        ob_cache_local = {}
+        bid_wall_cache_local = {}
+        ask_wall_cache_local = {}
+        
+        for coin in top_coins:
+            # OB delta dari cache (udah 30 detik)
+            ob_cache_local[coin] = get_ob_delta(coin)
+            bid_wall_cache_local[coin], _ = get_bid_wall_level(coin)
+            ask_wall_cache_local[coin], _ = get_ask_wall_level(coin)
+        
+        # ========== 3. KUMPULIN DATA SEMUA COIN ==========
         all_coins_data = []
+        
         for asset, ctx in zip(assets, ctxs):
             coin = asset["name"]
             mark = float(ctx.get("markPx") or 0)
             if mark == 0:
                 continue
+            
+            # Pake data dari cache kalo ada
+            if coin in top_coins:
+                ob_delta = ob_cache_local.get(coin, 0)
+                bid_wall = bid_wall_cache_local.get(coin, 0)
+                ask_wall = ask_wall_cache_local.get(coin, 0)
+            else:
+                # Skip coin kecil biar cepet
+                continue
+            
             oi_usd = get_oi_usd(ctx, mark)
             change = get_change(ctx)
             funding = get_funding_pct(ctx)
-            ob_delta = get_ob_delta(coin)
-            bid_wall, _ = get_bid_wall_level(coin)
-            ask_wall, _ = get_ask_wall_level(coin)
             vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
             narrative = get_narrative(coin)
-            # Skor long & short sederhana
-            long_score = 0
-            short_score = 0
+            
+            # Hitung skor cepat
+            long_score, short_score = 0, 0
             if ob_delta > 5: long_score += 30
             elif ob_delta < -5: short_score += 30
             if funding < -0.01: long_score += 20
@@ -3163,58 +3202,54 @@ def screener(message):
                 "vol": vol, "long_score": long_score, "short_score": short_score
             })
         
-        # 1. Market Breadth
+        # ========== 4. MARKET BREADTH ==========
         bullish = sum(1 for c in all_coins_data if c["change"] > 0)
         bearish = sum(1 for c in all_coins_data if c["change"] < 0)
         neutral = len(all_coins_data) - bullish - bearish
-        total = len(all_coins_data)
         breadth_bias = "BULLISH" if bullish > bearish * 1.2 else "BEARISH" if bearish > bullish * 1.2 else "NEUTRAL"
         
-        # 2. Regime (ambil dari fungsi yang sudah ada)
+        # ========== 5. REGIME ==========
         regime = get_market_regime()
         regime_emoji = {"TRENDING_UP":"📈","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
         
-        # 3. Top Long Setups (long_score tinggi + alasan)
-        long_candidates = [c for c in all_coins_data if c["long_score"] >= 40]
+        # ========== 6. TOP LONG & SHORT ==========
+        long_candidates = [c for c in all_coins_data if c["long_score"] >= 35]
         long_candidates.sort(key=lambda x: x["long_score"], reverse=True)
         top_long = long_candidates[:5]
         
-        # 4. Top Short Setups
-        short_candidates = [c for c in all_coins_data if c["short_score"] >= 40]
+        short_candidates = [c for c in all_coins_data if c["short_score"] >= 35]
         short_candidates.sort(key=lambda x: x["short_score"], reverse=True)
         top_short = short_candidates[:5]
         
-        # 5. Whale Watch (bid/ask wall terbesar)
+        # ========== 7. WHALE WATCH ==========
         whale_watch = []
         for c in sorted(all_coins_data, key=lambda x: x["bid_wall"], reverse=True)[:3]:
-            if c["bid_wall"] > 50000:
+            if c["bid_wall"] > 30000:
                 whale_watch.append(("🟢", c["coin"], c["bid_wall"]))
         for c in sorted(all_coins_data, key=lambda x: x["ask_wall"], reverse=True)[:3]:
-            if c["ask_wall"] > 50000:
+            if c["ask_wall"] > 30000:
                 whale_watch.append(("🔴", c["coin"], c["ask_wall"]))
         whale_watch = whale_watch[:5]
         
-        # 6. Risk Zone (funding ekstrem atau OI spike)
+        # ========== 8. RISK ZONE ==========
         risk_zone = []
         for c in all_coins_data:
             if c["funding"] > 0.08 or c["funding"] < -0.08:
                 risk_zone.append((c["coin"], c["funding"]))
-            elif c["oi"] > 150 and c["change"] > 3:
-                risk_zone.append((c["coin"], f"OI+c{abs(c['change']):.0f}%"))
+            elif c["oi"] > 120 and abs(c["change"]) > 3:
+                risk_zone.append((c["coin"], f"OI+{abs(c['change']):.0f}%"))
         risk_zone = risk_zone[:4]
         
-        # 7. Watchlist (coin dengan score sedang tapi butuh sedikit lagi)
+        # ========== 9. WATCHLIST ==========
         watchlist = []
         for c in all_coins_data:
-            if 30 <= c["long_score"] < 40:
-                need = f"+{40 - c['long_score']}%"
-                watchlist.append((c["coin"], c["long_score"], "LONG", need))
-            elif 30 <= c["short_score"] < 40:
-                need = f"+{40 - c['short_score']}%"
-                watchlist.append((c["coin"], c["short_score"], "SHORT", need))
+            if 25 <= c["long_score"] < 35:
+                watchlist.append((c["coin"], c["long_score"], "LONG", f"+{35 - c['long_score']}"))
+            elif 25 <= c["short_score"] < 35:
+                watchlist.append((c["coin"], c["short_score"], "SHORT", f"+{35 - c['short_score']}"))
         watchlist = watchlist[:3]
         
-        # 8. Sector Leaders (per narrative)
+        # ========== 10. SECTOR LEADERS ==========
         sector_best = {}
         for c in all_coins_data:
             if c["narrative"] not in sector_best:
@@ -3224,15 +3259,17 @@ def screener(message):
                     sector_best[c["narrative"]] = c
         sector_leaders = list(sector_best.values())[:6]
         
-        # Helper buat heat level
-        def heat_level(score, is_long=True):
-            if score >= 75: return "🔴 FOMO ZONE"
-            if score >= 60: return "🟠 AGGRESSIVE"
-            if score >= 45: return "🟡 MODERATE"
+        # Helper heat level
+        def heat_level(score):
+            if score >= 70: return "🔴 FOMO ZONE"
+            if score >= 55: return "🟠 AGGRESSIVE"
+            if score >= 40: return "🟡 MODERATE"
             return "🟢 LOW RISK"
         
-        # === BANGUN OUTPUT ===
-        txt = f"🧠 MARKET DASHBOARD PRO\n"
+        # ========== 11. BUILD OUTPUT ==========
+        elapsed = time.time() - start_total
+        
+        txt = f"🧠 MARKET DASHBOARD PRO ⚡({elapsed:.1f}s)\n"
         txt += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         txt += f"⏰ {get_wib()} | {get_sesi()}\n\n"
         txt += f"🌡️ REGIME: {regime_emoji} {regime}\n"
@@ -3241,47 +3278,44 @@ def screener(message):
         txt += f"   Bias: {breadth_bias}\n"
         txt += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         
-        # Top Long
         if top_long:
             txt += f"🔥 TOP LONG SETUPS\n"
             for i, c in enumerate(top_long[:3], 1):
-                heat = heat_level(c["long_score"], True)
+                heat = heat_level(c["long_score"])
                 txt += f"{i}. {c['coin']} | Score {c['long_score']} {heat}\n"
                 txt += f"   📡 Delta +{c['ob_delta']:.0f}%"
-                if c["bid_wall"] > 50000:
+                if c["bid_wall"] > 30000:
                     txt += f" | 🐋 Wall ${c['bid_wall']/1000:.0f}K"
                 if c["funding"] < -0.01:
                     txt += f" | ❄️ Fund {c['funding']:.4f}%"
-                if c["oi"] > 30:
+                if c["oi"] > 20:
                     txt += f" | 📈 OI +{c['oi']:.0f}M"
-                txt += f"\n   ✅ Reason: "
+                txt += f"\n   ✅ "
                 reasons = []
-                if c["ob_delta"] > 10: reasons.append("Delta")
-                if c["bid_wall"] > 50000: reasons.append("Bid Wall")
+                if c["ob_delta"] > 8: reasons.append("Delta")
+                if c["bid_wall"] > 30000: reasons.append("Bid Wall")
                 if c["funding"] < -0.01: reasons.append("Neg Funding")
-                if c["oi"] > 30 and c["change"] > 1: reasons.append("OI+Price")
-                txt += ", ".join(reasons) if reasons else "Netral\n"
-                txt += "\n"
-        # Top Short
+                txt += ", ".join(reasons) if reasons else "Netral"
+                txt += "\n\n"
+        
         if top_short:
             txt += f"🔴 TOP SHORT SETUPS\n"
             for i, c in enumerate(top_short[:3], 1):
-                heat = heat_level(c["short_score"], False)
+                heat = heat_level(c["short_score"])
                 txt += f"{i}. {c['coin']} | Score {c['short_score']} {heat}\n"
                 txt += f"   📡 Delta {c['ob_delta']:.0f}%"
-                if c["ask_wall"] > 50000:
+                if c["ask_wall"] > 30000:
                     txt += f" | 🦈 Wall ${c['ask_wall']/1000:.0f}K"
                 if c["funding"] > 0.01:
                     txt += f" | 🔥 Fund +{c['funding']:.4f}%"
-                txt += "\n"
+                txt += "\n\n"
         
-        # Whale Watch
         if whale_watch:
             txt += f"🐋 WHALE WATCH\n"
             for emoji, coin, wall in whale_watch[:4]:
                 txt += f"   {emoji} {coin} Wall ${wall/1000:.0f}K\n"
+        txt += "\n" if whale_watch else ""
         
-        # Risk Zone
         if risk_zone:
             txt += f"☢️ RISK ZONE\n"
             for coin, val in risk_zone[:3]:
@@ -3290,13 +3324,11 @@ def screener(message):
                 else:
                     txt += f"   ⚠️ {coin} {val}\n"
         
-        # Watchlist
         if watchlist:
             txt += f"🎯 WATCHLIST (Hampir Matang)\n"
             for coin, score, dirn, need in watchlist[:3]:
-                txt += f"   {coin} | {dirn} Score {score} | Need {need}\n"
+                txt += f"   {coin} | {dirn} Score {score} | Need +{need}\n"
         
-        # Sector Leaders
         if sector_leaders:
             txt += f"🏆 SECTOR LEADERS\n"
             for c in sector_leaders[:5]:
@@ -3305,13 +3337,14 @@ def screener(message):
         
         txt += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         txt += f"💡 /entry <coin> | /warroom <coin> | /sniper"
+        
         cached_results = txt
         last_scan = now
         bot.edit_message_text(txt, msg.chat.id, msg.message_id)
+        
     except Exception as e:
-        bot.edit_message_text(f"❌ Error screener: {e}", msg.chat.id, msg.message_id)
-
-
+        logger.error(f"Screener error: {e}")
+        bot.edit_message_text(f"❌ Error screener: {str(e)[:100]}", msg.chat.id, msg.message_id)
 
 # ---------- PRICE ----------
 @bot.message_handler(commands=['price'])
@@ -4236,81 +4269,119 @@ def warroom(message):
 @bot.message_handler(commands=['entrywhale', 'whaleentry'])
 def entrywhale(message):
     try:
-        msg = bot.reply_to(message, "🐋 Scanning whale entry (scoring ≥2)...")
+        msg = bot.reply_to(message, "🐋 Scanning whale entry (scoring ≥2) — fast mode...")
+        start_time = time.time()
+        
         meta_ctxs = get_cached_meta()
         coins_meta = meta_ctxs[0]['universe']
         coins_data = meta_ctxs[1]
-        whale_entries = []
+        
+        # ========== 1. FILTER COIN BERDASARKAN VOLUME ==========
+        # Ambil cuma coin dengan volume > $5M biar skip coin sepi
+        high_vol_coins = []
+        for i, ctx in enumerate(coins_data):
+            vol = float(ctx.get("dayNtlVlm") or 0)
+            if vol > 5_000_000:  # volume > $5M
+                high_vol_coins.append((coins_meta[i]['name'], i, vol))
+        
+        high_vol_coins.sort(key=lambda x: x[2], reverse=True)
+        top_coins = high_vol_coins[:30]  # cukup 30 coin paling rame
+        logger.info(f"[WHALE] Scanning {len(top_coins)} high-volume coins")
+        
+        # ========== 2. BATCH SIMPLE SCORING DULU (TANPA TRADES) ==========
+        candidates = []
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         
-        for i, coin_data in enumerate(coins_meta[:60]):
-            coin = coin_data['name']
-            ctx = coins_data[i]
+        for coin_name, idx, vol in top_coins:
+            ctx = coins_data[idx]
             mark = float(ctx.get("markPx") or 0)
             if mark == 0:
                 continue
-            oi_usd = get_oi_usd(ctx, mark)
-            vol = float(ctx.get("dayNtlVlm") or 0)
-            funding = get_funding_pct(ctx)
-            ob_delta = get_ob_delta(coin)
-            bid_wall_usd, _ = get_bid_wall_level(coin)
-            ask_wall_usd, _ = get_ask_wall_level(coin)
             
-            # Skoring (masing-masing max 1)
+            # Scoring cepat (pake cache)
+            oi_usd = get_oi_usd(ctx, mark)
+            funding = get_funding_pct(ctx)
+            ob_delta = get_ob_delta(coin_name)
+            bid_wall, _ = get_bid_wall_level(coin_name)
+            ask_wall, _ = get_ask_wall_level(coin_name)
+            max_wall = max(bid_wall, ask_wall)
+            
             score = 0
             reasons = []
-            if max(bid_wall_usd, ask_wall_usd) > 50000:  # wall > 50k USD
+            if max_wall > 50000:
                 score += 1
-                reasons.append("Wall>50k")
+                reasons.append(f"Wall")
             if abs(ob_delta) > 15:
                 score += 1
                 reasons.append(f"OB{ob_delta:+.0f}")
-            if oi_usd > 5:   # OI > 5M
+            if oi_usd > 5:
                 score += 1
                 reasons.append(f"OI{oi_usd:.0f}M")
             if abs(funding) > 0.03:
                 score += 1
-                reasons.append(f"Fund{funding:+.3f}")
+                reasons.append(f"Fund")
             
             if score >= 2:
-                # Cek trade besar dalam 5 menit
-                try:
-                    trades = info.recent_trades(coin)
-                    for trade in trades[:5]:
-                        size_usd = float(trade['px']) * float(trade['sz'])
-                        trade_time = int(trade['time'])
-                        if size_usd > 10_000 and (now_ms - trade_time) < 300_000:
-                            side = "LONG" if trade['side'] == 'B' else "SHORT"
-                            emoji = "🟢" if trade['side'] == 'B' else "🔴"
-                            whale_entries.append({
-                                'coin': coin, 'side': side, 'emoji': emoji,
-                                'size': size_usd, 'price': float(trade['px']),
-                                'time': int((now_ms - trade_time) / 1000),
-                                'score': score, 'reasons': reasons,
-                                'ob_delta': ob_delta, 'funding': funding, 'oi': oi_usd
-                            })
-                            break
-                except:
-                    continue
-            time.sleep(0.1)
+                candidates.append({
+                    'coin': coin_name, 'idx': idx, 'score': score, 'reasons': reasons,
+                    'ob_delta': ob_delta, 'funding': funding, 'oi': oi_usd,
+                    'max_wall': max_wall, 'mark': mark
+                })
+        
+        # ========== 3. AMBIL TRADES HANYA UNTUK KANDIDAT ==========
+        whale_entries = []
+        
+        for cand in candidates[:15]:  # max 15 kandidat biar cepet
+            coin = cand['coin']
+            try:
+                trades = info.recent_trades(coin)
+                for trade in trades[:5]:
+                    size_usd = float(trade['px']) * float(trade['sz'])
+                    trade_time = int(trade['time'])
+                    if size_usd > 10_000 and (now_ms - trade_time) < 300_000:
+                        side = "LONG" if trade['side'] == 'B' else "SHORT"
+                        emoji = "🟢" if trade['side'] == 'B' else "🔴"
+                        whale_entries.append({
+                            'coin': coin, 'side': side, 'emoji': emoji,
+                            'size': size_usd, 'price': float(trade['px']),
+                            'time': int((now_ms - trade_time) / 1000),
+                            'score': cand['score'], 'reasons': cand['reasons'],
+                            'ob_delta': cand['ob_delta'], 'funding': cand['funding'],
+                            'oi': cand['oi'], 'wall': cand['max_wall']
+                        })
+                        break
+            except:
+                continue
+        
+        elapsed = time.time() - start_time
         
         if not whale_entries:
-            teks = f"🐋 WHALE ENTRY (SCORING)\n─────────────────────────────────\n⏰ {get_wib()}\n😴 Tidak ada whale entry dgn score ≥2 dalam 5 menit.\n"
+            teks = f"🐋 WHALE ENTRY (SCORING)\n─────────────────────────────────\n⏰ {get_wib()}\n⚡ Scan {len(top_coins)} coins in {elapsed:.1f}s\n😴 Tidak ada whale entry dgn score ≥2 dalam 5 menit.\n"
             return bot.edit_message_text(teks, msg.chat.id, msg.message_id)
         
         whale_entries.sort(key=lambda x: x['score'], reverse=True)
-        teks = f"🐋 WHALE ENTRY • SCORING SYSTEM\n─────────────────────────────────\n⏰ {get_wib()}\n🎯 Minimal score 2 (Wall, OB, OI, Funding)\n─────────────────────────────────\n"
+        teks = f"🐋 WHALE ENTRY • SCORING SYSTEM ⚡({elapsed:.1f}s)\n"
+        teks += f"─────────────────────────────────\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += f"🎯 Minimal score 2 (Wall, OB, OI, Funding)\n"
+        teks += f"─────────────────────────────────\n"
+        
         for w in whale_entries[:7]:
+            wall_str = f" | Wall ${w['wall']/1000:.0f}K" if w['wall'] > 0 else ""
             teks += f"{w['emoji']} {w['side']} {w['coin']} | Score {w['score']}\n"
             teks += f"   💰 ${w['size']:,.0f} | {fmt_price(w['price'])}\n"
-            teks += f"   📡 OB {w['ob_delta']:+.0f}% | Fund {w['funding']:+.3f}% | OI ${w['oi']:.0f}M\n"
+            teks += f"   📡 OB {w['ob_delta']:+.0f}% | Fund {w['funding']:+.3f}% | OI ${w['oi']:.0f}M{wall_str}\n"
             teks += f"   ✅ {', '.join(w['reasons'])}\n"
             teks += f"   ⏱️ {w['time']}s ago\n\n"
+        
+        teks += f"─────────────────────────────────\n"
         teks += f"🎯 /warroom {whale_entries[0]['coin']}"
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
     except Exception as e:
+        logger.error(f"Entrywhale error: {e}")
         bot.edit_message_text(f"❌ Error entrywhale: {str(e)[:100]}", msg.chat.id, msg.message_id)
-
+        
 # ---------- WHALE WALL ----------
 @bot.message_handler(commands=['whalewall'])
 def whalewall(message):
@@ -4888,6 +4959,7 @@ def squeeze(message):
         
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+        
 # ---------- CORRELATION ----------
 @bot.message_handler(commands=['correlation', 'corr'])
 def correlation_analysis(message):
@@ -5453,7 +5525,7 @@ def job_insane_radar(chat_id):
                 continue
         
         if hasil_anomali:
-            teks = f"🤖 INSANE RADAR • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n🔍 Anomali ringan terdeteksi:\n\n"
+            teks = f"🤯 INSANE RADAR • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n🔍 Anomali ringan terdeteksi:\n\n"
             for i, line in enumerate(hasil_anomali[:12], 1):
                 teks += f"{i}. {line}\n"
             if len(hasil_anomali) > 12:
@@ -5573,35 +5645,194 @@ def handle_stop_sniper(message):
 
 
 # ---------- REPORT ----------
-def build_report():
+@bot.message_handler(commands=['report'])
+def report(message):
+    msg = bot.reply_to(message, "🖥️ Generating Market Morning Brief...")
     try:
+        start_time = time.time()
+        
         data = get_cached_meta()
         assets = data[0]["universe"]
         ctxs = data[1]
-        gainer_list = []
-        for asset, c in zip(assets, ctxs):
-            name = asset["name"]
-            change = get_change(c)
-            mark = float(c.get("markPx") or 0)
-            if mark > 0.1:
-                gainer_list.append([name, change, mark])
-        gainer_list.sort(key=lambda x: x[1], reverse=True)
-        top3 = gainer_list[:3]
-        teks = f"📊 QUICK REPORT\n─────────────────\n{get_wib()} | {get_sesi()}\n\n🔥 Top 3 Gainers:\n"
-        for i, (coin, chg, px) in enumerate(top3, 1):
-            teks += f"{i}. {coin} {chg:+.1f}% ${px:.4f}\n"
-        teks += f"\n─────────────────\n🎯 /screener buat full scan"
-        return teks
+        all_mids = info.all_mids()
+        
+        # ========== KUMPULIN DATA ==========
+        coins_data = []
+        for asset, ctx in zip(assets, ctxs):
+            coin = asset["name"]
+            mark = float(ctx.get("markPx") or 0)
+            if mark == 0:
+                continue
+            
+            change = get_change(ctx)
+            funding = get_funding_pct(ctx)
+            oi_usd = get_oi_usd(ctx, mark)
+            vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
+            ob_delta = get_ob_delta(coin)
+            narrative = get_narrative(coin)
+            
+            # Skor sederhana buat alasan
+            long_confidence = 0
+            short_confidence = 0
+            reasons_long = []
+            reasons_short = []
+            
+            if ob_delta > 10:
+                long_confidence += 25
+                reasons_long.append("OB Delta +")
+            elif ob_delta < -10:
+                short_confidence += 25
+                reasons_short.append("OB Delta -")
+            
+            if funding < -0.02:
+                long_confidence += 20
+                reasons_long.append("Funding negatif")
+            elif funding > 0.02:
+                short_confidence += 20
+                reasons_short.append("Funding positif")
+            
+            if change > 2:
+                long_confidence += 30
+                reasons_long.append("Momentum up")
+            elif change < -2:
+                short_confidence += 30
+                reasons_short.append("Momentum down")
+            
+            if vol > 100:
+                long_confidence += 10 if change > 0 else 0
+                short_confidence += 10 if change < 0 else 0
+            
+            coins_data.append({
+                "coin": coin, "narrative": narrative,
+                "change": change, "funding": funding, "oi": oi_usd,
+                "vol": vol, "ob_delta": ob_delta, "price": mark,
+                "long_conf": long_confidence, "short_conf": short_confidence,
+                "reasons_long": reasons_long, "reasons_short": reasons_short
+            })
+        
+        if not coins_data:
+            bot.edit_message_text("❌ Gagal ambil data market", msg.chat.id, msg.message_id)
+            return
+        
+        # ========== SORTIR ==========
+        gainers = sorted(coins_data, key=lambda x: x["change"], reverse=True)[:3]
+        losers = sorted(coins_data, key=lambda x: x["change"])[:3]
+        
+        # ========== MARKET BREADTH ==========
+        bullish = sum(1 for c in coins_data if c["change"] > 0.5)
+        bearish = sum(1 for c in coins_data if c["change"] < -0.5)
+        neutral = len(coins_data) - bullish - bearish
+        breadth_ratio = bullish / bearish if bearish > 0 else bullish
+        breadth_status = "BULLISH 🟢" if breadth_ratio > 1.5 else "BEARISH 🔴" if breadth_ratio < 0.7 else "NEUTRAL ⚪"
+        
+        # ========== REGIME & SESI ==========
+        regime = get_market_regime()
+        regime_emoji = {"TRENDING_UP":"📈","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
+        sesi = get_sesi()
+        
+        # ========== FUNDING SENTIMENT ==========
+        avg_funding = sum(c["funding"] for c in coins_data) / len(coins_data)
+        if avg_funding > 0.05:
+            funding_sentiment = "🔥 EXTREME GREED (Waspada long squeeze)"
+        elif avg_funding > 0.02:
+            funding_sentiment = "😊 GREEDY (Masih aman)"
+        elif avg_funding < -0.05:
+            funding_sentiment = "💀 EXTREME FEAR (Siap2 bottom)"
+        elif avg_funding < -0.02:
+            funding_sentiment = "😨 FEAR (Potensi short squeeze)"
+        else:
+            funding_sentiment = "😎 NEUTRAL"
+        
+        # ========== WHALE WALL TERBESAR ==========
+        top_bid_walls = []
+        top_ask_walls = []
+        for c in coins_data[:30]:  # cukup 30 coin
+            bid_wall, _ = get_bid_wall_level(c["coin"])
+            ask_wall, _ = get_ask_wall_level(c["coin"])
+            if bid_wall > 100000:
+                top_bid_walls.append((c["coin"], bid_wall))
+            if ask_wall > 100000:
+                top_ask_walls.append((c["coin"], ask_wall))
+        
+        top_bid_walls.sort(key=lambda x: x[1], reverse=True)
+        top_ask_walls.sort(key=lambda x: x[1], reverse=True)
+        
+        # ========== REKOMENDASI ==========
+        if regime == "TRENDING_UP":
+            direction_rec = "🟢 LONG"
+            rec_reason = "Market sedang uptrend, prioritaskan LONG"
+        elif regime == "TRENDING_DOWN":
+            direction_rec = "🔴 SHORT"
+            rec_reason = "Market sedang downtrend, prioritaskan SHORT"
+        elif regime == "VOLATILE":
+            direction_rec = "⚠️ HATI-HATI"
+            rec_reason = "Volatilitas tinggi, perbesar SL"
+        else:
+            direction_rec = "⚡ RANGE"
+            rec_reason = "Sideways, jangan FOMO breakout"
+        
+        elapsed = time.time() - start_time
+        
+        # ========== BUILD OUTPUT ==========
+        teks = f"📊 MARKET MORNING BRIEF ⚡({elapsed:.1f}s)\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"⏰ {get_wib()} | {sesi}\n"
+        teks += f"🌡️ Regime: {regime_emoji} {regime}\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        # Top Gainers
+        teks += f"🚀 TOP GAINERS 24H\n"
+        for i, c in enumerate(gainers, 1):
+            arrow = "🟢" if c["change"] > 0 else "🔴"
+            teks += f"{i}. {c['coin']} [{c['narrative']}] {arrow} {c['change']:+.1f}%\n"
+            teks += f"   💰 {fmt_price(c['price'])} | 📊 OI ${c['oi']:.0f}M | Fund {c['funding']:+.3f}%\n"
+            if c["long_conf"] > 50 and c["reasons_long"]:
+                teks += f"   ✅ Alasan: {', '.join(c['reasons_long'][:2])}\n"
+            teks += "\n"
+        
+        # Top Losers
+        teks += f"📉 TOP LOSERS 24H\n"
+        for i, c in enumerate(losers, 1):
+            arrow = "🔴" if c["change"] < 0 else "🟢"
+            teks += f"{i}. {c['coin']} [{c['narrative']}] {arrow} {c['change']:+.1f}%\n"
+            teks += f"   💰 {fmt_price(c['price'])} | 📊 OI ${c['oi']:.0f}M | Fund {c['funding']:+.3f}%\n"
+            if c["short_conf"] > 50 and c["reasons_short"]:
+                teks += f"   ⚠️ Alasan: {', '.join(c['reasons_short'][:2])}\n"
+            teks += "\n"
+        
+        # Market Breadth
+        teks += f"📊 MARKET BREADTH\n"
+        teks += f"   🟢 Bullish: {bullish}  |  🔴 Bearish: {bearish}  |  ⚪ Neutral: {neutral}\n"
+        teks += f"   Status: {breadth_status}\n\n"
+        
+        # Funding Sentiment
+        teks += f"💰 FUNDING SENTIMENT\n"
+        teks += f"   Rata-rata: {avg_funding:+.4f}%\n"
+        teks += f"   {funding_sentiment}\n\n"
+        
+        # Whale Walls
+        if top_bid_walls or top_ask_walls:
+            teks += f"🐋 WHALE WALLS\n"
+            for coin, wall in top_bid_walls[:2]:
+                teks += f"   🟢 {coin}: Bid ${wall/1000:.0f}K\n"
+            for coin, wall in top_ask_walls[:2]:
+                teks += f"   🔴 {coin}: Ask ${wall/1000:.0f}K\n"
+            teks += "\n"
+        
+        # Rekomendasi
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"🎯 REKOMENDASI HARI INI\n"
+        teks += f"   Arah: {direction_rec}\n"
+        teks += f"   📌 {rec_reason}\n\n"
+        teks += f"💡 /screener → Dashboard lengkap\n"
+        teks += f"💡 /entry <coin> → Setup entry + SL/TP\n"
+        teks += f"💡 /warroom <coin> → Analisis mendalam"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
     except Exception as e:
-        return f"❌ Error report: {e}"
-
-@bot.message_handler(commands=['report'])
-def report(message):
-    msg = bot.reply_to(message, "🤔 Generating report...")
-    try:
-        bot.edit_message_text(build_report(), msg.chat.id, msg.message_id)
-    except Exception as e:
-        bot.edit_message_text(f"❌ Error: {e}", msg.chat.id, msg.message_id)
+        logger.error(f"Report error: {e}")
+        bot.edit_message_text(f"❌ Error report: {str(e)[:100]}", msg.chat.id, msg.message_id)
 
 
 # ---------- CASUAL REPORT & PREDICTION ----------
@@ -5836,7 +6067,7 @@ def status_cmd(message):
 🦈 PREDATOR  : {predator_text}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
-🤝 COPYTRADE : {copytrade_text}
+🖥️ COPYTRADE : {copytrade_text}
 ─────────────────────────────────
 📅 SCHEDULES:{schedules_text}
 ─────────────────────────────────"""
@@ -5863,8 +6094,8 @@ def copytrade_cmd(message):
         teks = "🤝 COPYTRADE STATUS\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"⏰ {get_wib()}\n\n"
-        teks += f"📡 Tracking  : {total} wallets\n"
-        teks += f"🔍 Auto      : {auto_count} (leaderboard)\n"
+        teks += f"🔊 Tracking  : {total} wallets\n"
+        teks += f"🖥️ Auto      : {auto_count} (leaderboard)\n"
         teks += f"✋ Manual    : {manual_count} (kamu set)\n"
         teks += f"⏱️ Scan      : tiap 60 detik\n"
         teks += f"🔄 Discovery : tiap {WALLET_DISCOVERY_INTERVAL//60} menit\n\n"
@@ -6066,7 +6297,7 @@ def run_scheduler():
                 _sniper_auto_state = None
                 logger.info(f"[SCHEDULER] Auto-disabled sniper — outside session")
                 bot.send_message(USER_ID,
-                    f"🤖 AUTO SNIPER OFF\n"
+                    f"🕶️ AUTO SNIPER OFF\n"
                     f"⏰ {get_wib()}\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"😴 London/NY session selesai\n"
@@ -6462,46 +6693,46 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
     if change_type == "OPEN":
         side_emoji = "🟢" if data["side"] == "LONG" else "🔴"
         return (
-            f"👁 WALLET INTEL • {label}\n"
+            f"📢 WALLET INTEL • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━\n"
             f"{side_emoji} OPEN {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"📏 Size  : {data['size']:.4f}\n"
-            f"💰 Entry : {fmt_price(data['entry'])}\n"
-            f"⚡ Lev   : {data['leverage']:.0f}x"
+            f"🔎 Size  : {data['size']:.4f}\n"
+            f"🎯 Entry : {fmt_price(data['entry'])}\n"
+            f"⚔️ Lev   : {data['leverage']:.0f}x"
         )
     elif change_type == "CLOSE":
         pnl = data.get("pnl", 0)
         pnl_emoji = "✅" if pnl >= 0 else "❌"
         return (
-            f"👁 WALLET INTEL • {label}\n"
+            f"📢 WALLET INTEL • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━\n"
             f"⬛ CLOSE {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"📏 Size  : {data['size']:.4f}\n"
+            f"🔎 Size  : {data['size']:.4f}\n"
             f"{pnl_emoji} PnL  : ${pnl:+.2f}"
         )
     elif change_type == "SIZE_UP":
         return (
-            f"👁 WALLET INTEL • {label}\n"
+            f"📢 WALLET INTEL • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━\n"
             f"⬆️ SIZE UP {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"📏 {data['prev_size']:.4f} → {data['size']:.4f}\n"
-            f"💰 Entry : {fmt_price(data['entry'])}"
+            f"🔎 {data['prev_size']:.4f} → {data['size']:.4f}\n"
+            f"🎯 Entry : {fmt_price(data['entry'])}"
         )
     elif change_type == "SIZE_DOWN":
         return (
-            f"👁 WALLET INTEL • {label}\n"
+            f"📢 WALLET INTEL • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
             f"━━━━━━━━━━━━━━━━━\n"
             f"⬇️ SIZE DOWN {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"📏 {data['prev_size']:.4f} → {data['size']:.4f}\n"
-            f"💰 Entry : {fmt_price(data['entry'])}"
+            f"🔎 {data['prev_size']:.4f} → {data['size']:.4f}\n"
+            f"🎯 Entry : {fmt_price(data['entry'])}"
         )
     return ""
 
