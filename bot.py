@@ -127,6 +127,10 @@ _bid_wall_time = {}
 _ask_wall_cache = {}
 _ask_wall_time = {}
 
+# ========== WARROOM SIMPLE ALERT ==========
+_warroom_alert_running = False
+_warroom_alert_last = {}  # {coin: timestamp} cooldown
+
 # ========== WALLET TRACKER STATE ==========
 WATCHED_WALLETS = {}        # {address: label} — auto-populated + manual
 MANUAL_WALLETS = {}         # {address: label} — manually added, persist melalui discovery
@@ -2922,6 +2926,104 @@ def prediction_stats(message):
     bot.send_message(message.chat.id, teks)
 
 
+def check_warroom_simple():
+    """Scan simple: cuma score ≥70, minimal align 2/3 TF"""
+    global _warroom_alert_last
+    
+    try:
+        data = get_cached_meta()
+        assets = data[0]["universe"]
+        ctxs = data[1]
+        
+        # Ambil top 30 coin based on volume
+        coins = []
+        for asset, ctx in zip(assets, ctxs):
+            vol = float(ctx.get("dayNtlVlm") or 0)
+            if vol > 3_000_000:
+                coins.append((asset["name"], vol))
+        
+        coins.sort(key=lambda x: x[1], reverse=True)
+        top_coins = [c[0] for c in coins[:25]]
+        
+        now_time = time.time()
+        alerts = []
+        
+        for coin in top_coins:
+            # Cooldown 1 jam per coin
+            if coin in _warroom_alert_last and now_time - _warroom_alert_last[coin] < 3600:
+                continue
+            
+            try:
+                ctx, mark = get_ctx(coin)
+                if not ctx or mark == 0:
+                    continue
+                
+                # Deriv score cepat
+                ob_delta = get_ob_delta(coin)
+                funding = get_funding_pct(ctx)
+                bid_wall, _ = get_bid_wall_level(coin)
+                ask_wall, _ = get_ask_wall_level(coin)
+                
+                long_score, short_score = calculate_scores(ob_delta, funding, bid_wall, ask_wall)
+                
+                gap = abs(long_score - short_score)
+                if long_score > short_score and gap >= 15:
+                    deriv_bias, deriv_score = "LONG", long_score
+                elif short_score > long_score and gap >= 15:
+                    deriv_bias, deriv_score = "SHORT", short_score
+                else:
+                    continue
+                
+                # ========== FILTER SCORE ≥70 ==========
+                if deriv_score < 70:
+                    continue
+                
+                # Cek TF alignment (3 TF: H1, M15, M5)
+                r_h1 = analyze_tf(coin, "1h")
+                r_m15 = analyze_tf(coin, "15m")
+                r_m5 = analyze_tf(coin, "5m")
+                
+                if not r_h1 or not r_m15 or not r_m5:
+                    continue
+                
+                # Hitung alignment
+                bullish = sum([1 for x in [r_h1["bias"], r_m15["bias"], r_m5["bias"]] if x == "BULLISH"])
+                bearish = sum([1 for x in [r_h1["bias"], r_m15["bias"], r_m5["bias"]] if x == "BEARISH"])
+                aligned = max(bullish, bearish)
+                dominant = "BULLISH" if bullish > bearish else "BEARISH"
+                
+                # Trigger: align minimal 2 dari 3 TF, arah sama dengan deriv
+                if aligned >= 2:
+                    if (dominant == "BULLISH" and deriv_bias == "LONG") or (dominant == "BEARISH" and deriv_bias == "SHORT"):
+                        alerts.append({
+                            "coin": coin,
+                            "direction": deriv_bias,
+                            "score": deriv_score,
+                            "price": mark,
+                            "change": get_change(ctx),
+                            "alignment": aligned
+                        })
+                        _warroom_alert_last[coin] = now_time
+                        
+            except:
+                continue
+        
+        # Kirim alert (max 3 coin)
+        if alerts:
+            alerts.sort(key=lambda x: x["score"], reverse=True)
+            for a in alerts[:3]:
+                arrow = "🟢" if a["direction"] == "LONG" else "🔴"
+                teks = f"{arrow} *{a['coin']}* | {a['direction']} | Score {a['score']}\n"
+                teks += f"💰 {fmt_price(a['price'])} | {a['change']:+.1f}%\n"
+                teks += f"📊 {a['alignment']}/3 TF align\n"
+                teks += f"\n🎯 /warroom {a['coin']} | /entry {a['coin']}"
+                
+                send_to_owner(teks, parse_mode='Markdown')
+                time.sleep(1)
+                
+    except Exception as e:
+        logger.error(f"[ALERT] Error: {e}")
+
 
 
 
@@ -4271,6 +4373,31 @@ def warroom(message):
     except Exception as e:
         logger.error(f"[WARROOM] Error: {e}")
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+
+
+@bot.message_handler(commands=['warroomalert'])
+def warroom_alert_cmd(message):
+    if not is_owner(message):
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        status = "✅ ON" if _warroom_alert_running else "❌ OFF"
+        bot.reply_to(message, f"🔔 WARROOM ALERT\nStatus: {status}\nScore minimal: 70\nCooldown: 1 jam/coin\n\n/warroomalert on\n/warroomalert off\n/warroomalert scan")
+        return
+    
+    if parts[1] == "on":
+        global _warroom_alert_running
+        _warroom_alert_running = True
+        bot.reply_to(message, "✅ WARROOM ALERT ON\nAkan notif kalo ada coin dengan score ≥70")
+    elif parts[1] == "off":
+        _warroom_alert_running = False
+        bot.reply_to(message, "❌ WARROOM ALERT OFF")
+    elif parts[1] == "scan":
+        bot.reply_to(message, "🔍 Scanning manual...")
+        check_warroom_simple()
+    else:
+        bot.reply_to(message, "Gunakan: on / off / scan")
 
 
 
@@ -6920,6 +7047,25 @@ def start_wallet_tracker():
     wt_thread.start()
     logger.info("✅ WALLET TRACKER THREAD LAUNCHED")
 
+def run_warroom_alert():
+    global _warroom_alert_running
+    _warroom_alert_running = True
+    logger.info("[ALERT] Warroom simple alert started (tiap 15 menit)")
+    
+    while True:
+        try:
+            regime = get_market_regime()
+            if regime != "RANGING":  # Skip kalo ranging biar gak spam sinyal palsu
+                check_warroom_simple()
+            time.sleep(900)  # 15 menit
+        except:
+            time.sleep(60)
+
+
+def start_warroom_alert():
+    t = threading.Thread(target=run_warroom_alert, daemon=True)
+    t.start()
+    logger.info("✅ WARROOM ALERT THREAD LAUNCHED")
 
 # ============================================================
 # MAIN EXECUTION
@@ -6940,6 +7086,7 @@ if __name__ == "__main__":
     start_liquidation_scanner()
     start_confluence_scanner()
     start_wallet_tracker()
+    start_warroom_alert()
 
     logger.info("🦄 HL Terminal Bot v4.0 FINAL - ONLINE")
     
