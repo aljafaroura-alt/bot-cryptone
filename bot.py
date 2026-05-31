@@ -3257,7 +3257,7 @@ GM/GN 😼 {user}
 🧭 ANALISIS PRO
 /delta | /trap | /cluster
 /liqmap | /correlation | /sentiment
-/smartflow | /warroomalert | /clusteropen
+/smartflow | /clusteropen
 
 🐋 WHALE INTEL
 /whale | /whalescan | /whalewall
@@ -3297,6 +3297,10 @@ GM/GN 😼 {user}
 /learningstat — AI learning weights
 /regime — Market regime & adaptive
 /report — Manual report
+
+🔔 ALERTS
+/warroomalert on
+/entryalert on
 
 🦾 UTILS
 /status — System status
@@ -6342,9 +6346,10 @@ def atr_cmd(message):
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 #------------ STATUS --------
+
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
-    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER
+    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER, _entry_alert_running
     chat_id = message.chat.id
     
     schedules_text = "🔴 Tidak ada"
@@ -6386,6 +6391,9 @@ def status_cmd(message):
     # ===== WARROOM ALERT STATUS =====
     warroom_alert_status = "✅ ON (≥70, tiap 15m)" if _warroom_alert_running else "❌ OFF"
     
+    # ===== ENTRY ALERT STATUS (BARU) =====
+    entry_alert_status = "✅ ON (≥70, tiap 15m)" if _entry_alert_running else "❌ OFF"
+    
     # ===== COPYTRADE STATUS DENGAN MODE =====
     ct_total = len(WATCHED_WALLETS)
     ct_manual = len(MANUAL_WALLETS)
@@ -6406,9 +6414,9 @@ def status_cmd(message):
     token_src = "ENV ✅" if os.environ.get('TOKEN') else "HARDCODE ⚠️"
     token_preview = TOKEN[:8] + "..." + TOKEN[-4:] if TOKEN else "NONE"
     
-    teks = f"""⚙️ SYSTEM STATUS
+    teks = f"""⚠️ SYSTEM STATUS
 ─────────────────────────────────
-🦄 Bot       : ✅ ONLINE [{token_src}]
+👾 Bot       : ✅ ONLINE [{token_src}]
 🔑 Token     : {token_preview}
 ⏱️ Uptime    : {uptime}
 📡 Session   : {session_text}
@@ -6416,13 +6424,14 @@ def status_cmd(message):
 ─────────────────────────────────
 🕶️ SNIPER    : {sniper_text}
 👽 TEMEN     : {temen_text}
-💥 LIQ SCAN  : {liq_text}
+⛔ LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
 🦈 PREDATOR  : {predator_text}
 🔔 WARROOM   : {warroom_alert_status}
+🎯 ENTRY     : {entry_alert_status}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
 🤝 COPYTRADE : {copytrade_text}
@@ -6432,8 +6441,9 @@ def status_cmd(message):
     mood_data = get_market_mood_data()
     if mood_data:
         teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n   Funding avg: {mood_data['funding']:+.4f}%\n   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
-    teks += "─────────────────────────────────\n✅ Semua sistem normal"
+    teks += "─────────────────────────────────\n✅ Lets fvcking go"
     bot.send_message(chat_id, teks)
+    
 # ---------- COPYTRADE ----------
 @bot.message_handler(commands=['copytrade'])
 def copytrade_cmd(message):
