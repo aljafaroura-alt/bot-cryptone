@@ -6807,7 +6807,7 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
             f"🎯 Entry: {fmt_price(data['entry'])}"
         )
     return ""
-
+    
 def scan_wallet(address: str, label: str):
     global _wallet_last_positions, _wallet_last_alert
 
@@ -6819,7 +6819,7 @@ def scan_wallet(address: str, label: str):
         return
 
     alerts = []
-    now = time.time()
+    now_time = time.time()
     all_coins = set(list(current.keys()) + list(prev.keys()))
 
     for coin in all_coins:
@@ -6829,7 +6829,7 @@ def scan_wallet(address: str, label: str):
 
         with state_lock:
             last_alert = _wallet_last_alert.get(cooldown_key, 0)
-        if now - last_alert < 900:
+        if now_time - last_alert < 900:
             continue
 
         if cur_pos and not prv_pos:
@@ -6837,32 +6837,29 @@ def scan_wallet(address: str, label: str):
         elif not cur_pos and prv_pos:
             alerts.append((coin, "CLOSE", prv_pos))
         elif cur_pos and prv_pos:
-             prev_size = prv_pos["size"]
-             cur_size = cur_pos["size"]
-             threshold = prev_size * 0.10  # 10% perubahan
-          if cur_size > prev_size + threshold:
-            # Tambahkan prev_notional untuk display
-            prev_notional = prv_pos.get("notional", 0)
-            alerts.append((coin, "SIZE_UP", {**cur_pos, "prev_size": prev_size, "prev_notional": prev_notional}))
-    elif cur_size < prev_size - threshold:
-          alerts.append((coin, "SIZE_DOWN", {**cur_pos, "prev_size": prev_size}))
-          # ===== TAMBAHKAN DENGAN INDEBTASI YANG BENAR =====
-       if len(alerts) >= 3:
+            prev_size = prv_pos["size"]
+            cur_size = cur_pos["size"]
+            threshold = prev_size * 0.10
+            if cur_size > prev_size + threshold:
+                prev_notional = prv_pos.get("notional", 0)
+                alerts.append((coin, "SIZE_UP", {**cur_pos, "prev_size": prev_size, "prev_notional": prev_notional}))
+            elif cur_size < prev_size - threshold:
+                alerts.append((coin, "SIZE_DOWN", {**cur_pos, "prev_size": prev_size}))
+
+        if len(alerts) >= 3:
             break
-        # ===============================================
 
     for coin, change_type, data in alerts:
         msg = format_wallet_alert(label, address, coin, change_type, data)
         if msg:
-            bot.send_message(USER_ID, msg)  # Private only — jangan ke channel
+            bot.send_message(USER_ID, msg)
             logger.info(f"[WALLET] {label} {change_type} {coin} ${data.get('notional', 0):,.0f}")
             with state_lock:
-                _wallet_last_alert[f"{address}_{coin}"] = now
+                _wallet_last_alert[f"{address}_{coin}"] = now_time
             time.sleep(1)
 
     with state_lock:
         _wallet_last_positions[address] = current
-
 
 def run_wallet_tracker():
     """Loop background: auto-discover tiap 1 jam, scan posisi tiap 60 detik"""
