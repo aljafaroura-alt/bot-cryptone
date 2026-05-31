@@ -2970,7 +2970,7 @@ GM/GN 😼 {user}
 /positions 0xABC | /pnl 0xABC 
 /history 0xABC 
 
-🤝 COPYTRADE
+🖥️ COPYTRADE
 /copytrade — Status & tracked wallets
 /addwallet 0xABC — Track wallet
 /removewallet 0xABC — Hapus wallet
@@ -5532,7 +5532,7 @@ def job_insane_radar(chat_id):
                 continue
         
         if hasil_anomali:
-            teks = f"🤯 INSANE RADAR • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n🔍 Anomali ringan terdeteksi:\n\n"
+            teks = f"🍌 INSANE RADAR • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n🔍 Anomali ringan terdeteksi:\n\n"
             for i, line in enumerate(hasil_anomali[:12], 1):
                 teks += f"{i}. {line}\n"
             if len(hasil_anomali) > 12:
@@ -6001,6 +6001,7 @@ def atr_cmd(message):
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 #------------ STATUS --------
+
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
     chat_id = message.chat.id
@@ -6039,18 +6040,22 @@ def status_cmd(message):
     
     # ===== PREDATOR STATUS =====
     predator_text = "✅ ON (tiap 30 menit)" if _last_predator_scan > 0 else "🟡 IDLE"
-    # ============================
-
-    # ===== COPYTRADE STATUS =====
+    
+    # ===== COPYTRADE STATUS DENGAN MODE =====
     ct_total = len(WATCHED_WALLETS)
     ct_manual = len(MANUAL_WALLETS)
     ct_auto = ct_total - ct_manual
+    
+    # Mode badge & color
+    mode_emoji = {"CASUAL": "🟢", "PRO": "🟡", "INSANE": "🔴"}.get(COPYTRADE_MODE, "🟡")
+    size_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
+    size_display = f"${size_filter/1000:.0f}K" if size_filter < 1000000 else f"${size_filter/1000000:.0f}M"
+    
     if ct_total > 0:
-        copytrade_text = f"✅ {ct_total}w ({ct_auto}🔍 {ct_manual}✋)"
+        copytrade_text = f"{mode_emoji} {COPYTRADE_MODE} | {ct_total}w ({ct_auto}🔍 {ct_manual}✋) | min {size_display}"
     else:
-        copytrade_text = "🟡 Discovering..."
-    # ============================
-
+        copytrade_text = f"{mode_emoji} {COPYTRADE_MODE} | 🟡 Discovering..."
+    
     session_text = get_sesi()
     uptime = get_uptime()
     token_src = "ENV ✅" if os.environ.get('TOKEN') else "HARDCODE ⚠️"
@@ -6074,7 +6079,7 @@ def status_cmd(message):
 🦈 PREDATOR  : {predator_text}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
-🖥️ COPYTRADE : {copytrade_text}
+🤝 COPYTRADE : {copytrade_text}
 ─────────────────────────────────
 📅 SCHEDULES:{schedules_text}
 ─────────────────────────────────"""
@@ -6083,8 +6088,7 @@ def status_cmd(message):
         teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n   Funding avg: {mood_data['funding']:+.4f}%\n   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
     teks += "─────────────────────────────────\n✅ Semua sistem normal"
     bot.send_message(chat_id, teks)
-
-
+    
 # ---------- COPYTRADE ----------
 @bot.message_handler(commands=['copytrade'])
 def copytrade_cmd(message):
@@ -6097,10 +6101,15 @@ def copytrade_cmd(message):
         total = len(wallets_snap)
         manual_count = len(manual_snap)
         auto_count = total - manual_count
+        size_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
+        
+        mode_emoji = {"CASUAL": "🟢", "PRO": "🟡", "INSANE": "🔴"}.get(COPYTRADE_MODE, "🟡")
 
-        teks = "🤝 COPYTRADE STATUS\n"
+        teks = f"{mode_emoji} COPYTRADE STATUS [{COPYTRADE_MODE}]\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"⏰ {get_wib()}\n\n"
+        teks += f"🎯 Mode      : {COPYTRADE_MODE}\n"
+        teks += f"💰 Min size  : ${size_filter:,.0f}\n"
         teks += f"🔊 Tracking  : {total} wallets\n"
         teks += f"🖥️ Auto      : {auto_count} (leaderboard)\n"
         teks += f"✋ Manual    : {manual_count} (kamu set)\n"
@@ -6125,14 +6134,14 @@ def copytrade_cmd(message):
 
         teks += "\n─────────────────────────────────\n"
         teks += "✋ = manual | 🔍 = auto-discovery\n"
-        teks += "\n/addwallet 0xABC [label] — Tambah wallet\n"
+        teks += "\n/copytrademode [CASUAL/PRO/INSANE] — Ganti mode\n"
+        teks += "/addwallet 0xABC [label] — Tambah wallet\n"
         teks += "/removewallet 0xABC — Hapus wallet\n"
         teks += "/trackedwallets — Detail semua wallet"
 
         bot.reply_to(message, teks)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
-
 @bot.message_handler(commands=['copytrademode'])
 def copytrade_mode(message):
     if not is_owner(message):
@@ -6264,7 +6273,7 @@ def trackedwallets_cmd(message):
             bot.reply_to(message, f"😴 Belum ada wallet yang ditrack.\n\nAuto-discovery jalan tiap {WALLET_DISCOVERY_INTERVAL//60} menit.\nAtau /addwallet 0xABC untuk tambah manual.")
             return
 
-        teks = f"👁 TRACKED WALLETS ({len(wallets_snap)})\n"
+        teks = f"🔊 TRACKED WALLETS ({len(wallets_snap)})\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"⏰ {get_wib()}\n\n"
 
@@ -6331,7 +6340,7 @@ def run_scheduler():
                 _sniper_auto_state = "auto_on"
                 logger.info(f"[SCHEDULER] Auto-enabled sniper {SNIPER_MODE} — {get_sesi()}")
                 bot.send_message(USER_ID,
-                    f"🤖 AUTO SNIPER ON\n"
+                    f"🕶️ AUTO SNIPER ON\n"
                     f"⏰ {get_wib()} | {get_sesi()}\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━\n"
                     f"📡 Regime: {regime}\n"
@@ -6492,51 +6501,46 @@ def run_scheduler():
             time.sleep(60)
 
 # ============================================================
-# WALLET TRACKER (SMART MONEY COPY INTEL)
-# ============================================================
-
-# ============================================================
 # WALLET TRACKER (SMART MONEY AUTO-DISCOVERY + COPY INTEL)
 # ============================================================
 
 def load_wallet_state():
     """Load last known positions, watched wallets, dan manual wallets dari file"""
-    global _wallet_last_positions, WATCHED_WALLETS, MANUAL_WALLETS
-    global COPYTRADE_MODE
-saved_mode = data.get("copytrade_mode")
-if saved_mode in ["CASUAL", "PRO", "INSANE"]:
-    COPYTRADE_MODE = saved_mode
+    global _wallet_last_positions, WATCHED_WALLETS, MANUAL_WALLETS, COPYTRADE_MODE
     try:
         if os.path.exists(WALLET_TRACKER_FILE):
             with open(WALLET_TRACKER_FILE, 'r') as f:
                 data = json.load(f)
             with state_lock:
                 _wallet_last_positions = data.get("positions", {})
-                # Restore manual wallets dulu (mereka tidak dihapus discovery)
                 saved_manual = data.get("manual_wallets", {})
                 if saved_manual:
                     MANUAL_WALLETS.update(saved_manual)
-                # Restore watched wallets dari sesi sebelumnya
                 saved_wallets = data.get("watched_wallets", {})
                 if saved_wallets:
                     WATCHED_WALLETS.update(saved_wallets)
-                # Pastikan manual wallets selalu ada di watched
                 WATCHED_WALLETS.update(MANUAL_WALLETS)
-            logger.info(f"[WALLET] Loaded {len(WATCHED_WALLETS)} wallets ({len(MANUAL_WALLETS)} manual), {len(_wallet_last_positions)} snapshots")
+                
+                # Load copytrade mode dari file
+                saved_mode = data.get("copytrade_mode")
+                if saved_mode in ["CASUAL", "PRO", "INSANE"]:
+                    COPYTRADE_MODE = saved_mode
+                    
+            logger.info(f"[WALLET] Loaded {len(WATCHED_WALLETS)} wallets ({len(MANUAL_WALLETS)} manual), mode={COPYTRADE_MODE}")
     except Exception as e:
         logger.error(f"[WALLET] Load error: {e}")
 
-
 def save_wallet_state():
     """Persist positions, watched wallets, dan manual wallets ke file"""
+    global COPYTRADE_MODE
     try:
         with state_lock:
             data = {
                 "positions": dict(_wallet_last_positions),
                 "watched_wallets": dict(WATCHED_WALLETS),
                 "manual_wallets": dict(MANUAL_WALLETS),
+                "copytrade_mode": COPYTRADE_MODE,
                 "saved_at": time.time()
-                "copytrade_mode"] = COPYTRADE_MODE
             }
         with open(WALLET_TRACKER_FILE, 'w') as f:
             json.dump(data, f)
