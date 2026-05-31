@@ -136,6 +136,8 @@ WALLET_TRACKER_FILE = "wallet_tracker_state.json"
 _wallet_discovery_last = 0  # Timestamp last auto-discovery
 WALLET_DISCOVERY_INTERVAL = 3600  # Re-discover tiap 1 jam
 WALLET_MAX_TRACK = 7     # Max wallet yang ditrack sekaligus
+
+
 # ========== COPYTRADE 3 MODE ==========
 COPYTRADE_MODE = "PRO"  # CASUAL, PRO, INSANE
 COPYTRADE_SIZE_FILTER = {
@@ -6001,10 +6003,11 @@ def atr_cmd(message):
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 #------------ STATUS --------
-
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
+    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER
     chat_id = message.chat.id
+    
     schedules_text = "🔴 Tidak ada"
     if chat_id in schedule_jobs and schedule_jobs[chat_id]:
         jobs_info = []
@@ -6088,7 +6091,7 @@ def status_cmd(message):
         teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n   Funding avg: {mood_data['funding']:+.4f}%\n   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
     teks += "─────────────────────────────────\n✅ Semua sistem normal"
     bot.send_message(chat_id, teks)
-    
+  
 # ---------- COPYTRADE ----------
 @bot.message_handler(commands=['copytrade'])
 def copytrade_cmd(message):
@@ -6142,48 +6145,70 @@ def copytrade_cmd(message):
         bot.reply_to(message, teks)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+
+
 @bot.message_handler(commands=['copytrademode'])
 def copytrade_mode(message):
+    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER
     if not is_owner(message):
+        bot.reply_to(message, "❌ Command ini hanya untuk owner bot")
         return
+    
     try:
         parts = message.text.split()
+        
+        # Jika tanpa parameter, tampilkan mode saat ini
         if len(parts) < 2:
-            teks = f"""🎯 COPYTRADE MODE NOW: **{COPYTRADE_MODE}**
+            size_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
+            size_display = f"${size_filter/1000:.0f}K" if size_filter < 1000000 else f"${size_filter/1000000:.0f}M"
+            
+            mode_emoji = {"CASUAL": "🟢", "PRO": "🟡", "INSANE": "🔴"}.get(COPYTRADE_MODE, "🟡")
+            
+            teks = f"""{mode_emoji} **COPYTRADE MODE SAAT INI: {COPYTRADE_MODE}**
 ━━━━━━━━━━━━━━━━━━━━━━
-🟢 CASUAL  → Min size $10.000
-🟡 PRO     → Min size $25.000
-🔴 INSANE  → Min size $100.000
+💰 Minimal posisi: **{size_display}**
 
-💡 Cara ganti:
+📊 **Daftar Mode:**
+🟢 **CASUAL**  → Min size $10.000 (sinyal sering)
+🟡 **PRO**     → Min size $25.000 (selektif)
+🔴 **INSANE**  → Min size $100.000 (whale only)
+
+💡 **Cara ganti mode:**
 /copytrademode CASUAL
 /copytrademode PRO
-/copytrademode INSANE"""
+/copytrademode INSANE
+
+📌 Mode akan tersimpan meski bot restart"""
             bot.reply_to(message, teks, parse_mode='Markdown')
             return
         
+        # Ganti mode
         mode = parts[1].upper()
         if mode not in ["CASUAL", "PRO", "INSANE"]:
             bot.reply_to(message, "❌ Mode tidak valid! Pilih: CASUAL, PRO, atau INSANE")
             return
         
-        global COPYTRADE_MODE
+        # Update mode
         COPYTRADE_MODE = mode
-        save_wallet_state()
+        save_wallet_state()  # Simpan ke file
         
         size_filter = COPYTRADE_SIZE_FILTER[mode]
-        teks = f"""✅ COPYTRADE MODE BERUBAH
+        size_display = f"${size_filter/1000:.0f}K" if size_filter < 1000000 else f"${size_filter/1000000:.0f}M"
+        
+        mode_emoji = {"CASUAL": "🟢", "PRO": "🟡", "INSANE": "🔴"}.get(mode, "🟡")
+        
+        teks = f"""{mode_emoji} **COPYTRADE MODE BERUBAH**
 ━━━━━━━━━━━━━━━━━━━━━━
-🕹️ Mode baru: **{mode}**
-🔎 Min size: **${size_filter:,.0f}**
-📣 Filter: Hanya posisi ≥ ${size_filter:,.0f} yang akan dikirim notifikasi
+🎯 Mode baru: **{mode}**
+💰 Minimal size: **{size_display}**
+📊 Filter: Hanya posisi ≥ {size_display} yang akan dikirim notifikasi
 
-💡 /copytrademode — Lihat mode saat ini"""
+✅ Mode tersimpan! Bot akan restart dengan mode ini."""
         bot.reply_to(message, teks, parse_mode='Markdown')
         logger.info(f"[COPYTRADE] Mode changed to {mode} (min ${size_filter})")
+        
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
-
 
 @bot.message_handler(commands=['addwallet'])
 def addwallet_cmd(message):
@@ -6505,8 +6530,7 @@ def run_scheduler():
 # ============================================================
 
 def load_wallet_state():
-    """Load last known positions, watched wallets, dan manual wallets dari file"""
-    global _wallet_last_positions, WATCHED_WALLETS, MANUAL_WALLETS, COPYTRADE_MODE
+    global _wallet_last_positions, WATCHED_WALLETS, MANUAL_WALLETS, COPYTRADE_MODE  # ← BARIS PERTAMA
     try:
         if os.path.exists(WALLET_TRACKER_FILE):
             with open(WALLET_TRACKER_FILE, 'r') as f:
@@ -6521,18 +6545,16 @@ def load_wallet_state():
                     WATCHED_WALLETS.update(saved_wallets)
                 WATCHED_WALLETS.update(MANUAL_WALLETS)
                 
-                # Load copytrade mode dari file
                 saved_mode = data.get("copytrade_mode")
                 if saved_mode in ["CASUAL", "PRO", "INSANE"]:
                     COPYTRADE_MODE = saved_mode
                     
-            logger.info(f"[WALLET] Loaded {len(WATCHED_WALLETS)} wallets ({len(MANUAL_WALLETS)} manual), mode={COPYTRADE_MODE}")
+            logger.info(f"[WALLET] Loaded {len(WATCHED_WALLETS)} wallets, mode={COPYTRADE_MODE}")
     except Exception as e:
         logger.error(f"[WALLET] Load error: {e}")
-
+        
 def save_wallet_state():
-    """Persist positions, watched wallets, dan manual wallets ke file"""
-    global COPYTRADE_MODE
+    global COPYTRADE_MODE  # ← BARIS PERTAMA
     try:
         with state_lock:
             data = {
@@ -6546,7 +6568,6 @@ def save_wallet_state():
             json.dump(data, f)
     except Exception as e:
         logger.error(f"[WALLET] Save error: {e}")
-
 
 def fetch_leaderboard_wallets(limit: int = 20) -> list:
     """
@@ -6712,8 +6733,7 @@ def auto_discover_wallets():
     logger.info(f"[WALLET] Discovery done: {old_count} → {len(WATCHED_WALLETS)} wallets tracked")
 
 def get_wallet_positions(address: str) -> dict:
-    """Fetch open perp positions dengan filter size sesuai mode"""
-    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER
+    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER  # ← BARIS PERTAMA
     try:
         state = info.user_state(address)
         positions = {}
@@ -6729,9 +6749,8 @@ def get_wallet_positions(address: str) -> dict:
                 mark_px = float(mids.get(coin, entry_px) or entry_px)
                 notional = abs(size) * mark_px
                 
-                # ========== FILTER SESUAI MODE ==========
                 if notional < size_filter:
-                    continue  # Skip posisi kecil
+                    continue
                 
                 positions[coin] = {
                     "side": "LONG" if size > 0 else "SHORT",
@@ -6747,7 +6766,7 @@ def get_wallet_positions(address: str) -> dict:
         return {}
 
 def format_wallet_alert(label: str, address: str, coin: str, change_type: str, data: dict) -> str:
-    """Format alert dengan badge mode"""
+    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER  # ← BARIS PERTAMA
     now = get_wib()
     addr_short = f"{address[:6]}...{address[-4:]}"
     narrative = get_narrative(coin)
@@ -6786,7 +6805,6 @@ def format_wallet_alert(label: str, address: str, coin: str, change_type: str, d
             f"{pnl_emoji} PnL: ${pnl:+.2f}"
         )
     elif change_type == "SIZE_UP":
-        prev_size_display = f"${data['prev_notional']/1000:.0f}K" if data.get('prev_notional') else ""
         return (
             f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
