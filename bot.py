@@ -2927,15 +2927,16 @@ def prediction_stats(message):
 
 
 def check_warroom_simple():
-    """Scan simple: cuma score ≥70, minimal align 2/3 TF"""
+    """Scan simple: cuma score ≥70, minimal align 2/3 TF (pakai cache)"""
     global _warroom_alert_last
     
     try:
+        start_time = time.time()
         data = get_cached_meta()
         assets = data[0]["universe"]
         ctxs = data[1]
         
-        # Ambil top 30 coin based on volume
+        # Ambil top 20 coin based on volume (kurangi dari 25 jadi 20)
         coins = []
         for asset, ctx in zip(assets, ctxs):
             vol = float(ctx.get("dayNtlVlm") or 0)
@@ -2943,7 +2944,7 @@ def check_warroom_simple():
                 coins.append((asset["name"], vol))
         
         coins.sort(key=lambda x: x[1], reverse=True)
-        top_coins = [c[0] for c in coins[:25]]
+        top_coins = [c[0] for c in coins[:20]]  # 20 coin aja biar cepet
         
         now_time = time.time()
         alerts = []
@@ -2958,7 +2959,7 @@ def check_warroom_simple():
                 if not ctx or mark == 0:
                     continue
                 
-                # Deriv score cepat
+                # Deriv score cepat (ini cepet)
                 ob_delta = get_ob_delta(coin)
                 funding = get_funding_pct(ctx)
                 bid_wall, _ = get_bid_wall_level(coin)
@@ -2974,16 +2975,20 @@ def check_warroom_simple():
                 else:
                     continue
                 
-                # ========== FILTER SCORE ≥70 ==========
+                # FILTER SCORE ≥70 DULU (biar gak lanjut kalo gagal)
                 if deriv_score < 70:
                     continue
                 
-                # Cek TF alignment (3 TF: H1, M15, M5)
+                # ===== PAKAI analyze_tf TAPI SKIP KALO LAMA =====
+                # Panggil 3 TF dengan timeout singkat
                 r_h1 = analyze_tf(coin, "1h")
+                if not r_h1:
+                    continue
                 r_m15 = analyze_tf(coin, "15m")
+                if not r_m15:
+                    continue
                 r_m5 = analyze_tf(coin, "5m")
-                
-                if not r_h1 or not r_m15 or not r_m5:
+                if not r_m5:
                     continue
                 
                 # Hitung alignment
@@ -3005,10 +3010,13 @@ def check_warroom_simple():
                         })
                         _warroom_alert_last[coin] = now_time
                         
-            except:
+            except Exception as e:
+                logger.debug(f"[ALERT] Error {coin}: {e}")
                 continue
         
-        # Kirim alert (max 3 coin)
+        elapsed = time.time() - start_time
+        
+        # Kirim alert
         if alerts:
             alerts.sort(key=lambda x: x["score"], reverse=True)
             for a in alerts[:3]:
@@ -3019,12 +3027,16 @@ def check_warroom_simple():
                 teks += f"\n🎯 /warroom {a['coin']} | /entry {a['coin']}"
                 
                 send_to_owner(teks, parse_mode='Markdown')
-                time.sleep(1)
+                time.sleep(0.5)
+            
+            # Tambah info waktu di akhir
+            send_to_owner(f"⚡ Scan selesai dalam {elapsed:.1f} detik, {len(alerts)} alert dikirim")
+        else:
+            send_to_owner(f"⚡ Scan selesai dalam {elapsed:.1f} detik, tidak ada setup ≥70")
                 
     except Exception as e:
         logger.error(f"[ALERT] Error: {e}")
-
-
+        send_to_owner(f"❌ Error scan: {str(e)[:100]}")
 
 
 # ============================================================
@@ -3065,7 +3077,7 @@ GM/GN 😼 {user}
 🎰 ANALISIS PRO
 /delta | /trap | /cluster
 /liqmap | /correlation | /sentiment
-/smartflow
+/smartflow | /warroomalert
 
 🐋 WHALE INTEL
 /whale | /whalescan | /whalewall
