@@ -2810,7 +2810,7 @@ def casual_session_report():
         teks += f"Harga: ${price:,.0f}\n"
         teks += f"Funding: {funding_text}\n"
         teks += f"{ob_text}\n\n"
-        teks += "🔮 Ramalan gw:\n"
+        teks += "☄️ Ramalan gw:\n"
         teks += f"{pred_data['reason']}\n"
         teks += f"Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}\n"
         teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
@@ -2821,7 +2821,7 @@ def casual_session_report():
         if sl_text:
             teks += f"| {sl_text}\n"
 
-        teks += "\n💀 DYOR ya. Ga 100% akurat.\n"
+        teks += "\n⚠️ DYOR ya. Ga 100% akurat.\n"
         teks += "maintain risk management"
 
         # Simpan prediksi ke history
@@ -2887,11 +2887,11 @@ def evaluate_predictions():
         if correct_dir:
             direction_result = "✅ BENER"
         else:
-            direction_result = "❌ SALAH"
+            direction_result = "❎ SALAH"
 
-        teks = f"📊 Evaluasi Prediksi\n"
+        teks = f"📑 Evaluasi Prediksi\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🔮 Waktu prediksi: {pred_time}\n"
+        teks += f"☄️ Waktu prediksi: {pred_time}\n"
         teks += f"Gw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}\n\n"
         teks += "📈 Kenyataan:\n"
         teks += f"Harga sekarang: ${current_price:,.0f}\n"
@@ -2940,7 +2940,7 @@ def prediction_stats(message):
     correct = stats["correct"]
     accuracy = (correct / total * 100) if total > 0 else 0
 
-    teks = f"📊 STATISTIK PREDIKSI\n"
+    teks = f"⌨️ STATISTIK PREDIKSI\n"
     teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
     teks += f"Total prediksi: {total} kali\n"
     teks += f"Bener arahnya: {correct} kali ({accuracy:.0f}%)\n\n"
@@ -3125,20 +3125,20 @@ GM/GN 😼 {user}
 /news — Berita crypto terbaru
 /news BTC — Cari berita tentang BTC
 
-🎰 ANALISIS PRO
+🧭 ANALISIS PRO
 /delta | /trap | /cluster
 /liqmap | /correlation | /sentiment
-/smartflow | /warroomalert
+/smartflow | /warroomalert | /clusteropen
 
 🐋 WHALE INTEL
 /whale | /whalescan | /whalewall
-/entrywhale | /liquidations
+/entrywhale | /liquidations | /whalesentiment
 
 👤 TRACKER
 /positions 0xABC | /pnl 0xABC 
 /history 0xABC 
 
-🖥️ COPYTRADE
+🛰️ COPYTRADE
 /copytrade — Status & tracked wallets
 /addwallet 0xABC — Track wallet
 /removewallet 0xABC — Hapus wallet
@@ -6513,6 +6513,241 @@ def trackedwallets_cmd(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
+# ========== CLUSTER OPEN POSITIONS SUMMARY ==========
+_open_cluster_cache = {}
+_open_cluster_last_scan = 0
+
+@bot.message_handler(commands=['clusteropen'])
+def cluster_open_positions(message):
+    """Ringkasan semua OPEN position dari tracked wallets"""
+    if not is_owner(message):
+        return
+    
+    msg = bot.reply_to(message, "🔍 Scanning cluster OPEN positions from tracked wallets...")
+    
+    try:
+        with state_lock:
+            wallets_snap = dict(WATCHED_WALLETS)
+            positions_snap = dict(_wallet_last_positions)
+        
+        # Kumpulkan semua posisi yang masih open
+        open_positions = {}
+        
+        for addr, label in wallets_snap.items():
+            positions = positions_snap.get(addr, {})
+            for coin, pos in positions.items():
+                if coin not in open_positions:
+                    open_positions[coin] = {
+                        "long_count": 0,
+                        "short_count": 0,
+                        "long_notional": 0,
+                        "short_notional": 0,
+                        "long_wallets": [],
+                        "short_wallets": []
+                    }
+                
+                notional = pos.get("notional", 0)
+                side = pos.get("side", "UNKNOWN")
+                
+                if side == "LONG":
+                    open_positions[coin]["long_count"] += 1
+                    open_positions[coin]["long_notional"] += notional
+                    open_positions[coin]["long_wallets"].append({
+                        "label": label,
+                        "addr": addr[:6] + "..." + addr[-4:],
+                        "size": pos.get("size", 0),
+                        "entry": pos.get("entry", 0),
+                        "notional": notional
+                    })
+                elif side == "SHORT":
+                    open_positions[coin]["short_count"] += 1
+                    open_positions[coin]["short_notional"] += notional
+                    open_positions[coin]["short_wallets"].append({
+                        "label": label,
+                        "addr": addr[:6] + "..." + addr[-4:],
+                        "size": pos.get("size", 0),
+                        "entry": pos.get("entry", 0),
+                        "notional": notional
+                    })
+        
+        if not open_positions:
+            bot.edit_message_text("😴 Tidak ada OPEN position dari tracked wallets saat ini.", msg.chat.id, msg.message_id)
+            return
+        
+        # Urutkan berdasarkan total notional terbesar
+        sorted_coins = sorted(open_positions.keys(), 
+                            key=lambda c: open_positions[c]["long_notional"] + open_positions[c]["short_notional"], 
+                            reverse=True)
+        
+        # Build output
+        teks = f"🐋 CLUSTER OPEN POSITIONS\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += f"👤 Tracked wallets: {len(wallets_snap)}\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        for coin in sorted_coins[:15]:
+            data = open_positions[coin]
+            total_long = data["long_count"]
+            total_short = data["short_count"]
+            long_notional = data["long_notional"] / 1e6
+            short_notional = data["short_notional"] / 1e6
+            
+            # Tentukan bias
+            if total_long > total_short * 2:
+                bias_emoji = "🚀"
+                bias = "STRONG BULLISH"
+            elif total_long > total_short:
+                bias_emoji = "📈"
+                bias = "BULLISH"
+            elif total_short > total_long * 2:
+                bias_emoji = "💀"
+                bias = "STRONG BEARISH"
+            elif total_short > total_long:
+                bias_emoji = "📉"
+                bias = "BEARISH"
+            else:
+                bias_emoji = "➖"
+                bias = "NEUTRAL"
+            
+            narrative = get_narrative(coin)
+            
+            teks += f"{bias_emoji} *{coin}* [{narrative}]\n"
+            teks += f"   🟢 LONG: {total_long} wallet | ${long_notional:.1f}M\n"
+            if total_long > 0 and data["long_wallets"]:
+                top_long = data["long_wallets"][0]
+                teks += f"      └ {top_long['label']}: ${top_long['notional']/1e6:.1f}M @ {fmt_price(top_long['entry'])}\n"
+            teks += f"   🔴 SHORT: {total_short} wallet | ${short_notional:.1f}M\n"
+            if total_short > 0 and data["short_wallets"]:
+                top_short = data["short_wallets"][0]
+                teks += f"      └ {top_short['label']}: ${top_short['notional']/1e6:.1f}M @ {fmt_price(top_short['entry'])}\n"
+            teks += f"   📊 BIAS: {bias_emoji} {bias}\n\n"
+        
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💡 Insight:\n"
+        
+        top_coin = sorted_coins[0] if sorted_coins else None
+        if top_coin:
+            top_data = open_positions[top_coin]
+            if top_data["long_count"] > top_data["short_count"]:
+                teks += f"   🔥 {top_coin} paling banyak di-LONG ({top_data['long_count']} wallet)\n"
+            else:
+                teks += f"   💀 {top_coin} paling banyak di-SHORT ({top_data['short_count']} wallet)\n"
+        
+        teks += f"\n🎯 /warroom <coin> | /entry <coin> | /whalesentiment"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"[CLUSTEROPEN] Error: {e}")
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+
+@bot.message_handler(commands=['whalesentiment'])
+def whale_sentiment(message):
+    """Sentiment gabungan dari semua tracked wallets"""
+    if not is_owner(message):
+        return
+    
+    try:
+        with state_lock:
+            positions_snap = dict(_wallet_last_positions)
+            wallets_snap = dict(WATCHED_WALLETS)
+        
+        total_long = 0
+        total_short = 0
+        total_long_notional = 0
+        total_short_notional = 0
+        coin_sentiment = {}
+        
+        for addr, positions in positions_snap.items():
+            for coin, pos in positions.items():
+                side = pos.get("side", "")
+                notional = pos.get("notional", 0)
+                
+                if side == "LONG":
+                    total_long += 1
+                    total_long_notional += notional
+                elif side == "SHORT":
+                    total_short += 1
+                    total_short_notional += notional
+                
+                if coin not in coin_sentiment:
+                    coin_sentiment[coin] = {"long": 0, "short": 0, "long_notional": 0, "short_notional": 0}
+                if side == "LONG":
+                    coin_sentiment[coin]["long"] += 1
+                    coin_sentiment[coin]["long_notional"] += notional
+                elif side == "SHORT":
+                    coin_sentiment[coin]["short"] += 1
+                    coin_sentiment[coin]["short_notional"] += notional
+        
+        total_positions = total_long + total_short
+        if total_positions == 0:
+            bot.reply_to(message, "😴 Belum ada posisi dari tracked wallets.")
+            return
+        
+        long_pct = (total_long / total_positions * 100) if total_positions > 0 else 0
+        short_pct = 100 - long_pct
+        
+        # Tentukan sentimen overall
+        if long_pct > 70:
+            overall = "🔥 EXTREME BULLISH"
+            advice = "Whale sangat bullish, ikut LONG dengan manajemen risiko"
+        elif long_pct > 55:
+            overall = "🟢 BULLISH"
+            advice = "Whale cenderung LONG, prioritaskan LONG setup"
+        elif short_pct > 70:
+            overall = "💀 EXTREME BEARISH"
+            advice = "Whale sangat bearish, hindari LONG"
+        elif short_pct > 55:
+            overall = "🔴 BEARISH"
+            advice = "Whale cenderung SHORT, prioritaskan SHORT setup"
+        else:
+            overall = "⚪ NEUTRAL"
+            advice = "Sentimen mixed, fokus ke konfirmasi individual"
+        
+        # Cari coin dengan bias terkuat
+        strong_long_coins = []
+        strong_short_coins = []
+        for coin, data in coin_sentiment.items():
+            if data["long"] >= 2 and data["short"] == 0:
+                strong_long_coins.append(coin)
+            elif data["short"] >= 2 and data["long"] == 0:
+                strong_short_coins.append(coin)
+        
+        teks = f"🐋 WHALE SENTIMENT\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"⏰ {get_wib()}\n"
+        teks += f"👤 Tracked wallets: {len(wallets_snap)}\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        teks += f"📊 TOTAL POSISI: {total_positions}\n"
+        teks += f"🟢 LONG : {total_long} ({long_pct:.0f}%) | ${total_long_notional/1e6:.1f}M\n"
+        teks += f"🔴 SHORT: {total_short} ({short_pct:.0f}%) | ${total_short_notional/1e6:.1f}M\n\n"
+        teks += f"🎯 OVERALL: {overall}\n\n"
+        
+        if strong_long_coins:
+            teks += f"🚀 COIN DENGAN LONG CONSENSUS:\n"
+            for coin in strong_long_coins[:5]:
+                data = coin_sentiment[coin]
+                teks += f"   ✅ {coin}: {data['long']} wallet LONG, 0 SHORT\n"
+            teks += "\n"
+        
+        if strong_short_coins:
+            teks += f"💀 COIN DENGAN SHORT CONSENSUS:\n"
+            for coin in strong_short_coins[:5]:
+                data = coin_sentiment[coin]
+                teks += f"   ❌ {coin}: {data['short']} wallet SHORT, 0 LONG\n"
+            teks += "\n"
+        
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💡 {advice}\n\n"
+        teks += f"📋 /clusteropen — Lihat detail per coin"
+        
+        bot.reply_to(message, teks)
+        
+    except Exception as e:
+        logger.error(f"[WHALESENTIMENT] Error: {e}")
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 # ============================================================
 # SCHEDULER & MAIN LOOP
