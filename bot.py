@@ -5794,18 +5794,18 @@ def handle_stop_sniper(message):
 
 
 # ---------- REPORT ----------
+
 @bot.message_handler(commands=['report'])
 def report(message):
-    msg = bot.reply_to(message, "🖥️ Generating Market Morning Brief...")
+    msg = bot.reply_to(message, "⌨️ Generating Market Morning Brief (fast mode)...")
     try:
         start_time = time.time()
         
         data = get_cached_meta()
         assets = data[0]["universe"]
         ctxs = data[1]
-        all_mids = info.all_mids()
         
-        # ========== KUMPULIN DATA ==========
+        # ========== KUMPULIN DATA (TANPA WALL) ==========
         coins_data = []
         for asset, ctx in zip(assets, ctxs):
             coin = asset["name"]
@@ -5817,45 +5817,41 @@ def report(message):
             funding = get_funding_pct(ctx)
             oi_usd = get_oi_usd(ctx, mark)
             vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
-            ob_delta = get_ob_delta(coin)
+            ob_delta = get_ob_delta(coin)  # Ini dari cache, cepet
             narrative = get_narrative(coin)
             
-            # Skor sederhana buat alasan
-            long_confidence = 0
-            short_confidence = 0
+            # Skor sederhana
+            long_conf = 0
+            short_conf = 0
             reasons_long = []
             reasons_short = []
             
             if ob_delta > 10:
-                long_confidence += 25
-                reasons_long.append("OB Delta +")
+                long_conf += 25
+                reasons_long.append("Delta+")
             elif ob_delta < -10:
-                short_confidence += 25
-                reasons_short.append("OB Delta -")
+                short_conf += 25
+                reasons_short.append("Delta-")
             
             if funding < -0.02:
-                long_confidence += 20
-                reasons_long.append("Funding negatif")
+                long_conf += 20
+                reasons_long.append("Fund negatif")
             elif funding > 0.02:
-                short_confidence += 20
-                reasons_short.append("Funding positif")
+                short_conf += 20
+                reasons_short.append("Fund positif")
             
             if change > 2:
-                long_confidence += 30
+                long_conf += 30
                 reasons_long.append("Momentum up")
             elif change < -2:
-                short_confidence += 30
+                short_conf += 30
                 reasons_short.append("Momentum down")
-            
-            if vol > 100:
-                long_confidence += 10 if change > 0 else 0
-                short_confidence += 10 if change < 0 else 0
             
             coins_data.append({
                 "coin": coin, "narrative": narrative,
                 "change": change, "funding": funding, "oi": oi_usd,
                 "vol": vol, "ob_delta": ob_delta, "price": mark,
-                "long_conf": long_confidence, "short_conf": short_confidence,
+                "long_conf": long_conf, "short_conf": short_conf,
                 "reasons_long": reasons_long, "reasons_short": reasons_short
             })
         
@@ -5863,11 +5859,11 @@ def report(message):
             bot.edit_message_text("❌ Gagal ambil data market", msg.chat.id, msg.message_id)
             return
         
-        # ========== SORTIR ==========
+        # ========== SORTIR CEPAT ==========
         gainers = sorted(coins_data, key=lambda x: x["change"], reverse=True)[:3]
         losers = sorted(coins_data, key=lambda x: x["change"])[:3]
         
-        # ========== MARKET BREADTH ==========
+        # ========== MARKET BREADTH (PAKE SEMUA COIN) ==========
         bullish = sum(1 for c in coins_data if c["change"] > 0.5)
         bearish = sum(1 for c in coins_data if c["change"] < -0.5)
         neutral = len(coins_data) - bullish - bearish
@@ -5892,11 +5888,14 @@ def report(message):
         else:
             funding_sentiment = "😎 NEUTRAL"
         
-        # ========== WHALE WALL TERBESAR ==========
+        # ========== WHALE WALLS (HANYA TOP 10 COIN) ==========
+        # Ambil cuma 10 coin teratas berdasarkan OI atau volume
+        top_oi_coins = sorted(coins_data, key=lambda x: x["oi"], reverse=True)[:10]
         top_bid_walls = []
         top_ask_walls = []
-        for c in coins_data[:30]:  # cukup 30 coin
-            bid_wall, _ = get_bid_wall_level(c["coin"])
+        
+        for c in top_oi_coins:
+            bid_wall, _ = get_bid_wall_level(c["coin"])  # Ini cepet kena cache
             ask_wall, _ = get_ask_wall_level(c["coin"])
             if bid_wall > 100000:
                 top_bid_walls.append((c["coin"], bid_wall))
@@ -5959,7 +5958,7 @@ def report(message):
         teks += f"   Rata-rata: {avg_funding:+.4f}%\n"
         teks += f"   {funding_sentiment}\n\n"
         
-        # Whale Walls
+        # Whale Walls (cuma kalo ada)
         if top_bid_walls or top_ask_walls:
             teks += f"🐋 WHALE WALLS\n"
             for coin, wall in top_bid_walls[:2]:
@@ -5970,19 +5969,15 @@ def report(message):
         
         # Rekomendasi
         teks += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🎯 REKOMENDASI HARI INI\n"
-        teks += f"   Arah: {direction_rec}\n"
-        teks += f"   📌 {rec_reason}\n\n"
-        teks += f"💡 /screener → Dashboard lengkap\n"
-        teks += f"💡 /entry <coin> → Setup entry + SL/TP\n"
-        teks += f"💡 /warroom <coin> → Analisis mendalam"
+        teks += f"💡 REKOMENDASI HARI INI\n"
+        teks += f"Arah: {direction_rec}\n"
+        teks += f"📌 {rec_reason}\n\n"
         
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
         
     except Exception as e:
         logger.error(f"Report error: {e}")
         bot.edit_message_text(f"❌ Error report: {str(e)[:100]}", msg.chat.id, msg.message_id)
-
 
 # ---------- CASUAL REPORT & PREDICTION ----------
 @bot.message_handler(commands=['reportcasual'])
