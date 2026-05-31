@@ -136,6 +136,13 @@ WALLET_TRACKER_FILE = "wallet_tracker_state.json"
 _wallet_discovery_last = 0  # Timestamp last auto-discovery
 WALLET_DISCOVERY_INTERVAL = 3600  # Re-discover tiap 1 jam
 WALLET_MAX_TRACK = 7     # Max wallet yang ditrack sekaligus
+# ========== COPYTRADE 3 MODE ==========
+COPYTRADE_MODE = "PRO"  # CASUAL, PRO, INSANE
+COPYTRADE_SIZE_FILTER = {
+    "CASUAL": 10_000,
+    "PRO": 25_000,
+    "INSANE": 100_000
+}
 
 # ========== SNIPER CONFIG ==========
 SNIPER_CONFIG = {
@@ -6126,6 +6133,48 @@ def copytrade_cmd(message):
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
+@bot.message_handler(commands=['copytrademode'])
+def copytrade_mode(message):
+    if not is_owner(message):
+        return
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            teks = f"""🎯 COPYTRADE MODE NOW: **{COPYTRADE_MODE}**
+━━━━━━━━━━━━━━━━━━━━━━
+🟢 CASUAL  → Min size $10.000
+🟡 PRO     → Min size $25.000
+🔴 INSANE  → Min size $100.000
+
+💡 Cara ganti:
+/copytrademode CASUAL
+/copytrademode PRO
+/copytrademode INSANE"""
+            bot.reply_to(message, teks, parse_mode='Markdown')
+            return
+        
+        mode = parts[1].upper()
+        if mode not in ["CASUAL", "PRO", "INSANE"]:
+            bot.reply_to(message, "❌ Mode tidak valid! Pilih: CASUAL, PRO, atau INSANE")
+            return
+        
+        global COPYTRADE_MODE
+        COPYTRADE_MODE = mode
+        save_wallet_state()
+        
+        size_filter = COPYTRADE_SIZE_FILTER[mode]
+        teks = f"""✅ COPYTRADE MODE BERUBAH
+━━━━━━━━━━━━━━━━━━━━━━
+🕹️ Mode baru: **{mode}**
+🔎 Min size: **${size_filter:,.0f}**
+📣 Filter: Hanya posisi ≥ ${size_filter:,.0f} yang akan dikirim notifikasi
+
+💡 /copytrademode — Lihat mode saat ini"""
+        bot.reply_to(message, teks, parse_mode='Markdown')
+        logger.info(f"[COPYTRADE] Mode changed to {mode} (min ${size_filter})")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+
 
 @bot.message_handler(commands=['addwallet'])
 def addwallet_cmd(message):
@@ -6453,6 +6502,10 @@ def run_scheduler():
 def load_wallet_state():
     """Load last known positions, watched wallets, dan manual wallets dari file"""
     global _wallet_last_positions, WATCHED_WALLETS, MANUAL_WALLETS
+    global COPYTRADE_MODE
+saved_mode = data.get("copytrade_mode")
+if saved_mode in ["CASUAL", "PRO", "INSANE"]:
+    COPYTRADE_MODE = saved_mode
     try:
         if os.path.exists(WALLET_TRACKER_FILE):
             with open(WALLET_TRACKER_FILE, 'r') as f:
@@ -6483,6 +6536,7 @@ def save_wallet_state():
                 "watched_wallets": dict(WATCHED_WALLETS),
                 "manual_wallets": dict(MANUAL_WALLETS),
                 "saved_at": time.time()
+                "copytrade_mode"] = COPYTRADE_MODE
             }
         with open(WALLET_TRACKER_FILE, 'w') as f:
             json.dump(data, f)
@@ -6653,13 +6707,15 @@ def auto_discover_wallets():
 
     logger.info(f"[WALLET] Discovery done: {old_count} → {len(WATCHED_WALLETS)} wallets tracked")
 
-
 def get_wallet_positions(address: str) -> dict:
-    """Fetch open perp positions dari address Hyperliquid — filter min $10K notional"""
+    """Fetch open perp positions dengan filter size sesuai mode"""
+    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER
     try:
         state = info.user_state(address)
         positions = {}
         mids = info.all_mids()
+        size_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
+        
         for pos in state.get("assetPositions", []):
             p = pos.get("position", {})
             coin = p.get("coin")
@@ -6668,8 +6724,11 @@ def get_wallet_positions(address: str) -> dict:
                 entry_px = float(p.get("entryPx") or 0)
                 mark_px = float(mids.get(coin, entry_px) or entry_px)
                 notional = abs(size) * mark_px
-                if notional < 10_000:  # Filter: min $10K — skip posisi kecil
-                    continue
+                
+                # ========== FILTER SESUAI MODE ==========
+                if notional < size_filter:
+                    continue  # Skip posisi kecil
+                
                 positions[coin] = {
                     "side": "LONG" if size > 0 else "SHORT",
                     "size": abs(size),
@@ -6680,62 +6739,70 @@ def get_wallet_positions(address: str) -> dict:
                 }
         return positions
     except Exception as e:
-        logger.error(f"[WALLET] Error fetch {address[:8]}...: {e}")
+        logger.debug(f"[WALLET] Fetch error {address[:8]}...: {e}")
         return {}
 
-
 def format_wallet_alert(label: str, address: str, coin: str, change_type: str, data: dict) -> str:
-    """Format alert message untuk perubahan posisi wallet"""
+    """Format alert dengan badge mode"""
     now = get_wib()
     addr_short = f"{address[:6]}...{address[-4:]}"
     narrative = get_narrative(coin)
+    mode_badge = {
+        "CASUAL": "🟢",
+        "PRO": "🟡",
+        "INSANE": "🔴"
+    }.get(COPYTRADE_MODE, "🟡")
+    
+    size_display = f"${data['notional']/1000:.0f}K"
+    if data['notional'] >= 1_000_000:
+        size_display = f"${data['notional']/1_000_000:.1f}M"
 
     if change_type == "OPEN":
         side_emoji = "🟢" if data["side"] == "LONG" else "🔴"
         return (
-            f"📢 WALLET INTEL • {label}\n"
+            f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
-            f"━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{side_emoji} OPEN {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"🔎 Size  : {data['size']:.4f}\n"
-            f"🎯 Entry : {fmt_price(data['entry'])}\n"
-            f"⚔️ Lev   : {data['leverage']:.0f}x"
+            f"💰 Size: {data['size']:.4f} ({size_display})\n"
+            f"🎯 Entry: {fmt_price(data['entry'])}\n"
+            f"⚡ Lev: {data['leverage']:.0f}x"
         )
     elif change_type == "CLOSE":
         pnl = data.get("pnl", 0)
         pnl_emoji = "✅" if pnl >= 0 else "❌"
         return (
-            f"📢 WALLET INTEL • {label}\n"
+            f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
-            f"━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⬛ CLOSE {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"🔎 Size  : {data['size']:.4f}\n"
-            f"{pnl_emoji} PnL  : ${pnl:+.2f}"
+            f"💰 Size: {data['size']:.4f} ({size_display})\n"
+            f"{pnl_emoji} PnL: ${pnl:+.2f}"
         )
     elif change_type == "SIZE_UP":
+        prev_size_display = f"${data['prev_notional']/1000:.0f}K" if data.get('prev_notional') else ""
         return (
-            f"📢 WALLET INTEL • {label}\n"
+            f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
-            f"━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⬆️ SIZE UP {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"🔎 {data['prev_size']:.4f} → {data['size']:.4f}\n"
-            f"🎯 Entry : {fmt_price(data['entry'])}"
+            f"💰 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
+            f"🎯 Entry: {fmt_price(data['entry'])}"
         )
     elif change_type == "SIZE_DOWN":
         return (
-            f"📢 WALLET INTEL • {label}\n"
+            f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
             f"⏰ {now} | 📍 {addr_short}\n"
-            f"━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⬇️ SIZE DOWN {data['side']} {coin}\n"
             f"📂 {narrative}\n"
-            f"🔎 {data['prev_size']:.4f} → {data['size']:.4f}\n"
-            f"🎯 Entry : {fmt_price(data['entry'])}"
+            f"💰 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
+            f"🎯 Entry: {fmt_price(data['entry'])}"
         )
     return ""
-
 
 def scan_wallet(address: str, label: str):
     global _wallet_last_positions, _wallet_last_alert
@@ -6766,16 +6833,17 @@ def scan_wallet(address: str, label: str):
         elif not cur_pos and prv_pos:
             alerts.append((coin, "CLOSE", prv_pos))
         elif cur_pos and prv_pos:
-            prev_size = prv_pos["size"]
-            cur_size = cur_pos["size"]
-            threshold = prev_size * 0.05
-            if cur_size > prev_size + threshold:
-                alerts.append((coin, "SIZE_UP", {**cur_pos, "prev_size": prev_size}))
-            elif cur_size < prev_size - threshold:
-                alerts.append((coin, "SIZE_DOWN", {**cur_pos, "prev_size": prev_size}))
-
-        # ===== TAMBAHKAN DENGAN INDEBTASI YANG BENAR =====
-        if len(alerts) >= 3:
+             prev_size = prv_pos["size"]
+             cur_size = cur_pos["size"]
+             threshold = prev_size * 0.10  # 10% perubahan
+          if cur_size > prev_size + threshold:
+            # Tambahkan prev_notional untuk display
+            prev_notional = prv_pos.get("notional", 0)
+            alerts.append((coin, "SIZE_UP", {**cur_pos, "prev_size": prev_size, "prev_notional": prev_notional}))
+    elif cur_size < prev_size - threshold:
+          alerts.append((coin, "SIZE_DOWN", {**cur_pos, "prev_size": prev_size}))
+          # ===== TAMBAHKAN DENGAN INDEBTASI YANG BENAR =====
+       if len(alerts) >= 3:
             break
         # ===============================================
 
