@@ -150,6 +150,10 @@ COPYTRADE_SIZE_FILTER = {
 _warroom_alert_running = False
 _warroom_alert_last = {}  # {coin: timestamp} cooldown
 
+# Auto Entry Alert
+_entry_alert_running = False
+_entry_alert_last = {}  # {coin: timestamp} cooldown
+
 # ========== SNIPER CONFIG ==========
 SNIPER_CONFIG = {
     "INSANE": {"wall_min": 150000, "delta_min": 30, "funding_max": -0.01, "chaos_pct": 1.5, "cooldown": 600},
@@ -3089,6 +3093,131 @@ def check_warroom_simple():
     except Exception as e:
         logger.error(f"[ALERT] check_warroom_simple error: {e}")
 
+def check_entry_alert():
+    """Scan untuk entry signal: score ≥70 + TF align, kirim alert simpel"""
+    global _entry_alert_last
+    
+    try:
+        start_time = time.time()
+        data = get_cached_meta()
+        assets = data[0]["universe"]
+        ctxs = data[1]
+        
+        # Ambil top 20 coin based on volume
+        coins = []
+        for asset, ctx in zip(assets, ctxs):
+            vol = float(ctx.get("dayNtlVlm") or 0)
+            if vol > 3_000_000:
+                coins.append((asset["name"], vol))
+        
+        coins.sort(key=lambda x: x[1], reverse=True)
+        top_coins = [c[0] for c in coins[:20]]
+        
+        now_time = time.time()
+        alerts = []
+        
+        for coin in top_coins:
+            # Cooldown 30 menit per coin (biar ga spam)
+            if coin in _entry_alert_last and now_time - _entry_alert_last[coin] < 1800:
+                continue
+            
+            try:
+                ctx, mark = get_ctx(coin)
+                if not ctx or mark == 0:
+                    continue
+                
+                # Hitung score
+                ob_delta = get_ob_delta(coin)
+                funding = get_funding_pct(ctx)
+                bid_wall, _ = get_bid_wall_level(coin)
+                ask_wall, _ = get_ask_wall_level(coin)
+                
+                long_score, short_score = calculate_scores(ob_delta, funding, bid_wall, ask_wall)
+                
+                gap = abs(long_score - short_score)
+                if long_score > short_score and gap >= 15:
+                    deriv_bias, deriv_score = "LONG", long_score
+                elif short_score > long_score and gap >= 15:
+                    deriv_bias, deriv_score = "SHORT", short_score
+                else:
+                    continue
+                
+                # Filter score ≥70
+                if deriv_score < 70:
+                    continue
+                
+                # Ambil data TF alignment (pakai cache dari warroom)
+                r_h1 = analyze_tf(coin, "1h")
+                if not r_h1:
+                    continue
+                r_m15 = analyze_tf(coin, "15m")
+                if not r_m15:
+                    continue
+                r_m5 = analyze_tf(coin, "5m")
+                if not r_m5:
+                    continue
+                
+                # Hitung alignment
+                bullish = sum(1 for x in [r_h1["bias"], r_m15["bias"], r_m5["bias"]] if x == "BULLISH")
+                bearish = sum(1 for x in [r_h1["bias"], r_m15["bias"], r_m5["bias"]] if x == "BEARISH")
+                aligned = max(bullish, bearish)
+                dominant = "BULLISH" if bullish > bearish else "BEARISH"
+                
+                # Trigger: align minimal 2/3 TF, arah sama dengan deriv
+                if aligned >= 2:
+                    if (dominant == "BULLISH" and deriv_bias == "LONG") or (dominant == "BEARISH" and deriv_bias == "SHORT"):
+                        # Hitung SL/TP simpel
+                        sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, deriv_bias)
+                        
+                        alerts.append({
+                            "coin": coin,
+                            "direction": deriv_bias,
+                            "score": deriv_score,
+                            "price": mark,
+                            "change": get_change(ctx),
+                            "sl": sl_p,
+                            "sl_pct": sl_pct,
+                            "tp": tp_p,
+                            "tp_pct": tp_pct,
+                            "rr": rr,
+                            "alignment": aligned
+                        })
+                        
+            except Exception as e:
+                logger.debug(f"[ENTRY_ALERT] Error {coin}: {e}")
+                continue
+        
+        elapsed = time.time() - start_time
+        logger.info(f"[ENTRY_ALERT] Scan done in {elapsed:.1f}s — {len(alerts)} alerts")
+        
+        # Kirim alert simpel
+        if alerts:
+            alerts.sort(key=lambda x: x["score"], reverse=True)
+            for a in alerts[:3]:
+                arrow = "🟢" if a["direction"] == "LONG" else "🔴"
+                teks = f"""{arrow} *ENTRY ALERT* • {a['coin']}
+━━━━━━━━━━━━━━━━━━━━━━
+📡 {a['direction']} | Score {a['score']}
+💰 Harga: {fmt_price(a['price'])} | Δ {a['change']:+.1f}%
+📊 {a['alignment']}/3 TF align
+
+🎯 ENTRY: {fmt_price(a['price'])}
+🛑 SL: {fmt_price(a['sl'])} ({'%.2f' % a['sl_pct']}%)
+✅ TP: {fmt_price(a['tp'])} (+{'%.2f' % a['tp_pct']}%)
+⚖️ RR: 1:{a['rr']:.1f}
+
+💡 /entry {a['coin']} | /warroom {a['coin']}"""
+                
+                try:
+                    send_to_owner(teks, parse_mode='Markdown')
+                    _entry_alert_last[a['coin']] = now_time
+                    time.sleep(0.5)
+                except Exception as send_err:
+                    logger.error(f"[ENTRY_ALERT] Gagal kirim: {send_err}")
+                    
+    except Exception as e:
+        logger.error(f"[ENTRY_ALERT] Error: {e}")
+
 
 # ============================================================
 # PART 13a: COMMAND HANDLERS (START sampai WARROOM)
@@ -3946,7 +4075,31 @@ def check_command_cooldown(user_id: int, cmd: str) -> bool:
         return True
     _command_cooldown[key] = now
     return False
-
+    
+@bot.message_handler(commands=['entryalert'])
+def entry_alert_cmd(message):
+    global _entry_alert_running
+    
+    if not is_owner(message):
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        status = "✅ ON" if _entry_alert_running else "❌ OFF"
+        bot.reply_to(message, f"🎯 ENTRY ALERT\nStatus: {status}\nScore minimal: 70\nCooldown: 30 menit/coin\n\n/entryalert on\n/entryalert off\n/entryalert scan")
+        return
+    
+    if parts[1] == "on":
+        _entry_alert_running = True
+        bot.reply_to(message, "✅ ENTRY ALERT ON\nAkan notif kalo ada setup entry dengan score ≥70")
+    elif parts[1] == "off":
+        _entry_alert_running = False
+        bot.reply_to(message, "❌ ENTRY ALERT OFF")
+    elif parts[1] == "scan":
+        bot.reply_to(message, "🔍 Scanning manual entry alert...")
+        check_entry_alert()
+    else:
+        bot.reply_to(message, "Gunakan: on / off / scan")
 
 # ============================================================
 # SMC MULTI-TIMEFRAME ENGINE
@@ -7419,6 +7572,37 @@ def start_warroom_alert():
     t.start()
     logger.info("✅ WARROOM ALERT THREAD LAUNCHED")
 
+
+def run_entry_alert():
+    global _entry_alert_running
+    _entry_alert_running = True
+    logger.info("[ENTRY_ALERT] Started (tiap 15 menit)")
+    
+    while True:
+        try:
+            if not _entry_alert_running:
+                time.sleep(60)
+                continue
+            
+            # Jangan scan di regime RANGING (opsional, bisa dihapus)
+            regime = get_market_regime()
+            if regime != "RANGING":
+                check_entry_alert()
+            else:
+                logger.debug("[ENTRY_ALERT] Skip — regime RANGING")
+                
+            time.sleep(900)  # 15 menit
+            
+        except Exception as e:
+            logger.error(f"[ENTRY_ALERT] Error: {e}")
+            time.sleep(60)
+
+
+def start_entry_alert():
+    t = threading.Thread(target=run_entry_alert, daemon=True)
+    t.start()
+    logger.info("✅ ENTRY ALERT THREAD LAUNCHED")
+
 # ============================================================
 # MAIN EXECUTION
 # ============================================================
@@ -7439,6 +7623,7 @@ if __name__ == "__main__":
     start_confluence_scanner()
     start_wallet_tracker()
     start_warroom_alert()
+    start_entry_alert()
 
     logger.info("🦄 HL Terminal Bot v4.0 FINAL - ONLINE")
     
