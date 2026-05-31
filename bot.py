@@ -4377,6 +4377,8 @@ def warroom(message):
 
 @bot.message_handler(commands=['warroomalert'])
 def warroom_alert_cmd(message):
+    global _warroom_alert_running  # ← PINDAHKAN KE ATAS (BARIS PERTAMA FUNGSI)
+    
     if not is_owner(message):
         return
     
@@ -4387,7 +4389,6 @@ def warroom_alert_cmd(message):
         return
     
     if parts[1] == "on":
-        global _warroom_alert_running
         _warroom_alert_running = True
         bot.reply_to(message, "✅ WARROOM ALERT ON\nAkan notif kalo ada coin dengan score ≥70")
     elif parts[1] == "off":
@@ -4398,7 +4399,6 @@ def warroom_alert_cmd(message):
         check_warroom_simple()
     else:
         bot.reply_to(message, "Gunakan: on / off / scan")
-
 
 
 # ---------- WHALE ENTRY ----------
@@ -7057,9 +7057,9 @@ def run_warroom_alert():
     while True:
         try:
             regime = get_market_regime()
-            if regime != "RANGING":  # Skip kalo ranging biar gak spam sinyal palsu
+            if regime != "RANGING":
                 check_warroom_simple()
-            time.sleep(900)  # 15 menit
+            time.sleep(900)
         except:
             time.sleep(60)
 
