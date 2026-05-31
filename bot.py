@@ -127,10 +127,6 @@ _bid_wall_time = {}
 _ask_wall_cache = {}
 _ask_wall_time = {}
 
-# ========== WARROOM SIMPLE ALERT ==========
-_warroom_alert_running = False
-_warroom_alert_last = {}  # {coin: timestamp} cooldown
-
 # ========== WALLET TRACKER STATE ==========
 WATCHED_WALLETS = {}        # {address: label} — auto-populated + manual
 MANUAL_WALLETS = {}         # {address: label} — manually added, persist melalui discovery
@@ -149,6 +145,10 @@ COPYTRADE_SIZE_FILTER = {
     "PRO": 25_000,
     "INSANE": 100_000
 }
+
+# ========== WARROOM SIMPLE ALERT ==========
+_warroom_alert_running = False
+_warroom_alert_last = {}  # {coin: timestamp} cooldown
 
 # ========== SNIPER CONFIG ==========
 SNIPER_CONFIG = {
@@ -7046,6 +7046,8 @@ def start_wallet_tracker():
     wt_thread = threading.Thread(target=run_wallet_tracker, daemon=True)
     wt_thread.start()
     logger.info("✅ WALLET TRACKER THREAD LAUNCHED")
+
+
 
 def run_warroom_alert():
     global _warroom_alert_running
