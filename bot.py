@@ -2197,7 +2197,6 @@ def calculate_rr(entry, sl, tp):
     rr = reward / risk if risk > 0 else 0
     return risk, reward, rr
 
-    
 def run_confluence_scanner():
     global _conf_scanner_running
     _conf_scanner_running = True
@@ -2352,7 +2351,9 @@ def run_confluence_scanner():
 
         except Exception as e:
             logger.error(f"[CONFLUENCE] Error: {e}")
-            time.sleep(60) 
+            time.sleep(60)
+
+    
 
 # ============================================================
 # LEARNING ENGINE (ADAPTIVE WEIGHTS + SIGNAL TRACKING)
