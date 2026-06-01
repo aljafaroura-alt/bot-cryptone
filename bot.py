@@ -3830,6 +3830,7 @@ GM/GN 😼 {user}
 /warroomalert on
 /entryalert on
 /squeezealert on
+/smcalert on
 
 🦾 UTILS
 /status — System status
@@ -7190,7 +7191,7 @@ def atr_cmd(message):
 
 @bot.message_handler(commands=['status'])
 def status_cmd(message):
-    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER, _entry_alert_running
+    global COPYTRADE_MODE, COPYTRADE_SIZE_FILTER, _entry_alert_running, _smc_alert_running
     chat_id = message.chat.id
     
     schedules_text = "🔴 Tidak ada"
@@ -7238,12 +7239,14 @@ def status_cmd(message):
     # ===== SQUEEZE ALERT STATUS =====
     squeeze_alert_status = "✅ ON (≥55, tiap 20m)" if _squeeze_alert_running else "❌ OFF"
     
+    # ===== SMC ALERT STATUS (BARU) =====
+    smc_alert_status = "✅ ON (≥60%, RR≥1.8, tiap 20m)" if _smc_alert_running else "❌ OFF"
+    
     # ===== COPYTRADE STATUS DENGAN MODE =====
     ct_total = len(WATCHED_WALLETS)
     ct_manual = len(MANUAL_WALLETS)
     ct_auto = ct_total - ct_manual
     
-    # Mode badge & color
     mode_emoji = {"CASUAL": "🟢", "PRO": "🟡", "INSANE": "🔴"}.get(COPYTRADE_MODE, "🟡")
     size_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
     size_display = f"${size_filter/1000:.0f}K" if size_filter < 1000000 else f"${size_filter/1000000:.0f}M"
@@ -7273,10 +7276,11 @@ def status_cmd(message):
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
-🦈 PREDATOR  : {predator_text}
+🐾 PREDATOR  : {predator_text}
 ⚓ WARROOM   : {warroom_alert_status}
 🎯 ENTRY     : {entry_alert_status}
 ⚡ SQUEEZE   : {squeeze_alert_status}
+💵 SMC       : {smc_alert_status}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
 🔊 COPYTRADE : {copytrade_text}
