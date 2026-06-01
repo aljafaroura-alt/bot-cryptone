@@ -901,80 +901,102 @@ def get_atr(coin, period=14, timeframe="15m"):
 
 
 def get_adaptive_sltp(coin, price, direction="LONG"):
-    """Regime-based ATR SL/TP — RR bisa 3x+ di trending"""
+    """Regime-based ATR SL/TP dengan batasan realistis untuk cuan konsisten"""
+    # Base fallback dari profil volatilitas
     sl_pct_fallback, tp_pct_fallback = get_volatility_params(coin)
-    
-    # === REGIME-BASED MULTIPLIER ===
+
+    # === REGIME MULTIPLIER (lebih konservatif) ===
     regime = get_market_regime()
     
-    # Default: balanced
     sl_mult = 1.0
-    tp_mult = 2.5
-    min_rr = 1.8
+    tp_mult = 1.8      # Base lebih rendah
+    min_rr = 1.5
     
     if regime == "VOLATILE":
-        sl_mult = 1.3
-        tp_mult = 2.0
-        min_rr = 1.5
-    elif regime == "TRENDING_UP" and direction == "LONG":
-        sl_mult = 0.7
-        tp_mult = 4.0
-        min_rr = 3.0
-    elif regime == "TRENDING_DOWN" and direction == "SHORT":
-        sl_mult = 0.7
-        tp_mult = 4.0
-        min_rr = 3.0
-    elif regime == "TRENDING_UP" and direction == "SHORT":
-        sl_mult = 1.2
-        tp_mult = 1.5
+        sl_mult = 1.3   # SL lebih lebar
+        tp_mult = 1.5   # TP lebih pendek
         min_rr = 1.2
-    elif regime == "TRENDING_DOWN" and direction == "LONG":
+    elif regime == "TRENDING_UP" and direction == "LONG":
+        sl_mult = 0.8
+        tp_mult = 2.2   # masih aman
+        min_rr = 2.0
+    elif regime == "TRENDING_DOWN" and direction == "SHORT":
+        sl_mult = 0.8
+        tp_mult = 2.2
+        min_rr = 2.0
+    elif regime in ("TRENDING_UP", "TRENDING_DOWN") and direction != regime_direction(regime):
+        # Counter-trend
         sl_mult = 1.2
         tp_mult = 1.5
         min_rr = 1.2
     elif regime == "RANGING":
         sl_mult = 1.0
-        tp_mult = 2.0
+        tp_mult = 1.8
         min_rr = 1.5
-    else:
-        sl_mult = 1.0
-        tp_mult = 2.5
-        min_rr = 1.8
     
-    # Prioritaskan ATR 1h
+    # === HITUNG ATR ===
     atr = get_atr(coin, period=14, timeframe="1h")
     if not atr:
         atr = get_atr(coin, period=14, timeframe="15m")
     
     if atr and atr > 0 and price > 0:
         atr_pct = (atr / price) * 100
-        sl_pct = max(0.3, min(4.0, atr_pct * 1.5 * sl_mult))
-        tp_pct = max(0.5, min(12.0, atr_pct * 2.5 * tp_mult))
+        sl_pct = max(0.5, min(3.5, atr_pct * 1.4 * sl_mult))
+        tp_pct = max(0.8, min(9.0, atr_pct * 2.2 * tp_mult))
     else:
-        # Pure adaptive fallback: gunakan 24h range sebagai proxy ATR
-        # Lebih realistis daripada static % per coin category
+        # Fallback ke daily range
         try:
-            ctx_fb, _ = get_ctx(coin)
-            daily_pct = abs(get_change(ctx_fb)) if ctx_fb else 0
+            ctx, _ = get_ctx(coin)
+            daily_pct = abs(get_change(ctx)) if ctx else 0
             if daily_pct > 0:
-                # Estimasi 1h ATR ~= daily range / 6 (perkiraan jam aktif)
-                est_atr_pct = max(0.1, daily_pct / 6.0)
-                sl_pct = max(0.3, min(4.0, est_atr_pct * 1.5 * sl_mult))
-                tp_pct = max(0.5, min(12.0, est_atr_pct * 2.5 * tp_mult))
+                est_atr_pct = max(0.2, daily_pct / 5.0)
+                sl_pct = max(0.5, min(3.5, est_atr_pct * 1.4 * sl_mult))
+                tp_pct = max(0.8, min(9.0, est_atr_pct * 2.2 * tp_mult))
             else:
-                sl_pct = max(0.3, min(4.0, sl_pct_fallback * sl_mult))
-                tp_pct = max(0.5, min(12.0, tp_pct_fallback * tp_mult))
+                sl_pct = max(0.5, min(3.5, sl_pct_fallback * sl_mult))
+                tp_pct = max(0.8, min(9.0, tp_pct_fallback * tp_mult))
         except:
-            sl_pct = max(0.3, min(4.0, sl_pct_fallback * sl_mult))
-            tp_pct = max(0.5, min(12.0, tp_pct_fallback * tp_mult))
+            sl_pct = max(0.5, min(3.5, sl_pct_fallback * sl_mult))
+            tp_pct = max(0.8, min(9.0, tp_pct_fallback * tp_mult))
     
-    # Force minimal RR
+    # === BATASAN REALISTIS PER COIN ===
+    coin_upper = coin.upper()
+    if coin_upper in VOLATILITY_PROFILE["low"]:
+        max_tp = 4.0
+        max_sl = 2.0
+    elif coin_upper in VOLATILITY_PROFILE["high"]:
+        max_tp = 10.0
+        max_sl = 4.0
+    else:
+        max_tp = 6.0
+        max_sl = 3.0
+    
+    sl_pct = min(sl_pct, max_sl)
+    tp_pct = min(tp_pct, max_tp)
+    
+    # Minimal SL 0.5% biar gak kena stop out kecil
+    if sl_pct < 0.5:
+        sl_pct = 0.5
+    
+    # Minimal TP 0.8% biar worthwhile
+    if tp_pct < 0.8:
+        tp_pct = 0.8
+    
+    # === PASTIKAN RR MINIMAL ===
     rr = tp_pct / sl_pct
     if rr < min_rr:
         tp_pct = sl_pct * min_rr
-        tp_pct = min(12.0, tp_pct)
+        tp_pct = min(tp_pct, max_tp)
         rr = tp_pct / sl_pct
     
+    # === BATAS MAKSIMUM RR 1:4 (CUAN TAPI REALISTIS) ===
+    MAX_RR = 4.0
+    if rr > MAX_RR:
+        tp_pct = sl_pct * MAX_RR
+        tp_pct = min(tp_pct, max_tp)
+        rr = MAX_RR
+    
+    # Hitung harga SL/TP
     if direction == "LONG":
         sl_price = price * (1 - sl_pct / 100)
         tp_price = price * (1 + tp_pct / 100)
@@ -984,6 +1006,12 @@ def get_adaptive_sltp(coin, price, direction="LONG"):
     
     return sl_price, sl_pct, tp_price, tp_pct, rr
 
+def regime_direction(regime):
+    if regime == "TRENDING_UP":
+        return "LONG"
+    elif regime == "TRENDING_DOWN":
+        return "SHORT"
+    return None
 
 # ============================================================
 # MARKET REGIME DETECTOR (ADAPTIVE)
