@@ -5720,18 +5720,17 @@ def squeeze(message):
         funding = get_funding_pct(ctx)
         oi_usd = get_oi_usd(ctx, mark)
         
-        # === AMBIL REGIME UNTUK MULTIPLIER ===
         regime = get_market_regime()
         regime_emoji = {"TRENDING_UP":"🚀","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
         
         if regime in ["TRENDING_UP", "TRENDING_DOWN"]:
-            squeeze_mult = 1.5
-            advice = "Trending market — squeeze bisa lebih jauh!"
+            squeeze_mult = 1.2
+            advice = "Trending market — ambil profit di 5-7%"
         elif regime == "VOLATILE":
-            squeeze_mult = 0.7
-            advice = "Volatile — ambil profit lebih cepet!"
-        elif regime == "RANGING":
             squeeze_mult = 0.8
+            advice = "Volatile — target lebih kecil, SL lebih lebar"
+        elif regime == "RANGING":
+            squeeze_mult = 0.7
             advice = "Ranging — jangan FOMO, harga bisa balik"
         else:
             squeeze_mult = 1.0
@@ -5741,9 +5740,6 @@ def squeeze(message):
         bids = l2['levels'][0]
         asks = l2['levels'][1]
 
-        # FIX: wall logic yang benar
-        # big_bid = support kuat → bullish / long squeeze setup
-        # big_ask = resistance kuat → bearish / short squeeze setup
         big_bid = next((float(b['px'])*float(b['sz']) for b in bids[:10] if float(b['px'])*float(b['sz']) > 300_000), 0)
         big_ask = next((float(a['px'])*float(a['sz']) for a in asks[:10] if float(a['px'])*float(a['sz']) > 300_000), 0)
         
@@ -5757,10 +5753,8 @@ def squeeze(message):
         short_liq = above[0] if above else {"price": 0, "size": 0}
         long_liq = below[0] if below else {"price": 0, "size": 0}
         
-        # FIX: scoring gradual (bukan all-or-nothing di 0.05%)
         short_score = long_score = 0
 
-        # Funding: shorts kena funding tinggi → short squeeze potential
         if funding > 0.05:
             short_score += 40
         elif funding > 0.02:
@@ -5774,7 +5768,6 @@ def squeeze(message):
         elif funding < -0.01:
             long_score += 15
 
-        # Liq cluster size
         if short_liq['size'] > 50:
             short_score += 30
         elif short_liq['size'] > 20:
@@ -5784,9 +5777,6 @@ def squeeze(message):
         elif long_liq['size'] > 20:
             long_score += 15
 
-        # FIX: wall logic yang bener
-        # big_ask (resistance) = tekanan jual → short_score
-        # big_bid (support) = tekanan beli → long_score
         if big_ask >= 1_000_000:
             short_score += 30
         elif big_ask >= 300_000:
@@ -5796,7 +5786,6 @@ def squeeze(message):
         elif big_bid >= 300_000:
             long_score += 15
         
-        # === BUILD OUTPUT ===
         teks = f"⚡ SQUEEZE SCAN • {coin}\n"
         teks += f"⏰ {get_wib()}\n"
         teks += "─────────────────────────────────\n"
@@ -5811,31 +5800,44 @@ def squeeze(message):
         teks += "─────────────────────────────────\n"
         
         squeeze_direction = None
-        # FIX: threshold 70→55
+        sl_for_learning = tp_for_learning = None
+        
         if short_score >= 55 and short_score > long_score:
             raw_pct = (short_liq['price'] / mark - 1) * 100
-            target_pct = raw_pct * squeeze_mult
+            raw_pct = min(6.0, raw_pct)
+            target_pct = raw_pct * min(squeeze_mult, 1.2)
+            target_pct = min(8.0, target_pct)
             target_price = mark * (1 + target_pct / 100)
-            sl_pct = max(0.5, abs(raw_pct) * 0.4)
+            
+            # PAKAI GET_ADAPTIVE_SLTP UNTUK SL
+            _, sl_pct, _, _, _ = get_adaptive_sltp(coin, mark, "LONG")
             sl_price = mark * (1 - sl_pct / 100)
+            
             teks += f"🚨 SHORT SQUEEZE ALERT!\n"
             teks += f"🎯 Target : {fmt_price(target_price)} (+{target_pct:.1f}%)\n"
             teks += f"⛔ SL     : {fmt_price(sl_price)} (-{sl_pct:.1f}%)\n"
-            teks += f"💡 {advice}"
+            teks += f"💡 {advice}\n"
             squeeze_direction = "LONG"
             sl_for_learning, tp_for_learning = sl_price, target_price
+            
         elif long_score >= 55 and long_score > short_score:
-            raw_pct = (long_liq['price'] / mark - 1) * 100
-            target_pct = raw_pct * squeeze_mult
-            target_price = mark * (1 + target_pct / 100)
-            sl_pct = max(0.5, abs(raw_pct) * 0.4)
+            raw_pct = (mark / long_liq['price'] - 1) * 100
+            raw_pct = min(6.0, raw_pct)
+            target_pct = raw_pct * min(squeeze_mult, 1.2)
+            target_pct = min(8.0, target_pct)
+            target_price = mark * (1 - target_pct / 100)
+            
+            # PAKAI GET_ADAPTIVE_SLTP UNTUK SL
+            _, sl_pct, _, _, _ = get_adaptive_sltp(coin, mark, "SHORT")
             sl_price = mark * (1 + sl_pct / 100)
+            
             teks += f"🚨 LONG SQUEEZE ALERT!\n"
             teks += f"🎯 Target : {fmt_price(target_price)} ({target_pct:.1f}%)\n"
             teks += f"⛔ SL     : {fmt_price(sl_price)} (+{sl_pct:.1f}%)\n"
-            teks += f"💡 {advice}"
+            teks += f"💡 {advice}\n"
             squeeze_direction = "SHORT"
             sl_for_learning, tp_for_learning = sl_price, target_price
+            
         else:
             teks += f"🚸 NO SETUP\n"
             teks += f"Short {short_score} | Long {long_score}\n"
@@ -5847,7 +5849,7 @@ def squeeze(message):
 
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
 
-        if squeeze_direction:
+        if squeeze_direction and sl_for_learning and tp_for_learning:
             try:
                 ind_data = {
                     "funding_strong": abs(funding) > 0.02,
@@ -5864,7 +5866,6 @@ def squeeze(message):
         
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
-        
 # ---------- CORRELATION ----------
 @bot.message_handler(commands=['correlation', 'corr'])
 def correlation_analysis(message):
