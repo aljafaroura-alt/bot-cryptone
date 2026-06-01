@@ -3381,7 +3381,7 @@ _squeeze_alert_running = False
 _squeeze_alert_last = {}  # {coin: timestamp} cooldown
 
 def check_squeeze_alert():
-    """Scan top 20 coins untuk squeeze setup, kirim alert kalau score ≥55"""
+    """Scan top 20 coins untuk squeeze setup, target kecil & realistis untuk scalping"""
     global _squeeze_alert_last
 
     try:
@@ -3390,7 +3390,6 @@ def check_squeeze_alert():
         assets = data[0]["universe"]
         ctxs = data[1]
 
-        # Top 20 by volume
         coins = []
         for asset, ctx in zip(assets, ctxs):
             vol = float(ctx.get("dayNtlVlm") or 0)
@@ -3404,18 +3403,9 @@ def check_squeeze_alert():
 
         logger.info(f"[SQUEEZE_ALERT] Scanning {len(top_coins)} coins...")
 
-        regime = get_market_regime()
-        if regime in ["TRENDING_UP", "TRENDING_DOWN"]:
-            squeeze_mult = 1.5
-        elif regime == "VOLATILE":
-            squeeze_mult = 0.7
-        elif regime == "RANGING":
-            squeeze_mult = 0.8
-        else:
-            squeeze_mult = 1.0
+        squeeze_mult = 0.6
 
         for coin in top_coins:
-            # Cooldown 45 menit per coin
             if coin in _squeeze_alert_last and now_time - _squeeze_alert_last[coin] < 2700:
                 continue
 
@@ -3445,61 +3435,114 @@ def check_squeeze_alert():
 
                 short_score = long_score = 0
 
-                if funding > 0.05:   short_score += 40
+                if funding > 0.05: short_score += 40
                 elif funding > 0.02: short_score += 25
                 elif funding > 0.01: short_score += 15
                 elif funding < -0.05: long_score += 40
                 elif funding < -0.02: long_score += 25
                 elif funding < -0.01: long_score += 15
 
-                if short_liq['size'] > 50:   short_score += 30
+                if short_liq['size'] > 50: short_score += 30
                 elif short_liq['size'] > 20: short_score += 15
-                if long_liq['size'] > 50:    long_score += 30
-                elif long_liq['size'] > 20:  long_score += 15
+                if long_liq['size'] > 50: long_score += 30
+                elif long_liq['size'] > 20: long_score += 15
 
-                if big_ask >= 1_000_000:   short_score += 30
-                elif big_ask >= 300_000:   short_score += 15
-                if big_bid >= 1_000_000:   long_score += 30
-                elif big_bid >= 300_000:   long_score += 15
+                if big_ask >= 1_000_000: short_score += 30
+                elif big_ask >= 300_000: short_score += 15
+                if big_bid >= 1_000_000: long_score += 30
+                elif big_bid >= 300_000: long_score += 15
 
-                logger.debug(f"[SQUEEZE_ALERT] {coin} short={short_score} long={long_score} funding={funding:+.4f}%")
-
-                squeeze_type = None
-                direction = None
                 if short_score >= 55 and short_score > long_score:
-                    squeeze_type = "SHORT SQUEEZE"
-                    direction = "LONG"
-                    liq_ref = short_liq
-                    sl_side = "below"
-                elif long_score >= 55 and long_score > short_score:
-                    squeeze_type = "LONG SQUEEZE"
-                    direction = "SHORT"
-                    liq_ref = long_liq
-                    sl_side = "above"
-
-                if squeeze_type and liq_ref['price'] > 0:
-                    raw_pct = (liq_ref['price'] / mark - 1) * 100
+                    raw_pct = (short_liq['price'] / mark - 1) * 100
+                    raw_pct = min(2.5, raw_pct)
                     target_pct = raw_pct * squeeze_mult
+                    # Batasi target per coin
+                    if coin == "BTC":
+                        target_pct = min(target_pct, 1.0)
+                    elif coin == "ETH":
+                        target_pct = min(target_pct, 1.5)
+                    elif coin in VOLATILITY_PROFILE["high"]:
+                        target_pct = min(target_pct, 3.5)
+                    else:
+                        target_pct = min(target_pct, 2.5)
+                    if target_pct < 0.5:
+                        target_pct = 0.5
                     target_price = mark * (1 + target_pct / 100)
-                    sl_pct = max(0.5, abs(raw_pct) * 0.4)
-                    sl_price = mark * (1 - sl_pct/100) if sl_side == "below" else mark * (1 + sl_pct/100)
-                    score = short_score if direction == "LONG" else long_score
+                    # SL
+                    _, sl_pct, _, _, _ = get_adaptive_sltp(coin, mark, "LONG")
+                    if coin == "BTC":
+                        sl_pct = min(sl_pct, 0.8)
+                    elif coin == "ETH":
+                        sl_pct = min(sl_pct, 1.0)
+                    else:
+                        sl_pct = min(sl_pct, 1.2)
+                    sl_price = mark * (1 - sl_pct / 100)
+                    score = short_score
+                    direction = "LONG"
+                    rr = target_pct / sl_pct if sl_pct > 0 else 0
 
-                    alerts.append({
-                        "coin": coin,
-                        "squeeze_type": squeeze_type,
-                        "direction": direction,
-                        "score": score,
-                        "price": mark,
-                        "funding": funding,
-                        "target": target_price,
-                        "target_pct": target_pct,
-                        "sl": sl_price,
-                        "sl_pct": sl_pct,
-                        "big_bid": big_bid,
-                        "big_ask": big_ask,
-                    })
-                    logger.info(f"[SQUEEZE_ALERT] {coin} {squeeze_type} score={score} funding={funding:+.4f}%")
+                    if rr >= 1.2:
+                        alerts.append({
+                            "coin": coin,
+                            "squeeze_type": "SHORT SQUEEZE",
+                            "direction": direction,
+                            "score": score,
+                            "price": mark,
+                            "funding": funding,
+                            "target": target_price,
+                            "target_pct": target_pct,
+                            "sl": sl_price,
+                            "sl_pct": sl_pct,
+                            "big_bid": big_bid,
+                            "big_ask": big_ask,
+                            "rr": rr,
+                        })
+                        logger.info(f"[SQUEEZE_ALERT] {coin} SHORT SQUEEZE target={target_pct:.1f}% RR={rr:.1f}")
+
+                elif long_score >= 55 and long_score > short_score:
+                    raw_pct = (mark / long_liq['price'] - 1) * 100
+                    raw_pct = min(2.5, raw_pct)
+                    target_pct = raw_pct * squeeze_mult
+                    if coin == "BTC":
+                        target_pct = min(target_pct, 1.0)
+                    elif coin == "ETH":
+                        target_pct = min(target_pct, 1.5)
+                    elif coin in VOLATILITY_PROFILE["high"]:
+                        target_pct = min(target_pct, 3.5)
+                    else:
+                        target_pct = min(target_pct, 2.5)
+                    if target_pct < 0.5:
+                        target_pct = 0.5
+                    target_price = mark * (1 - target_pct / 100)
+                    _, sl_pct, _, _, _ = get_adaptive_sltp(coin, mark, "SHORT")
+                    if coin == "BTC":
+                        sl_pct = min(sl_pct, 0.8)
+                    elif coin == "ETH":
+                        sl_pct = min(sl_pct, 1.0)
+                    else:
+                        sl_pct = min(sl_pct, 1.2)
+                    sl_price = mark * (1 + sl_pct / 100)
+                    score = long_score
+                    direction = "SHORT"
+                    rr = target_pct / sl_pct if sl_pct > 0 else 0
+
+                    if rr >= 1.2:
+                        alerts.append({
+                            "coin": coin,
+                            "squeeze_type": "LONG SQUEEZE",
+                            "direction": direction,
+                            "score": score,
+                            "price": mark,
+                            "funding": funding,
+                            "target": target_price,
+                            "target_pct": target_pct,
+                            "sl": sl_price,
+                            "sl_pct": sl_pct,
+                            "big_bid": big_bid,
+                            "big_ask": big_ask,
+                            "rr": rr,
+                        })
+                        logger.info(f"[SQUEEZE_ALERT] {coin} LONG SQUEEZE target={target_pct:.1f}% RR={rr:.1f}")
 
             except Exception as e:
                 logger.warning(f"[SQUEEZE_ALERT] Error {coin}: {e}")
@@ -3509,10 +3552,10 @@ def check_squeeze_alert():
         logger.info(f"[SQUEEZE_ALERT] Scan done {elapsed:.1f}s — {len(alerts)} alerts")
 
         if alerts:
-            alerts.sort(key=lambda x: x["score"], reverse=True)
+            alerts.sort(key=lambda x: x["score"] * x["rr"], reverse=True)
             for a in alerts[:3]:
                 arrow = "🟢" if a["direction"] == "LONG" else "🔴"
-                sign = "+" if a["target_pct"] >= 0 else ""
+                sign = "+" if a["direction"] == "LONG" else ""
                 teks = f"""{arrow} SQUEEZE ALERT • {a['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━
 🚨 {a['squeeze_type']} | Score {a['score']}
@@ -3522,26 +3565,14 @@ def check_squeeze_alert():
 🎯 ENTRY: {fmt_price(a['price'])}
 ⛔ SL: {fmt_price(a['sl'])} ({a['sl_pct']:.2f}%)
 ✅ TARGET: {fmt_price(a['target'])} ({sign}{a['target_pct']:.1f}%)
+⚓ RR: 1:{a['rr']:.1f}
+⏱️ ETA: 15-30 menit
 
 💡 /squeeze {a['coin']} | /entry {a['coin']}"""
 
                 try:
                     send_to_owner(teks)
                     _squeeze_alert_last[a['coin']] = now_time
-
-                    try:
-                        ind_data = {
-                            "funding_strong": abs(a["funding"]) > 0.02,
-                            "ob_strong": False,
-                            "wall_strong": a["big_bid"] > 300_000 if a["direction"] == "LONG" else a["big_ask"] > 300_000,
-                            "cvd_strong": False,
-                            "momentum_strong": False,
-                        }
-                        track_signal_entry(a['coin'], a['direction'], a['price'], ind_data,
-                                           sl_price=a['sl'], tp_price=a['target'], source="squeeze_alert")
-                    except Exception:
-                        pass
-
                     time.sleep(0.5)
                 except Exception as send_err:
                     logger.error(f"[SQUEEZE_ALERT] Gagal kirim {a['coin']}: {send_err}")
@@ -5606,6 +5637,7 @@ def volcheck_single(message, coin):
 
 
 # ---------- SQUEEZE ----------
+
 @bot.message_handler(commands=['squeeze'])
 def squeeze(message):
     try:
@@ -5622,17 +5654,16 @@ def squeeze(message):
         regime = get_market_regime()
         regime_emoji = {"TRENDING_UP":"🚀","TRENDING_DOWN":"📉","VOLATILE":"⚡","RANGING":"😴"}.get(regime,"❓")
         
+        # Multiplier sangat kecil untuk squeeze
+        squeeze_mult = 0.6
+        
         if regime in ["TRENDING_UP", "TRENDING_DOWN"]:
-            squeeze_mult = 1.2
-            advice = "Trending market — ambil profit di 5-7%"
+            advice = "Trending — eksekusi cepat, target kecil"
         elif regime == "VOLATILE":
-            squeeze_mult = 0.8
-            advice = "Volatile — target lebih kecil, SL lebih lebar"
+            advice = "Volatile — jangan tahan, ambil profit segera"
         elif regime == "RANGING":
-            squeeze_mult = 0.7
-            advice = "Ranging — jangan FOMO, harga bisa balik"
+            advice = "Ranging — squeeze lemah, hati-hati"
         else:
-            squeeze_mult = 1.0
             advice = "Normal — ikutin plan"
 
         l2 = info.l2_snapshot(coin)
@@ -5654,36 +5685,22 @@ def squeeze(message):
         
         short_score = long_score = 0
 
-        if funding > 0.05:
-            short_score += 40
-        elif funding > 0.02:
-            short_score += 25
-        elif funding > 0.01:
-            short_score += 15
-        elif funding < -0.05:
-            long_score += 40
-        elif funding < -0.02:
-            long_score += 25
-        elif funding < -0.01:
-            long_score += 15
+        if funding > 0.05: short_score += 40
+        elif funding > 0.02: short_score += 25
+        elif funding > 0.01: short_score += 15
+        elif funding < -0.05: long_score += 40
+        elif funding < -0.02: long_score += 25
+        elif funding < -0.01: long_score += 15
 
-        if short_liq['size'] > 50:
-            short_score += 30
-        elif short_liq['size'] > 20:
-            short_score += 15
-        if long_liq['size'] > 50:
-            long_score += 30
-        elif long_liq['size'] > 20:
-            long_score += 15
+        if short_liq['size'] > 50: short_score += 30
+        elif short_liq['size'] > 20: short_score += 15
+        if long_liq['size'] > 50: long_score += 30
+        elif long_liq['size'] > 20: long_score += 15
 
-        if big_ask >= 1_000_000:
-            short_score += 30
-        elif big_ask >= 300_000:
-            short_score += 15
-        if big_bid >= 1_000_000:
-            long_score += 30
-        elif big_bid >= 300_000:
-            long_score += 15
+        if big_ask >= 1_000_000: short_score += 30
+        elif big_ask >= 300_000: short_score += 15
+        if big_bid >= 1_000_000: long_score += 30
+        elif big_bid >= 300_000: long_score += 15
         
         teks = f"⚡ SQUEEZE SCAN • {coin}\n"
         teks += f"⏰ {get_wib()}\n"
@@ -5703,37 +5720,76 @@ def squeeze(message):
         
         if short_score >= 55 and short_score > long_score:
             raw_pct = (short_liq['price'] / mark - 1) * 100
-            raw_pct = min(6.0, raw_pct)
-            target_pct = raw_pct * min(squeeze_mult, 1.2)
-            target_pct = min(8.0, target_pct)
+            raw_pct = min(2.5, raw_pct)          # Maks 2.5% dari liquidation level
+            target_pct = raw_pct * squeeze_mult   # 0.6x
+            # Batasi target berdasarkan kategori coin (lebih kecil)
+            coin_upper = coin.upper()
+            if coin_upper == "BTC":
+                target_pct = min(target_pct, 1.0)    # BTC maks 1%
+            elif coin_upper == "ETH":
+                target_pct = min(target_pct, 1.5)    # ETH maks 1.5%
+            elif coin_upper in VOLATILITY_PROFILE["high"]:  # meme
+                target_pct = min(target_pct, 3.5)
+            else:                                           # medium alt
+                target_pct = min(target_pct, 2.5)
+            # Minimal target 0.5% biar ga kecil banget
+            if target_pct < 0.5:
+                target_pct = 0.5
             target_price = mark * (1 + target_pct / 100)
             
-            # PAKAI GET_ADAPTIVE_SLTP UNTUK SL
+            # SL pakai get_adaptive_sltp lalu dikasih batas maks
             _, sl_pct, _, _, _ = get_adaptive_sltp(coin, mark, "LONG")
+            if coin_upper == "BTC":
+                sl_pct = min(sl_pct, 0.8)       # BTC maks SL 0.8%
+            elif coin_upper == "ETH":
+                sl_pct = min(sl_pct, 1.0)
+            else:
+                sl_pct = min(sl_pct, 1.2)       # alt maks 1.2%
             sl_price = mark * (1 - sl_pct / 100)
             
+            rr = target_pct / sl_pct if sl_pct > 0 else 0
             teks += f"🚨 SHORT SQUEEZE ALERT!\n"
             teks += f"🎯 Target : {fmt_price(target_price)} (+{target_pct:.1f}%)\n"
             teks += f"⛔ SL     : {fmt_price(sl_price)} (-{sl_pct:.1f}%)\n"
+            teks += f"⚓ R:R    : 1:{rr:.1f}\n"
             teks += f"💡 {advice}\n"
+            teks += f"⏱️ ETA    : 15-30 menit\n"
             squeeze_direction = "LONG"
             sl_for_learning, tp_for_learning = sl_price, target_price
             
         elif long_score >= 55 and long_score > short_score:
             raw_pct = (mark / long_liq['price'] - 1) * 100
-            raw_pct = min(6.0, raw_pct)
-            target_pct = raw_pct * min(squeeze_mult, 1.2)
-            target_pct = min(8.0, target_pct)
+            raw_pct = min(2.5, raw_pct)
+            target_pct = raw_pct * squeeze_mult
+            coin_upper = coin.upper()
+            if coin_upper == "BTC":
+                target_pct = min(target_pct, 1.0)
+            elif coin_upper == "ETH":
+                target_pct = min(target_pct, 1.5)
+            elif coin_upper in VOLATILITY_PROFILE["high"]:
+                target_pct = min(target_pct, 3.5)
+            else:
+                target_pct = min(target_pct, 2.5)
+            if target_pct < 0.5:
+                target_pct = 0.5
             target_price = mark * (1 - target_pct / 100)
             
-            # PAKAI GET_ADAPTIVE_SLTP UNTUK SL
             _, sl_pct, _, _, _ = get_adaptive_sltp(coin, mark, "SHORT")
+            if coin_upper == "BTC":
+                sl_pct = min(sl_pct, 0.8)
+            elif coin_upper == "ETH":
+                sl_pct = min(sl_pct, 1.0)
+            else:
+                sl_pct = min(sl_pct, 1.2)
             sl_price = mark * (1 + sl_pct / 100)
             
+            rr = target_pct / sl_pct if sl_pct > 0 else 0
             teks += f"🚨 LONG SQUEEZE ALERT!\n"
-            teks += f"🎯 Target : {fmt_price(target_price)} ({target_pct:.1f}%)\n"
+            teks += f"🎯 Target : {fmt_price(target_price)} (-{target_pct:.1f}%)\n"
             teks += f"⛔ SL     : {fmt_price(sl_price)} (+{sl_pct:.1f}%)\n"
+            teks += f"⚓ R:R    : 1:{rr:.1f}\n"
             teks += f"💡 {advice}\n"
+            teks += f"⏱️ ETA    : 15-30 menit\n"
             squeeze_direction = "SHORT"
             sl_for_learning, tp_for_learning = sl_price, target_price
             
@@ -5765,6 +5821,7 @@ def squeeze(message):
         
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
 # ---------- CORRELATION ----------
 @bot.message_handler(commands=['correlation', 'corr'])
 def correlation_analysis(message):
@@ -5851,8 +5908,6 @@ def sentiment(message):
         bot.reply_to(message, teks)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {e}")
-
-
 
 # ---------- POSITIONS ----------
 @bot.message_handler(commands=['positions'])
