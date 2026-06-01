@@ -4797,113 +4797,123 @@ def detect_market_structure(candles):
         "prev_low": prev_low,
     }
 
-
-def find_ob_zone(candles, bias):
+def find_ob_zone(candles, bias, max_distance_pct=2.0):
     """
-    Cari Order Block terbaru:
-    - Bullish OB: candle bearish sebelum impulse naik
-    - Bearish OB: candle bullish sebelum impulse turun
+    Cari Order Block terbaru dalam jarak max_distance_pct dari harga sekarang.
+    bias = "BULLISH" atau "BEARISH"
     """
-    if len(candles) < 5:
+    if not candles or len(candles) < 5:
         return None
-
+    current_price = float(candles[-1]['c'])
     for i in range(len(candles) - 2, 2, -1):
         c = candles[i]
         next_c = candles[i + 1] if i + 1 < len(candles) else None
         if not next_c:
             continue
-
         c_bull = float(c['c']) > float(c['o'])
         c_bear = float(c['c']) < float(c['o'])
         next_bull = float(next_c['c']) > float(next_c['o'])
         next_bear = float(next_c['c']) < float(next_c['o'])
-
-        # Bullish OB: candle merah diikuti candle hijau yang lebih besar
+        
         if bias == "BULLISH" and c_bear and next_bull:
             body_ratio = abs(float(next_c['c']) - float(next_c['o'])) / max(abs(float(c['c']) - float(c['o'])), 0.0001)
             if body_ratio > 1.2:
-                return {
-                    "high": float(c['o']),
-                    "low": float(c['l']),
-                    "type": "bullish_ob",
-                    "idx": i
-                }
-
-        # Bearish OB: candle hijau diikuti candle merah yang lebih besar
-        if bias == "BEARISH" and c_bull and next_bear:
+                ob_high = float(c['o'])
+                ob_low = float(c['l'])
+                # Cek jarak ke harga sekarang
+                dist_pct = abs(ob_low - current_price) / current_price * 100 if current_price > 0 else 99
+                if dist_pct <= max_distance_pct:
+                    return {"high": ob_high, "low": ob_low, "type": "bullish_ob", "idx": i}
+        elif bias == "BEARISH" and c_bull and next_bear:
             body_ratio = abs(float(next_c['c']) - float(next_c['o'])) / max(abs(float(c['c']) - float(c['o'])), 0.0001)
             if body_ratio > 1.2:
-                return {
-                    "high": float(c['h']),
-                    "low": float(c['o']),
-                    "type": "bearish_ob",
-                    "idx": i
-                }
+                ob_high = float(c['h'])
+                ob_low = float(c['o'])
+                dist_pct = abs(ob_high - current_price) / current_price * 100 if current_price > 0 else 99
+                if dist_pct <= max_distance_pct:
+                    return {"high": ob_high, "low": ob_low, "type": "bearish_ob", "idx": i}
     return None
 
-
-def find_fvg_smc(candles):
-    """Cari FVG terbaru (sama logika find_fvg tapi dari candles arbitrary)"""
-    if len(candles) < 5:
+def find_fvg_smc(candles, max_distance_pct=2.0):
+    """Cari FVG terbaru dalam jarak max_distance_pct dari harga sekarang"""
+    if not candles or len(candles) < 5:
         return None
-
+    current_price = float(candles[-1]['c'])
     for i in range(2, len(candles)):
-        c1 = candles[i - 2]
+        c1 = candles[i-2]
         c3 = candles[i]
         c1_high = float(c1['h'])
         c1_low = float(c1['l'])
         c3_high = float(c3['h'])
         c3_low = float(c3['l'])
-
         # Bullish FVG
         if c3_low > c1_high:
-            gap_pct = (c3_low - c1_high) / c1_high * 100
-            if gap_pct > 0.1:
-                return {"low": c1_high, "high": c3_low, "type": "bullish", "gap_pct": gap_pct}
-
+            gap_low = c1_high
+            gap_high = c3_low
+            mid = (gap_low + gap_high) / 2
+            dist_pct = abs(mid - current_price) / current_price * 100 if current_price > 0 else 99
+            if dist_pct <= max_distance_pct:
+                return {"low": gap_low, "high": gap_high, "type": "bullish", "gap_pct": (gap_high-gap_low)/gap_low*100}
         # Bearish FVG
         if c3_high < c1_low:
-            gap_pct = (c1_low - c3_high) / c3_high * 100
-            if gap_pct > 0.1:
-                return {"low": c3_high, "high": c1_low, "type": "bearish", "gap_pct": gap_pct}
+            gap_low = c3_high
+            gap_high = c1_low
+            mid = (gap_low + gap_high) / 2
+            dist_pct = abs(mid - current_price) / current_price * 100 if current_price > 0 else 99
+            if dist_pct <= max_distance_pct:
+                return {"low": gap_low, "high": gap_high, "type": "bearish", "gap_pct": (gap_high-gap_low)/gap_low*100}
     return None
 
-
 def analyze_tf(coin, timeframe):
-    """Full SMC analysis satu timeframe"""
-    candles = get_candles_smc(coin, timeframe, limit=60)
-    if not candles:
+    """Full SMC analysis satu timeframe dengan distance filter"""
+    try:
+        candles = get_candles_smc(coin, timeframe, limit=60)
+        if not candles or len(candles) < 20:
+            logger.debug(f"[SMC] analyze_tf {coin} {timeframe}: insufficient candles ({len(candles) if candles else 0})")
+            return None
+
+        structure = detect_market_structure(candles)
+        if not structure:
+            logger.debug(f"[SMC] analyze_tf {coin} {timeframe}: structure detection failed")
+            return None
+            
+        current_price = float(candles[-1]['c'])
+        
+        ob = None
+        fvg = None
+        
+        if structure["bias"] != "NEUTRAL":
+            try:
+                ob = find_ob_zone(candles, structure["bias"], max_distance_pct=2.0)
+            except Exception as ob_err:
+                logger.debug(f"[SMC] OB error {coin}: {ob_err}")
+            
+            try:
+                fvg = find_fvg_smc(candles, max_distance_pct=2.0)
+            except Exception as fvg_err:
+                logger.debug(f"[SMC] FVG error {coin}: {fvg_err}")
+
+        in_ob = ob and ob["low"] <= current_price <= ob["high"]
+        in_fvg = fvg and fvg["low"] <= current_price <= fvg["high"]
+
+        return {
+            "tf": timeframe,
+            "bias": structure["bias"],
+            "structure": structure["structure"],
+            "last_event": structure["last_event"],
+            "last_high": structure["last_high"],
+            "last_low": structure["last_low"],
+            "ob": ob,
+            "fvg": fvg,
+            "in_ob": in_ob,
+            "in_fvg": in_fvg,
+            "price": current_price,
+        }
+        
+    except Exception as e:
+        logger.error(f"[SMC] analyze_tf error {coin} {timeframe}: {e}")
         return None
 
-    structure = detect_market_structure(candles)
-    ob = find_ob_zone(candles, structure["bias"])
-    fvg = find_fvg_smc(candles)
-    current_price = float(candles[-1]['c'])
-
-    # Filter FVG: kalau jaraknya > 2% dari harga sekarang → ga relevan
-    if fvg and current_price > 0:
-        fvg_mid = (fvg["low"] + fvg["high"]) / 2
-        fvg_distance_pct = abs(fvg_mid - current_price) / current_price * 100
-        if fvg_distance_pct > 2.0:
-            fvg = None
-
-    # Cek apakah harga di dalam OB atau FVG
-    in_ob = ob and ob["low"] <= current_price <= ob["high"]
-    in_fvg = fvg and fvg["low"] <= current_price <= fvg["high"]
-
-    return {
-        "tf": timeframe,
-        "bias": structure["bias"],
-        "structure": structure["structure"],
-        "last_event": structure["last_event"],
-        "last_high": structure["last_high"],
-        "last_low": structure["last_low"],
-        "ob": ob,
-        "fvg": fvg,
-        "in_ob": in_ob,
-        "in_fvg": in_fvg,
-        "price": current_price,
-    }
 
 
 def smc_full_analysis(coin):
