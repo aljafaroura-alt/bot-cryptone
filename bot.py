@@ -8074,7 +8074,14 @@ def start_entry_alert():
     t = threading.Thread(target=run_entry_alert, daemon=True)
     t.start()
     logger.info("✅ ENTRY ALERT THREAD LAUNCHED")
-
+    
+def start_confluence_scanner():
+    try:
+        conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
+        conf_thread.start()
+        logger.info("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
+    except Exception as e:
+        logger.error(f"Failed to start confluence scanner: {e}")
 # ============================================================
 # MAIN EXECUTION
 # ============================================================
