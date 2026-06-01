@@ -2197,7 +2197,8 @@ def calculate_rr(entry, sl, tp):
     rr = reward / risk if risk > 0 else 0
     return risk, reward, rr
 
- def run_confluence_scanner():
+    
+def run_confluence_scanner():
     global _conf_scanner_running
     _conf_scanner_running = True
     logger.info("[CONFLUENCE] Scanner started")
