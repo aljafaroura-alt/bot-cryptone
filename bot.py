@@ -2197,14 +2197,13 @@ def calculate_rr(entry, sl, tp):
     rr = reward / risk if risk > 0 else 0
     return risk, reward, rr
 
-def run_confluence_scanner():
+ def run_confluence_scanner():
     global _conf_scanner_running
     _conf_scanner_running = True
     logger.info("[CONFLUENCE] Scanner started")
 
     while True:
         try:
-            # Skip saat VOLATILE — too many false signals
             regime = get_market_regime()
             if regime == "VOLATILE":
                 logger.info("[CONFLUENCE] Skipping — regime VOLATILE")
@@ -2230,7 +2229,6 @@ def run_confluence_scanner():
                     volume = float(ctx.get("dayNtlVlm") or 0)
                     price_change = get_change(ctx)
                     
-                    # === AMBIL REGIME ===
                     regime_conf = get_market_regime()
                     regime_emoji_conf = {
                         "TRENDING_UP": "🚀",
@@ -2251,7 +2249,7 @@ def run_confluence_scanner():
                     is_in_zone = False
                     zone_type = None
                     zone_range = None
-                    ZONE_PROXIMITY_PCT = 0.8  # trigger kalau dalam 0.8% dari zona
+                    ZONE_PROXIMITY_PCT = 0.8
 
                     if demand:
                         zone_mid = (demand['low'] + demand['high']) / 2
@@ -2279,41 +2277,8 @@ def run_confluence_scanner():
 
                     is_in_fvg = fvg and mark >= fvg['low'] and mark <= fvg['high']
 
-                    # === EARLY WARNING (potensi setup dalam 1-2 jam) ===
-                    if volume >= CONFLUENCE_CONFIG["min_volume_24h"]:
-                        if coin not in _last_early_warning or now - _last_early_warning[coin] > 3600:
-                            if (demand or supply or fvg) and abs(ob_delta) > 15:
-                                _last_early_warning[coin] = now
-                                potensi = "LONG" if ob_delta > 0 else "SHORT"
-                                zone_info = zone_range or (f"FVG ${fvg['low']:.4f}-${fvg['high']:.4f}" if fvg else "-")
-                                
-                                # Regime-based advice untuk early warning
-                                if regime_conf == "TRENDING_UP" and potensi == "LONG":
-                                    extra_advice = " 🔥 Trending UP + LONG = high prob!"
-                                elif regime_conf == "TRENDING_DOWN" and potensi == "SHORT":
-                                    extra_advice = " 🔥 Trending DOWN + SHORT = high prob!"
-                                elif regime_conf == "VOLATILE":
-                                    extra_advice = " ⚡ Volatile — eksekusi cepet!"
-                                elif regime_conf == "RANGING":
-                                    extra_advice = " 😴 Ranging — jangan FOMO breakout!"
-                                else:
-                                    extra_advice = ""
-                                
-                                teks = f"""🔍 EARLY WARNING | {coin}
-─────────────────────────────────
-📡 Regime: {regime_emoji_conf} {regime_conf}
-💰 Harga: ${mark:.4f} ({price_change:+.1f}%)
-📦 Volume: ${volume/1e6:.1f}M
-📡 OB Delta: {ob_delta:+.0f}%
-📍 Zone: {zone_info}
-💡 Potensi {potensi} dalam 1-2 jam!{extra_advice}"""
-                                bot.send_message(USER_ID, teks)
-                                logger.info(f"[CONFLUENCE] Early warning: {coin}")
-                                time.sleep(1)
-
-                    # === LONG CONFLUENCE dengan regime-based SL/TP ===
+                    # === LONG CONFLUENCE - PAKAI GET_ADAPTIVE_SLTP ===
                     if (is_in_zone and zone_type == "demand") or (is_in_fvg and fvg and fvg['type'] == "bullish"):
-                        # Skip kalau OB sangat bearish
                         if ob_delta < -20:
                             continue
                         if funding > CONFLUENCE_CONFIG["max_funding"]:
@@ -2321,43 +2286,12 @@ def run_confluence_scanner():
 
                         entry = mark
                         
-                        # Regime-based multiplier untuk LONG
-                        if regime_conf == "TRENDING_UP":
-                            tp_mult_conf = 1.05      # TP lebih jauh
-                            sl_mult_conf = 0.995     # SL normal
-                            rr_min = 2.0
-                            regime_note = "🚀 TRENDING UP → target lebih jauh!"
-                        elif regime_conf == "VOLATILE":
-                            tp_mult_conf = 1.02      # TP lebih dekat
-                            sl_mult_conf = 0.998     # SL lebih ketat
-                            rr_min = 1.5
-                            regime_note = "⚡ VOLATILE → ambil profit cepet!"
-                        elif regime_conf == "RANGING":
-                            tp_mult_conf = 1.03      # TP medium
-                            sl_mult_conf = 0.996     # SL medium
-                            rr_min = 1.5
-                            regime_note = "😴 RANGING → jangan terlalu agresif!"
-                        elif regime_conf == "TRENDING_DOWN":
-                            tp_mult_conf = 1.02      # TP lebih kecil (counter-trend)
-                            sl_mult_conf = 0.998     # SL lebih ketat
-                            rr_min = 1.2
-                            regime_note = "⚠️ COUNTER-TREND LONG → SL ketat!"
-                        else:
-                            tp_mult_conf = 1.04
-                            sl_mult_conf = 0.995
-                            rr_min = 1.5
-                            regime_note = ""
+                        # PAKAI GET_ADAPTIVE_SLTP
+                        _, sl_pct, _, tp_pct, rr_conf = get_adaptive_sltp(coin, mark, "LONG")
+                        sl = mark * (1 - sl_pct/100)
+                        tp = mark * (1 + tp_pct/100)
                         
-                        if demand:
-                            sl = demand['low'] * sl_mult_conf
-                        elif fvg:
-                            sl = fvg['low'] * sl_mult_conf
-                        else:
-                            sl = mark * sl_mult_conf
-                        tp = mark * tp_mult_conf
-
-                        risk, reward, rr = calculate_rr(entry, sl, tp)
-                        if rr >= rr_min:
+                        if rr_conf >= 1.5:
                             teks = f"""🔥 LONG CONFLUENCE | {coin}
 ─────────────────────────────────
 📡 Regime: {regime_emoji_conf} {regime_conf}
@@ -2367,18 +2301,16 @@ def run_confluence_scanner():
 📍 Zone: {zone_range if zone_range else '-'}
 📍 FVG: {f'${fvg["low"]:.4f} - ${fvg["high"]:.4f}' if fvg else '-'}
 🎯 ENTRY: ${entry:.4f}
-🛑 SL: ${sl:.4f} (-{risk:.1f}%)
-🎯 TP: ${tp:.4f} (+{reward:.1f}%)
-🔥 R:R = 1:{rr:.1f}
-💡 {regime_note}"""
+🛑 SL: ${sl:.4f} (-{sl_pct:.1f}%)
+🎯 TP: ${tp:.4f} (+{tp_pct:.1f}%)
+🔥 R:R = 1:{rr_conf:.1f}"""
                             bot.send_message(USER_ID, teks)
                             _last_confluence_alert[coin] = now
                             logger.info(f"[CONFLUENCE] LONG alert: {coin}")
                             time.sleep(2)
 
-                    # === SHORT CONFLUENCE dengan regime-based SL/TP ===
+                    # === SHORT CONFLUENCE - PAKAI GET_ADAPTIVE_SLTP ===
                     if (is_in_zone and zone_type == "supply") or (is_in_fvg and fvg and fvg['type'] == "bearish"):
-                        # Skip kalau OB sangat bullish
                         if ob_delta > 20:
                             continue
                         if funding < CONFLUENCE_CONFIG["min_funding"]:
@@ -2386,43 +2318,12 @@ def run_confluence_scanner():
 
                         entry = mark
                         
-                        # Regime-based multiplier untuk SHORT
-                        if regime_conf == "TRENDING_DOWN":
-                            tp_mult_conf = 0.95      # TP lebih jauh (turun)
-                            sl_mult_conf = 1.005     # SL normal
-                            rr_min = 2.0
-                            regime_note = "📉 TRENDING DOWN → target lebih jauh!"
-                        elif regime_conf == "VOLATILE":
-                            tp_mult_conf = 0.98      # TP lebih dekat
-                            sl_mult_conf = 1.003     # SL lebih ketat
-                            rr_min = 1.5
-                            regime_note = "⚡ VOLATILE → ambil profit cepet!"
-                        elif regime_conf == "RANGING":
-                            tp_mult_conf = 0.97      # TP medium
-                            sl_mult_conf = 1.004     # SL medium
-                            rr_min = 1.5
-                            regime_note = "😴 RANGING → jangan terlalu agresif!"
-                        elif regime_conf == "TRENDING_UP":
-                            tp_mult_conf = 0.98      # TP lebih kecil (counter-trend)
-                            sl_mult_conf = 1.003     # SL lebih ketat
-                            rr_min = 1.2
-                            regime_note = "⚠️ COUNTER-TREND SHORT → SL ketat!"
-                        else:
-                            tp_mult_conf = 0.96
-                            sl_mult_conf = 1.005
-                            rr_min = 1.5
-                            regime_note = ""
+                        # PAKAI GET_ADAPTIVE_SLTP
+                        _, sl_pct, _, tp_pct, rr_conf = get_adaptive_sltp(coin, mark, "SHORT")
+                        sl = mark * (1 + sl_pct/100)
+                        tp = mark * (1 - tp_pct/100)
                         
-                        if supply:
-                            sl = supply['high'] * sl_mult_conf
-                        elif fvg:
-                            sl = fvg['high'] * sl_mult_conf
-                        else:
-                            sl = mark * sl_mult_conf
-                        tp = mark * tp_mult_conf
-
-                        risk, reward, rr = calculate_rr(entry, sl, tp)
-                        if rr >= rr_min:
+                        if rr_conf >= 1.5:
                             teks = f"""💀 SHORT CONFLUENCE | {coin}
 ─────────────────────────────────
 📡 Regime: {regime_emoji_conf} {regime_conf}
@@ -2432,34 +2333,25 @@ def run_confluence_scanner():
 📍 Zone: {zone_range if zone_range else '-'}
 📍 FVG: {f'${fvg["low"]:.4f} - ${fvg["high"]:.4f}' if fvg else '-'}
 🎯 ENTRY: ${entry:.4f}
-🛑 SL: ${sl:.4f} (+{risk:.1f}%)
-🎯 TP: ${tp:.4f} (-{reward:.1f}%)
-🔥 R:R = 1:{rr:.1f}
-💡 {regime_note}"""
+🛑 SL: ${sl:.4f} (+{sl_pct:.1f}%)
+🎯 TP: ${tp:.4f} (-{tp_pct:.1f}%)
+🔥 R:R = 1:{rr_conf:.1f}"""
                             bot.send_message(USER_ID, teks)
                             _last_confluence_alert[coin] = now
                             logger.info(f"[CONFLUENCE] SHORT alert: {coin}")
                             time.sleep(2)
 
-                    # Sleep per coin untuk hindari rate limit
                     time.sleep(0.5)
 
                 except Exception as e:
                     logger.debug(f"Confluence scan error for {coin}: {e}")
                     continue
 
-            # Sleep antar siklus scan (10 menit)
             time.sleep(CONFLUENCE_CONFIG["scan_interval"] * 60)
 
         except Exception as e:
             logger.error(f"[CONFLUENCE] Error: {e}")
-            time.sleep(60)
-
-def start_confluence_scanner():
-    conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
-    conf_thread.start()
-    logger.info("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
-    
+            time.sleep(60) 
 
 # ============================================================
 # LEARNING ENGINE (ADAPTIVE WEIGHTS + SIGNAL TRACKING)
@@ -2916,9 +2808,7 @@ def get_casual_prediction(coin="BTC"):
         logger.error(f"Prediction error: {e}")
         return None, None
 
-
 def casual_session_report():
-    """Laporan casual per session + prediksi"""
     try:
         jam = get_wib_hour()
 
@@ -2948,7 +2838,6 @@ def casual_session_report():
         funding = pred_data['funding']
         ob_delta = pred_data['ob_delta']
 
-        # Format prediksi
         if pred_data['direction'] == "bullish":
             direction_emoji = "🟢"
             direction_text = "bullish"
@@ -2958,8 +2847,14 @@ def casual_session_report():
             else:
                 target_pct = 1.5
             saran = "cari setup LONG"
-            sl_text = f"Stop loss: ${price - 500:,.0f}"
-            tp_text = f"Target: ${target:,.0f}"
+            
+            # PAKAI GET_ADAPTIVE_SLTP UNTUK BTC LONG
+            _, sl_pct, _, tp_pct, _ = get_adaptive_sltp("BTC", price, "LONG")
+            sl_price = price * (1 - sl_pct/100)
+            tp_price = price * (1 + tp_pct/100)
+            sl_text = f"Stop loss: {fmt_price(sl_price)} (-{sl_pct:.1f}%)"
+            tp_text = f"Target: {fmt_price(tp_price)} (+{tp_pct:.1f}%)"
+            
         elif pred_data['direction'] == "bearish":
             direction_emoji = "🔴"
             direction_text = "bearish"
@@ -2969,8 +2864,14 @@ def casual_session_report():
             else:
                 target_pct = 1.5
             saran = "cari setup SHORT"
-            sl_text = f"Stop loss: ${price + 500:,.0f}"
-            tp_text = f"Target: ${target:,.0f}"
+            
+            # PAKAI GET_ADAPTIVE_SLTP UNTUK BTC SHORT
+            _, sl_pct, _, tp_pct, _ = get_adaptive_sltp("BTC", price, "SHORT")
+            sl_price = price * (1 + sl_pct/100)
+            tp_price = price * (1 - tp_pct/100)
+            sl_text = f"Stop loss: {fmt_price(sl_price)} (+{sl_pct:.1f}%)"
+            tp_text = f"Target: {fmt_price(tp_price)} (-{tp_pct:.1f}%)"
+            
         else:
             direction_emoji = "⚪"
             direction_text = "sideways"
@@ -2980,7 +2881,6 @@ def casual_session_report():
             tp_text = f"Support: ${target - 500:,.0f} | Resistance: ${target + 500:,.0f}"
             sl_text = ""
 
-        # Format funding display
         if funding > 0.03:
             funding_text = f"+{funding:.3f}% (mulai panas 🔥)"
         elif funding < -0.03:
@@ -2988,7 +2888,6 @@ def casual_session_report():
         else:
             funding_text = f"{funding:.3f}% (normal)"
 
-        # Format OB Delta display
         if ob_delta > 15:
             ob_text = f"OB +{ob_delta:.0f}% (buyer dominan 🟢)"
         elif ob_delta < -15:
@@ -2996,7 +2895,6 @@ def casual_session_report():
         else:
             ob_text = f"OB {ob_delta:.0f}% (seimbang)"
 
-        # Bangun teks output
         teks = f"{opening} | {get_wib()}\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"{session_emoji} {situation}\n\n"
@@ -3018,7 +2916,6 @@ def casual_session_report():
         teks += "\n⚠️ DYOR ya. Ga 100% akurat.\n"
         teks += "maintain risk management"
 
-        # Simpan prediksi ke history
         history = load_predictions()
         history["predictions"].append({
             "time": datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S"),
