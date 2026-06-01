@@ -2190,6 +2190,139 @@ def find_fvg(coin):
                     return {"low": gap_low, "high": gap_high, "type": "bearish", "gap_pct": gap_pct}
     return None
 
+def get_smc_levels_advanced(coin, direction="LONG"):
+    """
+    Advanced SMC levels dengan confidence scoring & entry zone diperlebar.
+    Returns: (entry_low, entry_high, sl_price, tp_price, confidence, rr, zone_type, structure_bias)
+    """
+    try:
+        candles_4h = get_candles_smc(coin, "4h", limit=50)
+        candles_1h = get_candles_smc(coin, "1h", limit=50)
+        candles_15m = get_candles_smc(coin, "15m", limit=50)
+        
+        if not candles_1h or len(candles_1h) < 20:
+            return None, None, None, None, 0, 0, None, None
+        
+        current_price = float(candles_15m[-1]['c']) if candles_15m else float(candles_1h[-1]['c'])
+        
+        # Deteksi struktur di 1H
+        structure = detect_market_structure(candles_1h)
+        bias_1h = structure["bias"]
+        
+        # Cari zona OB/FVG (prioritas 15m -> 1h -> 4h)
+        zone = None
+        zone_type = None
+        zone_tf = None
+        
+        for tf_candles, tf_name in [(candles_15m, "15m"), (candles_1h, "1h"), (candles_4h, "4h")]:
+            if not tf_candles:
+                continue
+            ob = find_ob_zone(tf_candles, direction, max_distance_pct=2.5)
+            if ob:
+                zone = ob
+                zone_type = f"OB ({tf_name})"
+                zone_tf = tf_name
+                break
+            fvg = find_fvg_smc(tf_candles, max_distance_pct=2.5)
+            if fvg:
+                if direction == "LONG" and fvg["type"] == "bullish":
+                    zone = fvg
+                    zone_type = f"FVG ({tf_name})"
+                    zone_tf = tf_name
+                    break
+                elif direction == "SHORT" and fvg["type"] == "bearish":
+                    zone = fvg
+                    zone_type = f"FVG ({tf_name})"
+                    zone_tf = tf_name
+                    break
+        
+        if not zone:
+            return None, None, None, None, 0, 0, None, None
+        
+        entry_low = zone["low"]
+        entry_high = zone["high"]
+        
+        # Hitung confidence
+        confidence = 55
+        if zone_tf == "1h":
+            confidence += 10
+        elif zone_tf == "4h":
+            confidence += 15
+        
+        if (direction == "LONG" and bias_1h == "BULLISH") or (direction == "SHORT" and bias_1h == "BEARISH"):
+            confidence += 20
+        elif bias_1h == "NEUTRAL":
+            confidence += 5
+        else:
+            confidence -= 10
+        
+        # OB Delta & funding
+        ctx, _ = get_ctx(coin)
+        if ctx:
+            ob_delta = get_ob_delta(coin)
+            funding = get_funding_pct(ctx)
+            if direction == "LONG" and ob_delta > 10:
+                confidence += 10
+            elif direction == "SHORT" and ob_delta < -10:
+                confidence += 10
+            if direction == "LONG" and funding < -0.02:
+                confidence += 10
+            elif direction == "SHORT" and funding > 0.02:
+                confidence += 10
+        
+        in_zone = entry_low <= current_price <= entry_high
+        if in_zone:
+            confidence += 15
+        
+        confidence = min(95, max(55, confidence))
+        
+        # Cari swing points untuk SL & TP
+        swing_highs, swing_lows = detect_swing_points(candles_4h, lookback=3)
+        if len(swing_highs) < 2 or len(swing_lows) < 2:
+            return None, None, None, None, 0, 0, None, None
+        
+        regime = get_market_regime()
+        buffer = 0.005 if regime == "VOLATILE" else 0.003 if regime in ("TRENDING_UP", "TRENDING_DOWN") else 0.004
+        
+        if direction == "LONG":
+            valid_lows = [s["price"] for s in swing_lows if s["price"] < entry_low]
+            if not valid_lows:
+                valid_lows = [s["price"] for s in swing_lows if s["price"] < current_price]
+            sl_price = min(valid_lows) * (1 - buffer) if valid_lows else entry_low * 0.99
+            valid_highs = [s["price"] for s in swing_highs if s["price"] > entry_high]
+            tp_price = min(valid_highs) * 0.998 if valid_highs else entry_high * 1.03
+        else:
+            valid_highs = [s["price"] for s in swing_highs if s["price"] > entry_high]
+            if not valid_highs:
+                valid_highs = [s["price"] for s in swing_highs if s["price"] > current_price]
+            sl_price = max(valid_highs) * (1 + buffer) if valid_highs else entry_high * 1.01
+            valid_lows = [s["price"] for s in swing_lows if s["price"] < entry_low]
+            if not valid_lows:
+                valid_lows = [s["price"] for s in swing_lows if s["price"] < current_price]
+            tp_price = max(valid_lows) * 1.002 if valid_lows else entry_low * 0.97
+        
+        # Hitung RR
+        entry_mid = (entry_low + entry_high) / 2
+        if direction == "LONG":
+            risk = (entry_mid - sl_price) / entry_mid
+            reward = (tp_price - entry_mid) / entry_mid
+        else:
+            risk = (sl_price - entry_mid) / entry_mid
+            reward = (entry_mid - tp_price) / entry_mid
+        rr = reward / risk if risk > 0 else 0
+        if rr > 5:
+            rr = 5
+            if direction == "LONG":
+                tp_price = entry_mid + (entry_mid - sl_price) * 5
+            else:
+                tp_price = entry_mid - (sl_price - entry_mid) * 5
+        
+        return entry_low, entry_high, sl_price, tp_price, confidence, rr, zone_type, bias_1h
+        
+    except Exception as e:
+        logger.error(f"[SMC_ADV] Error {coin}: {e}")
+        return None, None, None, None, 0, 0, None, None
+
 
 def calculate_rr(entry, sl, tp):
     risk = abs(entry - sl) / entry * 100
@@ -3648,7 +3781,7 @@ GM/GN 😼 {user}
 🧭 ANALISIS PRO
 /delta | /trap | /cluster
 /liqmap | /correlation | /sentiment
-/smartflow | /clusteropen
+/smartflow | /clusteropen | /smc
 
 🐋 WHALE INTEL
 /whale | /whalescan | /whalewall
@@ -4837,6 +4970,72 @@ def format_tf_line(label, result):
 
     return f"{label}: {bias_emoji} {result['bias']} | {result['structure']}{event}{zone_tag}"
 
+@bot.message_handler(commands=['smc'])
+def smc_command(message):
+    try:
+        if check_command_cooldown(message.from_user.id, "smc"):
+            bot.reply_to(message, f"⏳ Tunggu {COMMAND_COOLDOWN_SEC}s sebelum /smc lagi")
+            return
+        
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(message, "📌 *Cara pakai SMC:*\n`/smc BTC LONG` atau `/smc ETH SHORT`\n\nContoh:\n/smc BTC LONG\n/smc SOL SHORT", parse_mode='Markdown')
+            return
+        
+        coin = parts[1].upper()
+        direction = parts[2].upper() if len(parts) > 2 else "LONG"
+        if direction not in ["LONG", "SHORT"]:
+            direction = "LONG"
+        
+        msg = bot.reply_to(message, f"🔍 Analisis SMC untuk {coin} {direction}...")
+        
+        entry_low, entry_high, sl_price, tp_price, confidence, rr, zone_type, structure_bias = get_smc_levels_advanced(coin, direction)
+        
+        if not entry_low:
+            bot.edit_message_text(f"❌ Tidak ditemukan zona SMC yang valid untuk {coin} {direction}.\n\n💡 Coba /entry {coin} untuk sinyal market order.", msg.chat.id, msg.message_id)
+            return
+        
+        ctx, mark = get_ctx(coin)
+        funding = get_funding_pct(ctx) if ctx else 0
+        change = get_change(ctx) if ctx else 0
+        regime = get_market_regime()
+        regime_emoji = {"TRENDING_UP": "🚀", "TRENDING_DOWN": "📉", "VOLATILE": "⚡", "RANGING": "↔️"}.get(regime, "❓")
+        in_zone = entry_low <= mark <= entry_high
+        
+        entry_mid = (entry_low + entry_high) / 2
+        if direction == "LONG":
+            sl_pct = (entry_mid - sl_price) / entry_mid * 100
+            tp_pct = (tp_price - entry_mid) / entry_mid * 100
+        else:
+            sl_pct = (sl_price - entry_mid) / entry_mid * 100
+            tp_pct = (entry_mid - tp_price) / entry_mid * 100
+        
+        struct_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "⚪"}.get(structure_bias, "⚪")
+        zone_tag = " ✅ ZONA!" if in_zone else " ⏳ Limit Order"
+        
+        teks = f"""🎯 *SMC {direction}* • {coin}
+━━━━━━━━━━━━━━━━━━━━━━
+📡 Regime: {regime_emoji} {regime}
+📊 Struktur 1H: {struct_emoji} {structure_bias}
+📍 Zona: *{zone_type}*
+💰 Harga: {fmt_price(mark)} | {change:+.1f}%
+💵 Funding: {funding:+.4f}%
+🔑 Keyakinan: {confidence}%
+
+🎯 *ENTRY ZONE*: {fmt_price(entry_low)} - {fmt_price(entry_high)}{zone_tag}
+🛑 *SL*: {fmt_price(sl_price)} ({'%.2f' % abs(sl_pct)}%)
+✅ *TP*: {fmt_price(tp_price)} (+{'%.2f' % abs(tp_pct)}%)
+⚖️ *RR*: 1:{rr:.1f}
+
+💡 Gunakan *LIMIT ORDER* di zona entry.
+📌 /entry {coin} untuk market order (lebih cepat)."""
+        
+        # Kirim ke owner dan channel
+        send_to_both(teks, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"[SMC] Error: {e}")
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 #======== WARROOM ===========
 @bot.message_handler(commands=['warroom'])
@@ -7419,6 +7618,7 @@ def whale_sentiment(message):
     except Exception as e:
         logger.error(f"[WHALESENTIMENT] Error: {e}")
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+        
 
 # ============================================================
 # SCHEDULER & MAIN LOOP
@@ -7632,6 +7832,133 @@ def run_scheduler():
 # ============================================================
 # WALLET TRACKER (SMART MONEY AUTO-DISCOVERY + COPY INTEL)
 # ============================================================
+
+# ========== SMC AUTO ALERT ==========
+_smc_alert_running = False
+_smc_alert_last = {}
+
+def check_smc_alert():
+    global _smc_alert_last
+    try:
+        start_time = time.time()
+        data = get_cached_meta()
+        assets = data[0]["universe"]
+        ctxs = data[1]
+
+        coins = []
+        for asset, ctx in zip(assets, ctxs):
+            vol = float(ctx.get("dayNtlVlm") or 0)
+            if vol > 2_000_000:
+                coins.append((asset["name"], vol))
+        coins.sort(key=lambda x: x[1], reverse=True)
+        top_coins = [c[0] for c in coins[:30]]
+
+        now_time = time.time()
+        alerts = []
+
+        logger.info(f"[SMC_ALERT] Scanning {len(top_coins)} coins...")
+
+        for coin in top_coins:
+            if coin in _smc_alert_last and now_time - _smc_alert_last[coin] < 3600:
+                continue
+
+            for direction in ["LONG", "SHORT"]:
+                try:
+                    entry_low, entry_high, sl_price, tp_price, confidence, rr, zone_type, structure_bias = get_smc_levels_advanced(coin, direction)
+                    if not entry_low or confidence < 60 or rr < 1.8:
+                        continue
+
+                    ctx, mark = get_ctx(coin)
+                    if not ctx or mark == 0:
+                        continue
+
+                    funding = get_funding_pct(ctx)
+                    change = get_change(ctx)
+                    volume = float(ctx.get("dayNtlVlm") or 0) / 1e6
+                    in_zone = entry_low <= mark <= entry_high
+
+                    alerts.append({
+                        "coin": coin, "direction": direction,
+                        "entry_low": entry_low, "entry_high": entry_high,
+                        "sl": sl_price, "tp": tp_price,
+                        "confidence": confidence, "rr": rr,
+                        "zone_type": zone_type, "in_zone": in_zone,
+                        "price": mark, "change": change,
+                        "funding": funding, "volume": volume,
+                        "structure_bias": structure_bias,
+                    })
+                    logger.info(f"[SMC_ALERT] {coin} {direction} | conf={confidence}% | RR=1:{rr:.1f}")
+                except Exception as e:
+                    continue
+
+        elapsed = time.time() - start_time
+        logger.info(f"[SMC_ALERT] Scan done {elapsed:.1f}s — {len(alerts)} alerts")
+
+        if alerts:
+            alerts.sort(key=lambda x: x["confidence"] * x["rr"], reverse=True)
+            for a in alerts[:3]:
+                arrow = "🟢" if a["direction"] == "LONG" else "🔴"
+                zone_tag = " ✅ ZONA!" if a["in_zone"] else " ⏳ Limit Order"
+                struct_emoji = "🟢" if a["structure_bias"] == "BULLISH" else "🔴" if a["structure_bias"] == "BEARISH" else "⚪"
+
+                teks = f"""{arrow} *SMC ALERT* • {a['coin']}
+━━━━━━━━━━━━━━━━━━━━━━
+📡 {a['direction']} | Keyakinan {a['confidence']}% | RR 1:{a['rr']:.1f}
+📍 Zona: {a['zone_type']}
+💰 Harga: {fmt_price(a['price'])} | Δ {a['change']:+.1f}%
+📦 Vol: ${a['volume']:.0f}M | Fund: {a['funding']:+.4f}%
+
+🎯 *ENTRY ZONE*: {fmt_price(a['entry_low'])} - {fmt_price(a['entry_high'])}{zone_tag}
+🎲 /smc {a['coin']} {a['direction']} | /warroom {a['coin']}"""
+
+                send_to_both(teks, parse_mode='Markdown')
+                _smc_alert_last[a['coin']] = now_time
+                time.sleep(1)
+
+    except Exception as e:
+        logger.error(f"[SMC_ALERT] Error: {e}")
+
+def run_smc_alert():
+    global _smc_alert_running
+    _smc_alert_running = True
+    logger.info("[SMC_ALERT] Started (tiap 20 menit)")
+    while True:
+        try:
+            if not _smc_alert_running:
+                time.sleep(60)
+                continue
+            check_smc_alert()
+            time.sleep(1200)
+        except Exception as e:
+            logger.error(f"[SMC_ALERT] run error: {e}")
+            time.sleep(60)
+
+def start_smc_alert():
+    t = threading.Thread(target=run_smc_alert, daemon=True)
+    t.start()
+    logger.info("✅ SMC ALERT THREAD LAUNCHED")
+
+@bot.message_handler(commands=['smcalert'])
+def smc_alert_cmd(message):
+    global _smc_alert_running
+    if not is_owner(message):
+        return
+    parts = message.text.split()
+    if len(parts) < 2:
+        status = "✅ ON" if _smc_alert_running else "❌ OFF"
+        bot.reply_to(message, f"🔔 *SMC ALERT*\nStatus: {status}\nKeyakinan minimal: 60%\nRR minimal: 1.8x\nCooldown: 1 jam/coin\nInterval: 20 menit\n\n/smcalert on|off|scan", parse_mode='Markdown')
+        return
+    if parts[1] == "on":
+        _smc_alert_running = True
+        bot.reply_to(message, "✅ SMC ALERT ON - notif akan dikirim ke channel & owner")
+    elif parts[1] == "off":
+        _smc_alert_running = False
+        bot.reply_to(message, "❌ SMC ALERT OFF")
+    elif parts[1] == "scan":
+        bot.reply_to(message, "🔍 Scanning manual...")
+        check_smc_alert()
+    else:
+        bot.reply_to(message, "Gunakan: on / off / scan")
 
 def load_wallet_state():
     global _wallet_last_positions, WATCHED_WALLETS, MANUAL_WALLETS, COPYTRADE_MODE  # ← BARIS PERTAMA
