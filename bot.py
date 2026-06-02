@@ -611,7 +611,7 @@ def calculate_predator_score(coin):
             kill_emoji = "💀"
         elif total_bearish > total_bullish:
             direction = "BEARISH"
-            direction_emoji = "🐻"
+            direction_emoji = "🐻‍❄️"
             kill_emoji = "💀"
         else:
             direction = "SIDEWAYS"
@@ -651,7 +651,7 @@ def calculate_predator_score(coin):
         # Rain level
         if rain_score >= 60:
             rain_level = "HEAVY CLOUDS"
-            rain_emoji = "🌧️🌧️"
+            rain_emoji = "⛈️🌩️"
         elif rain_score >= 35:
             rain_level = "LIGHT CLOUDS"
             rain_emoji = "🌧️"
@@ -751,11 +751,11 @@ def ultimate_predator_scan():
             else:
                 target_display = "🎯 Range trade"
             
-            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
+            teks = f"""🐺 ULTIMATE PREDATOR • {pred['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
 {pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
-{pred['kill_emoji']} KILL SHOT: {'✅ CONFIRMED' if pred['kill_shot'] else '⏳ WAITING'}
+{pred['kill_emoji']} KILL SHOT: {'✅ CONFIRMED' if pred['kill_shot'] else '⏱️ WAITING'}
 
 {pred['direction_emoji']} {target_display}
 ⏱️ ETA: {pred['eta_minutes']} minutes
@@ -1336,12 +1336,12 @@ def check_divergence():
 
         for a in alerts:
             if a['type'] == 'BEARISH_DIVERGENCE':
-                teks = f"""💀 BEARISH DIVERGENCE
+                teks = f"""🛟 BEARISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price +{a['price_change']:.0f}% but OI {a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL DOWN!"""
             else:
-                teks = f"""💀 BULLISH DIVERGENCE
+                teks = f"""🛟 BULLISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price {a['price_change']:.0f}% but OI +{a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL UP!"""
@@ -1449,9 +1449,9 @@ def get_strength_and_action(score, bias):
     if score >= 60:
         return "STRONG ✅", "🎯 READY — Entry sekarang"
     elif score >= 40:
-        return "MEDIUM ⚠️", "⏳ Waspada — Konfirmasi tambahan"
+        return "MEDIUM ⚠️", "⌚ Waspada — Konfirmasi tambahan"
     elif score >= 25:
-        return "WEAK ⚠️", "📊 Monitor — Belum optimal"
+        return "WEAK 📛", "🚸 Monitor — Belum optimal"
     else:
         return "SKIP ❌", "🚫 Tidak direkomendasikan"
 
@@ -1835,7 +1835,7 @@ def get_session_analysis():
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🌏",
+            "emoji": "🇯🇵",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -2447,7 +2447,7 @@ def run_confluence_scanner():
                         "TRENDING_UP": "🚀",
                         "TRENDING_DOWN": "📉",
                         "VOLATILE": "⚡",
-                        "RANGING": "😴"
+                        "RANGING": "↔️"
                     }.get(regime_conf, "❓")
 
                     if volume < CONFLUENCE_CONFIG["min_volume_24h"]:
@@ -3064,7 +3064,7 @@ def casual_session_report():
 
         if 8 <= jam < 15:
             session = "ASIA"
-            session_emoji = "🌏"
+            session_emoji = "🇯🇵"
         elif 15 <= jam < 20:
             session = "LONDON"
             session_emoji = "🇬🇧"
@@ -3148,11 +3148,11 @@ def casual_session_report():
         teks = f"{opening} | {get_wib()}\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"{session_emoji} {situation}\n\n"
-        teks += "📡 Kondisi BTC now:\n"
+        teks += "💹 Kondisi BTC now:\n"
         teks += f"Harga: ${price:,.0f}\n"
         teks += f"Funding: {funding_text}\n"
         teks += f"{ob_text}\n\n"
-        teks += "☄️ Ramalan gw:\n"
+        teks += "📜 Ramalan gw:\n"
         teks += f"{pred_data['reason']}\n"
         teks += f"Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}\n"
         teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
@@ -3232,7 +3232,7 @@ def evaluate_predictions():
 
         teks = f"📑 Evaluasi Prediksi\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"☄️ Waktu prediksi: {pred_time}\n"
+        teks += f"🔎 Waktu prediksi: {pred_time}\n"
         teks += f"Gw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}\n\n"
         teks += "📈 Kenyataan:\n"
         teks += f"Harga sekarang: ${current_price:,.0f}\n"
@@ -3285,7 +3285,7 @@ def prediction_stats(message):
     teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
     teks += f"Total prediksi: {total} kali\n"
     teks += f"Bener arahnya: {correct} kali ({accuracy:.0f}%)\n\n"
-    teks += "💡 Akurasi: "
+    teks += "🔭 Akurasi: "
 
     if accuracy > 65:
         teks += "Lumayan bagus\n"
@@ -3651,7 +3651,7 @@ def check_entry_alert():
                     quality_tag = "✅ HIGH QUALITY"
                 elif in_zone == 1:
                     zone_line = f"📐 Zona: {'  '.join(zone_tags)} ⚠️ PARTIAL"
-                    quality_tag = "⚠️ PARTIAL — tunggu retest"
+                    quality_tag = "🚸 PARTIAL — tunggu retest"
                 else:
                     zone_line = f"📐 Zona: ❌ Tidak di OB/FVG — harga bebas"
                     quality_tag = "⚡ MOMENTUM — risiko FOMO, score tinggi"
@@ -4034,7 +4034,7 @@ GM/GN 😼 {user}
 /gainers | /losers | /nuke
 /heatmap | /narrative | /topoi
 /summary | /btcdom | /volatility
-/oihistory 
+/oihistory | /atr
 
 📰 NEWS
 /news — Berita crypto terbaru
@@ -4164,9 +4164,9 @@ def session_cmd(message):
 ⏰ SESSION {coin} • {wib_now.strftime('%d/%m %H:%M')} WIB
 ─────────────────────────────────
 
-{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥🌡️", "NY")}
+{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥⚡", "NY")}
 
-{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌬️🔥", "London")}
+{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌪️🔥", "London")}
 
 {fmt_session("ASIA", "🇯🇵", "07:00-15:00", "❄️", "Asia")}
 
@@ -4199,13 +4199,13 @@ def ping(message):
 ━━━━━━━━━━━━━━━━━━━━━━
 🔋 Status     : ✅ ONLINE
 ⚡ Response   : {response_ms:.0f}ms
-🕐 WIB        : {now}
+⏰ WIB        : {now}
 ⏱️ Uptime     : {uptime}
 ━━━━━━━━━━━━━━━━━━━━━━
 🔗 Telegram   : {tg_status}
 🔗 Hyperliquid: {hl_status}
 ━━━━━━━━━━━━━━━━━━━━━━
-💡 Bot sehat, siap membantu! 📟"""
+💡 Bot sehat, siap membantu! 😼"""
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
@@ -5317,15 +5317,15 @@ def smc_command(message):
 📍 Zona: *{zone_type}*
 💰 Harga: {fmt_price(mark)} | {change:+.1f}%
 💵 Funding: {funding:+.4f}%
-🔑 Keyakinan: {confidence}%
+🔬 Keyakinan: {confidence}%
 
 🎯 *ENTRY ZONE*: {fmt_price(entry_low)} - {fmt_price(entry_high)}{zone_tag}
 🛑 *SL*: {fmt_price(sl_price)} ({'%.2f' % abs(sl_pct)}%)
 ✅ *TP*: {fmt_price(tp_price)} (+{'%.2f' % abs(tp_pct)}%)
 ⚖️ *RR*: 1:{rr:.1f}
 
-💡 Gunakan *LIMIT ORDER* di zona entry.
-📌 /entry {coin} untuk market order (lebih cepat)."""
+⚠️ Gunakan *LIMIT ORDER* di zona entry.
+💡 /entry {coin} untuk market order (lebih cepat)."""
         
         # Kirim ke owner dan channel
         send_to_both(teks, parse_mode='Markdown')
@@ -5453,7 +5453,7 @@ def check_smc_alert():
 🛑 *SL*: {fmt_price(a['sl'])} ({abs(sl_pct):.2f}%)
 ✅ *TP*: {fmt_price(a['tp'])} ({abs(tp_pct):.2f}%)
 
-🎲 /smc {a['coin']} {a['direction']} | /warroom {a['coin']}"""
+💡 /smc {a['coin']} {a['direction']} | /warroom {a['coin']}"""
 
                 send_to_both(teks, parse_mode='Markdown')
                 _cross_record(a['coin'], a['direction'], "smc")
@@ -7607,12 +7607,12 @@ def status_cmd(message):
 ─────────────────────────────────
 🕶️ SNIPER    : {sniper_text}
 👽 TEMEN     : {temen_text}
-⛔ LIQ SCAN  : {liq_text}
+💀 LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
-💀 DIVERGENCE: {div_text}
+☠️ DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
-🐾 PREDATOR  : {predator_text}
+🐺 PREDATOR  : {predator_text}
 ⚓ WARROOM   : {warroom_alert_status}
 🎯 ENTRY     : {entry_alert_status}
 ⚡ SQUEEZE   : {squeeze_alert_status}
