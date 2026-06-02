@@ -611,7 +611,7 @@ def calculate_predator_score(coin):
             kill_emoji = "💀"
         elif total_bearish > total_bullish:
             direction = "BEARISH"
-            direction_emoji = "🐻‍❄️"
+            direction_emoji = "🐻"
             kill_emoji = "💀"
         else:
             direction = "SIDEWAYS"
@@ -651,7 +651,7 @@ def calculate_predator_score(coin):
         # Rain level
         if rain_score >= 60:
             rain_level = "HEAVY CLOUDS"
-            rain_emoji = "⛈️🌩️"
+            rain_emoji = "🌧️🌧️"
         elif rain_score >= 35:
             rain_level = "LIGHT CLOUDS"
             rain_emoji = "🌧️"
@@ -751,11 +751,11 @@ def ultimate_predator_scan():
             else:
                 target_display = "🎯 Range trade"
             
-            teks = f"""🐺 ULTIMATE PREDATOR • {pred['coin']}
+            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
 {pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
-{pred['kill_emoji']} KILL SHOT: {'✅ CONFIRMED' if pred['kill_shot'] else '⏱️ WAITING'}
+{pred['kill_emoji']} KILL SHOT: {'✅ CONFIRMED' if pred['kill_shot'] else '⏳ WAITING'}
 
 {pred['direction_emoji']} {target_display}
 ⏱️ ETA: {pred['eta_minutes']} minutes
@@ -1336,12 +1336,12 @@ def check_divergence():
 
         for a in alerts:
             if a['type'] == 'BEARISH_DIVERGENCE':
-                teks = f"""🛟 BEARISH DIVERGENCE
+                teks = f"""💀 BEARISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price +{a['price_change']:.0f}% but OI {a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL DOWN!"""
             else:
-                teks = f"""🛟 BULLISH DIVERGENCE
+                teks = f"""💀 BULLISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price {a['price_change']:.0f}% but OI +{a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL UP!"""
@@ -1449,9 +1449,9 @@ def get_strength_and_action(score, bias):
     if score >= 60:
         return "STRONG ✅", "🎯 READY — Entry sekarang"
     elif score >= 40:
-        return "MEDIUM ⚠️", "⌚ Waspada — Konfirmasi tambahan"
+        return "MEDIUM ⚠️", "⏳ Waspada — Konfirmasi tambahan"
     elif score >= 25:
-        return "WEAK 📛", "🚸 Monitor — Belum optimal"
+        return "WEAK ⚠️", "📊 Monitor — Belum optimal"
     else:
         return "SKIP ❌", "🚫 Tidak direkomendasikan"
 
@@ -1835,7 +1835,7 @@ def get_session_analysis():
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🇯🇵",
+            "emoji": "🌏",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -2144,10 +2144,14 @@ def get_mtf_conflict(coin):
 
 
 def find_demand_zone(coin):
-    """Cari demand zone (support) dari struktur candle H4"""
+    """Cari demand zone (support) dari struktur candle H4.
+    FIX: tambah distance filter max 2% dari current price + tighten double bottom 0.5%->0.2%.
+    """
     candles = get_candles_cached(coin, "4h", 50)
     if len(candles) < 10:
         return None
+
+    current_price = float(candles[-1]['c']) if candles else 0
 
     for i in range(len(candles)-1, 5, -1):
         c = candles[i]
@@ -2166,13 +2170,18 @@ def find_demand_zone(coin):
         if lower_wick > body * 1.5 and float(c['c']) > float(c['o']):
             is_support = True
 
-        # Double bottom
-        if prev2 and float(c['l']) > 0 and abs(float(prev2['l']) - float(c['l'])) / float(c['l']) * 100 < 0.5:
+        # Double bottom (tightened: 0.5% -> 0.2% biar tidak false-positive tiap candle)
+        if prev2 and float(c['l']) > 0 and abs(float(prev2['l']) - float(c['l'])) / float(c['l']) * 100 < 0.2:
             is_support = True
 
         if is_support:
             low = float(c['l'])
             high = float(c['c']) if float(c['c']) > float(c['o']) else float(c['o'])
+            # FIX: filter zone harus dalam 2% dari current price (sama spt find_fvg)
+            zone_mid = (low + high) / 2
+            dist_pct = abs(zone_mid - current_price) / current_price * 100 if current_price > 0 else 99
+            if dist_pct > 2.0:
+                continue
             return {
                 "low": low,
                 "high": high,
@@ -2183,10 +2192,14 @@ def find_demand_zone(coin):
 
 
 def find_supply_zone(coin):
-    """Cari supply zone (resistance) dari struktur candle H4"""
+    """Cari supply zone (resistance) dari struktur candle H4.
+    FIX: tambah distance filter max 2% dari current price + tighten double top 0.5%->0.2%.
+    """
     candles = get_candles_cached(coin, "4h", 50)
     if len(candles) < 10:
         return None
+
+    current_price = float(candles[-1]['c']) if candles else 0
 
     for i in range(len(candles)-1, 5, -1):
         c = candles[i]
@@ -2205,13 +2218,18 @@ def find_supply_zone(coin):
         if upper_wick > body * 1.5 and float(c['c']) < float(c['o']):
             is_resistance = True
 
-        # Double top
-        if prev2 and float(c['h']) > 0 and abs(float(prev2['h']) - float(c['h'])) / float(c['h']) * 100 < 0.5:
+        # Double top (tightened: 0.5% -> 0.2% biar tidak false-positive tiap candle)
+        if prev2 and float(c['h']) > 0 and abs(float(prev2['h']) - float(c['h'])) / float(c['h']) * 100 < 0.2:
             is_resistance = True
 
         if is_resistance:
             high = float(c['h'])
             low = float(c['c']) if float(c['c']) < float(c['o']) else float(c['o'])
+            # FIX: filter zone harus dalam 2% dari current price (sama spt find_fvg)
+            zone_mid = (low + high) / 2
+            dist_pct = abs(zone_mid - current_price) / current_price * 100 if current_price > 0 else 99
+            if dist_pct > 2.0:
+                continue
             return {
                 "low": low,
                 "high": high,
@@ -2359,14 +2377,14 @@ def get_smc_levels_advanced(coin, direction="LONG"):
             valid_lows = [s["price"] for s in swing_lows if s["price"] < entry_low]
             if not valid_lows:
                 valid_lows = [s["price"] for s in swing_lows if s["price"] < current_price]
-            sl_price = min(valid_lows) * (1 - buffer) if valid_lows else entry_low * 0.99
+            sl_price = max(valid_lows) * (1 - buffer) if valid_lows else entry_low * 0.99  # FIX: max = swing low TERDEKAT, bukan min (terjauh)
             valid_highs = [s["price"] for s in swing_highs if s["price"] > entry_high]
             tp_price = min(valid_highs) * 0.998 if valid_highs else entry_high * 1.03
         else:  # SHORT
             valid_highs = [s["price"] for s in swing_highs if s["price"] > entry_high]
             if not valid_highs:
                 valid_highs = [s["price"] for s in swing_highs if s["price"] > current_price]
-            sl_price = max(valid_highs) * (1 + buffer) if valid_highs else entry_high * 1.01
+            sl_price = min(valid_highs) * (1 + buffer) if valid_highs else entry_high * 1.01  # FIX: min = swing high TERDEKAT, bukan max (terjauh)
             valid_lows = [s["price"] for s in swing_lows if s["price"] < entry_low]
             if not valid_lows:
                 valid_lows = [s["price"] for s in swing_lows if s["price"] < current_price]
@@ -2447,7 +2465,7 @@ def run_confluence_scanner():
                         "TRENDING_UP": "🚀",
                         "TRENDING_DOWN": "📉",
                         "VOLATILE": "⚡",
-                        "RANGING": "↔️"
+                        "RANGING": "😴"
                     }.get(regime_conf, "❓")
 
                     if volume < CONFLUENCE_CONFIG["min_volume_24h"]:
@@ -3064,7 +3082,7 @@ def casual_session_report():
 
         if 8 <= jam < 15:
             session = "ASIA"
-            session_emoji = "🇯🇵"
+            session_emoji = "🌏"
         elif 15 <= jam < 20:
             session = "LONDON"
             session_emoji = "🇬🇧"
@@ -3148,11 +3166,11 @@ def casual_session_report():
         teks = f"{opening} | {get_wib()}\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
         teks += f"{session_emoji} {situation}\n\n"
-        teks += "💹 Kondisi BTC now:\n"
+        teks += "📡 Kondisi BTC now:\n"
         teks += f"Harga: ${price:,.0f}\n"
         teks += f"Funding: {funding_text}\n"
         teks += f"{ob_text}\n\n"
-        teks += "📜 Ramalan gw:\n"
+        teks += "☄️ Ramalan gw:\n"
         teks += f"{pred_data['reason']}\n"
         teks += f"Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}\n"
         teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
@@ -3232,7 +3250,7 @@ def evaluate_predictions():
 
         teks = f"📑 Evaluasi Prediksi\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"🔎 Waktu prediksi: {pred_time}\n"
+        teks += f"☄️ Waktu prediksi: {pred_time}\n"
         teks += f"Gw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}\n\n"
         teks += "📈 Kenyataan:\n"
         teks += f"Harga sekarang: ${current_price:,.0f}\n"
@@ -3285,7 +3303,7 @@ def prediction_stats(message):
     teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
     teks += f"Total prediksi: {total} kali\n"
     teks += f"Bener arahnya: {correct} kali ({accuracy:.0f}%)\n\n"
-    teks += "🔭 Akurasi: "
+    teks += "💡 Akurasi: "
 
     if accuracy > 65:
         teks += "Lumayan bagus\n"
@@ -3468,7 +3486,7 @@ def check_warroom_simple():
                 teks += f"\n🎯 /warroom {a['coin']} | /entry {a['coin']}"
                 
                 try:
-                    send_to_owner(teks, parse_mode='Markdown')
+                    send_to_both(teks, parse_mode='Markdown')  # FIX BUG5: warroom alert → channel juga
                     _warroom_alert_last[a['coin']] = now_time
 
                     # Track untuk learning engine
@@ -3651,7 +3669,7 @@ def check_entry_alert():
                     quality_tag = "✅ HIGH QUALITY"
                 elif in_zone == 1:
                     zone_line = f"📐 Zona: {'  '.join(zone_tags)} ⚠️ PARTIAL"
-                    quality_tag = "🚸 PARTIAL — tunggu retest"
+                    quality_tag = "⚠️ PARTIAL — tunggu retest"
                 else:
                     zone_line = f"📐 Zona: ❌ Tidak di OB/FVG — harga bebas"
                     quality_tag = "⚡ MOMENTUM — risiko FOMO, score tinggi"
@@ -3671,7 +3689,7 @@ def check_entry_alert():
 💡 /entry {a['coin']} | /warroom {a['coin']}"""
                 
                 try:
-                    send_to_owner(teks, parse_mode='Markdown')
+                    send_to_both(teks, parse_mode='Markdown')  # FIX BUG5: entry alert → channel juga
                     _cross_record(a['coin'], a['direction'], "entry")
                     _entry_alert_last[a['coin']] = now_time
 
@@ -3802,8 +3820,10 @@ def check_squeeze_alert():
                         else:
                             # Bonus: harga tepat di demand zone (OB/FVG)
                             at_demand = any(r and (r.get("in_ob") or r.get("in_fvg")) for r in [r_sq_h1, r_sq_m15])
+                            score = short_score  # FIX: simpan score sebelum zone bonus
                             if at_demand:
                                 short_score += 10
+                                score = short_score  # update include bonus
                                 logger.info(f"[SQUEEZE_ALERT] {coin} SHORT SQUEEZE: price di demand zone (+10)")
 
                             raw_pct = (short_liq['price'] / mark - 1) * 100
@@ -3830,7 +3850,6 @@ def check_squeeze_alert():
                             else:
                                 sl_pct = min(sl_pct, 1.2)
                             sl_price = mark * (1 - sl_pct / 100)
-                            score = short_score
                             direction = "LONG"
                             rr = target_pct / sl_pct if sl_pct > 0 else 0
 
@@ -3871,8 +3890,10 @@ def check_squeeze_alert():
                         else:
                             # Bonus: harga tepat di supply zone (OB/FVG)
                             at_supply = any(r and (r.get("in_ob") or r.get("in_fvg")) for r in [r_sq_h1, r_sq_m15])
+                            score = long_score  # FIX: simpan score sebelum zone bonus
                             if at_supply:
                                 long_score += 10
+                                score = long_score  # update include bonus
                                 logger.info(f"[SQUEEZE_ALERT] {coin} LONG SQUEEZE: price di supply zone (+10)")
 
                             raw_pct = (mark / long_liq['price'] - 1) * 100
@@ -3897,7 +3918,6 @@ def check_squeeze_alert():
                             else:
                                 sl_pct = min(sl_pct, 1.2)
                             sl_price = mark * (1 + sl_pct / 100)
-                            score = long_score
                             direction = "SHORT"
                             rr = target_pct / sl_pct if sl_pct > 0 else 0
 
@@ -3961,7 +3981,7 @@ def check_squeeze_alert():
 💡 /squeeze {a['coin']} | /entry {a['coin']}"""
 
                 try:
-                    send_to_owner(teks)
+                    send_to_both(teks)  # FIX: squeeze alert → channel juga
                     _cross_record(a['coin'], a['direction'], "squeeze")
                     _squeeze_alert_last[a['coin']] = now_time
                     time.sleep(0.5)
@@ -4034,7 +4054,7 @@ GM/GN 😼 {user}
 /gainers | /losers | /nuke
 /heatmap | /narrative | /topoi
 /summary | /btcdom | /volatility
-/oihistory | /atr
+/oihistory 
 
 📰 NEWS
 /news — Berita crypto terbaru
@@ -4164,9 +4184,9 @@ def session_cmd(message):
 ⏰ SESSION {coin} • {wib_now.strftime('%d/%m %H:%M')} WIB
 ─────────────────────────────────
 
-{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥⚡", "NY")}
+{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥🌡️", "NY")}
 
-{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌪️🔥", "London")}
+{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌬️🔥", "London")}
 
 {fmt_session("ASIA", "🇯🇵", "07:00-15:00", "❄️", "Asia")}
 
@@ -4199,13 +4219,13 @@ def ping(message):
 ━━━━━━━━━━━━━━━━━━━━━━
 🔋 Status     : ✅ ONLINE
 ⚡ Response   : {response_ms:.0f}ms
-⏰ WIB        : {now}
+🕐 WIB        : {now}
 ⏱️ Uptime     : {uptime}
 ━━━━━━━━━━━━━━━━━━━━━━
 🔗 Telegram   : {tg_status}
 🔗 Hyperliquid: {hl_status}
 ━━━━━━━━━━━━━━━━━━━━━━
-💡 Bot sehat, siap membantu! 😼"""
+💡 Bot sehat, siap membantu! 📟"""
         bot.edit_message_text(teks, msg.chat.id, msg.message_id)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
@@ -4787,12 +4807,7 @@ def entry(message):
         if bias in ["LONG", "SHORT"] and score >= 50:
             sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, bias)
 
-            if sl_pct < 0.3:
-                sl_p = mark * (0.997 if bias == "LONG" else 1.003)
-                sl_pct = 0.3
-                rr = tp_pct / sl_pct
-
-            # Override SL dari SMC zone
+            # FIX: Override SL dari SMC zone DULU — baru apply minimum guard
             if smc_zone and bias == "LONG" and smc_zone["low"] < mark:
                 sl_smc = smc_zone["low"] * 0.997
                 sl_pct_smc = (mark - sl_smc) / mark * 100
@@ -4805,6 +4820,12 @@ def entry(message):
                 if 0.2 <= sl_pct_smc <= 2.0:
                     sl_p, sl_pct = sl_smc, sl_pct_smc
                     rr = tp_pct / sl_pct if sl_pct > 0 else rr
+
+            # FIX: Minimum SL guard SETELAH zone override — cegah SL < 0.3% kena wick
+            if sl_pct < 0.3:
+                sl_p = mark * (0.997 if bias == "LONG" else 1.003)
+                sl_pct = 0.3
+                rr = tp_pct / sl_pct
 
             # Confirm tag
             if not smc_agrees:
@@ -5213,11 +5234,19 @@ def smc_full_analysis(coin):
         if r:
             bias_votes[r["bias"]] += 1
 
-    # Ambil bias dominan
-    # FIX: Tiebreaker — kalau BUL==BEAR, jangan return NEUTRAL (yang mungkin 0)
-    # Prioritas: BULLISH > BEARISH > NEUTRAL kalau sama score
-    dominant_bias = max(bias_votes, key=lambda b: (bias_votes[b], ["NEUTRAL", "BEARISH", "BULLISH"].index(b)))
-    aligned_count = bias_votes[dominant_bias]
+    # FIX BUG2: Hanya directional votes (BULLISH/BEARISH) — NEUTRAL dikecualikan
+    # Supaya aligned_count tidak mengandung NEUTRAL vote yang misleading
+    _dir_bull = bias_votes["BULLISH"]
+    _dir_bear = bias_votes["BEARISH"]
+    if _dir_bull == 0 and _dir_bear == 0:
+        dominant_bias = "NEUTRAL"
+        aligned_count = 0
+    elif _dir_bull >= _dir_bear:
+        dominant_bias = "BULLISH"
+        aligned_count = _dir_bull
+    else:
+        dominant_bias = "BEARISH"
+        aligned_count = _dir_bear
 
     if aligned_count == 4:
         alignment = "FULL ALIGN 🎯"
@@ -5317,15 +5346,15 @@ def smc_command(message):
 📍 Zona: *{zone_type}*
 💰 Harga: {fmt_price(mark)} | {change:+.1f}%
 💵 Funding: {funding:+.4f}%
-🔬 Keyakinan: {confidence}%
+🔑 Keyakinan: {confidence}%
 
 🎯 *ENTRY ZONE*: {fmt_price(entry_low)} - {fmt_price(entry_high)}{zone_tag}
 🛑 *SL*: {fmt_price(sl_price)} ({'%.2f' % abs(sl_pct)}%)
 ✅ *TP*: {fmt_price(tp_price)} (+{'%.2f' % abs(tp_pct)}%)
 ⚖️ *RR*: 1:{rr:.1f}
 
-⚠️ Gunakan *LIMIT ORDER* di zona entry.
-💡 /entry {coin} untuk market order (lebih cepat)."""
+💡 Gunakan *LIMIT ORDER* di zona entry.
+📌 /entry {coin} untuk market order (lebih cepat)."""
         
         # Kirim ke owner dan channel
         send_to_both(teks, parse_mode='Markdown')
@@ -5420,6 +5449,7 @@ def check_smc_alert():
                     })
                     logger.info(f"[SMC_ALERT] {coin} {direction} | conf={confidence}% | RR=1:{rr:.1f}")
                 except Exception as e:
+                    logger.warning(f"[SMC_ALERT] {coin} {direction} error: {e}")
                     continue
 
         elapsed = time.time() - start_time
@@ -5453,7 +5483,7 @@ def check_smc_alert():
 🛑 *SL*: {fmt_price(a['sl'])} ({abs(sl_pct):.2f}%)
 ✅ *TP*: {fmt_price(a['tp'])} ({abs(tp_pct):.2f}%)
 
-💡 /smc {a['coin']} {a['direction']} | /warroom {a['coin']}"""
+🎲 /smc {a['coin']} {a['direction']} | /warroom {a['coin']}"""
 
                 send_to_both(teks, parse_mode='Markdown')
                 _cross_record(a['coin'], a['direction'], "smc")
@@ -5519,7 +5549,7 @@ def warroom(message):
             return
         coin = parts[1].upper()
 
-        msg = bot.reply_to(message, f"🧭 Analyzing {coin} — H1→M30→M15→M5...")
+        msg = bot.reply_to(message, f"🧭 Analyzing {coin} — 4H→H1→M15→M5...")
 
         # SMC multi-TF analysis
         smc = smc_full_analysis(coin)
@@ -5552,15 +5582,16 @@ def warroom(message):
 
         long_score, short_score = calculate_scores(ob_delta, funding, bid_wall_usd, ask_wall_usd)
         gap = abs(long_score - short_score)
-        if long_score > short_score and gap >= 15:
+        # FIX BUG4: sync threshold dengan alert (>= 10, bukan >= 15)
+        if long_score > short_score and gap >= 10:
             deriv_bias, deriv_emoji = "LONG", "🟢"
             deriv_score = long_score
-        elif short_score > long_score and gap >= 15:
+        elif short_score > long_score and gap >= 10:
             deriv_bias, deriv_emoji = "SHORT", "🔴"
             deriv_score = short_score
         else:
             deriv_bias, deriv_emoji = "NEUTRAL", "⚪"
-            deriv_score = max(long_score, short_score)
+            deriv_score = 0  # FIX BUG3: NEUTRAL = no directional signal, score = 0
 
         # Format OI
         oi_display = f"${oi_usd/1000:.1f}B" if oi_usd >= 1000 else f"${oi_usd:.1f}M"
@@ -5575,8 +5606,8 @@ def warroom(message):
         teks += f"📦 Vol ${vol:.0f}M | Fund {funding:.4f}%\n"
         teks += "─────────────────────────────────\n"
         teks += "📊 STRUKTUR MARKET:\n"
+        teks += format_tf_line("4H ", smc["tfs"].get("4h")) + "\n"
         teks += format_tf_line("H1 ", smc["tfs"].get("1h")) + "\n"
-        teks += format_tf_line("M30", smc["tfs"].get("30m")) + "\n"
         teks += format_tf_line("M15", smc["tfs"].get("15m")) + "\n"
         teks += format_tf_line("M5 ", smc["tfs"].get("5m")) + "\n"
         teks += "─────────────────────────────────\n"
@@ -7607,12 +7638,12 @@ def status_cmd(message):
 ─────────────────────────────────
 🕶️ SNIPER    : {sniper_text}
 👽 TEMEN     : {temen_text}
-💀 LIQ SCAN  : {liq_text}
+⛔ LIQ SCAN  : {liq_text}
 🔍 CONFLUENCE: {conf_text}
-☠️ DIVERGENCE: {div_text}
+💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
-🐺 PREDATOR  : {predator_text}
+🐾 PREDATOR  : {predator_text}
 ⚓ WARROOM   : {warroom_alert_status}
 🎯 ENTRY     : {entry_alert_status}
 ⚡ SQUEEZE   : {squeeze_alert_status}
