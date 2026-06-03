@@ -363,7 +363,7 @@ def get_session_analysis() -> dict:
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🌏",
+            "emoji": "🇯🇵",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -611,11 +611,11 @@ def calculate_predator_score(coin):
             kill_emoji = "💀"
         elif total_bearish > total_bullish:
             direction = "BEARISH"
-            direction_emoji = "🐻"
+            direction_emoji = "🐻‍❄️"
             kill_emoji = "💀"
         else:
             direction = "SIDEWAYS"
-            direction_emoji = "⚡"
+            direction_emoji = "❄️"
             kill_emoji = "⚪"
         
         # Confidence — lebih realistis
@@ -651,10 +651,10 @@ def calculate_predator_score(coin):
         # Rain level
         if rain_score >= 60:
             rain_level = "HEAVY CLOUDS"
-            rain_emoji = "🌧️🌧️"
+            rain_emoji = "⛈️"
         elif rain_score >= 35:
             rain_level = "LIGHT CLOUDS"
-            rain_emoji = "🌧️"
+            rain_emoji = "🌩️"
         else:
             rain_level = "CLEAR"
             rain_emoji = "☀️"
@@ -751,7 +751,7 @@ def ultimate_predator_scan():
             else:
                 target_display = "🎯 Range trade"
             
-            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
+            teks = f"""☠️ ULTIMATE PREDATOR • {pred['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
 {pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
@@ -1177,11 +1177,10 @@ def get_cvd(coin, hours=1):
     except:
         return 0
 
-
 def get_cvd_delta(coin):
     """
-    CVD DELTA incremental — hanya trade baru sejak call terakhir.
-    Dipakai predator supaya CVD tidak selalu 0.
+    CVD DELTA incremental — hanya delta trade baru sejak call terakhir.
+    BUKAN akumulasi total.
     Return: (delta_in_M, is_first_call)
     """
     try:
@@ -1190,7 +1189,6 @@ def get_cvd_delta(coin):
             return 0, False
 
         def get_tid(t):
-            # Hyperliquid recent_trades punya field 'tid' (trade id, int)
             return int(t.get('tid', t.get('time', 0)))
 
         sorted_trades = sorted(trades, key=get_tid)
@@ -1198,17 +1196,20 @@ def get_cvd_delta(coin):
         with state_lock:
             last_tid = _cvd_last_tid.get(coin)
 
+        # First call: inisialisasi
         if last_tid is None:
             newest_tid = get_tid(sorted_trades[-1])
             with state_lock:
                 _cvd_last_tid[coin] = newest_tid
                 _cvd_accum[coin] = 0
-            return 0, True  # first call, skip
+            return 0, True
 
+        # Ambil trade baru sejak last_tid
         new_trades = [t for t in sorted_trades if get_tid(t) > last_tid]
         if not new_trades:
             return 0, False
 
+        # Hitung delta dari trade baru
         delta = 0
         for t in new_trades:
             size_usd = float(t['px']) * float(t['sz'])
@@ -1217,16 +1218,19 @@ def get_cvd_delta(coin):
             else:
                 delta -= size_usd
 
+        # Update last_tid
         newest_tid = get_tid(new_trades[-1])
         with state_lock:
             _cvd_last_tid[coin] = newest_tid
             _cvd_accum[coin] = _cvd_accum.get(coin, 0) + delta
-            accum = _cvd_accum[coin]
 
-        return accum / 1e6, False
+        # ✅ Return delta (bukan akumulasi)
+        return delta / 1e6, False
+
     except Exception as e:
         logger.debug(f"[CVD_DELTA] {coin}: {e}")
         return 0, False
+
 
 
 def check_cvd_divergence():
