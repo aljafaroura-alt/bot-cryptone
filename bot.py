@@ -300,7 +300,7 @@ def get_sesi() -> str:
     elif 8 <= jam < 15:
         return "🇯🇵 ASIA SESSION"
     else:
-        return "😴 MARKET SEPI"
+        return "❄️ MARKET SEPI"
 
 
 def fmt_price(p: float) -> str:
@@ -611,7 +611,7 @@ def calculate_predator_score(coin):
             kill_emoji = "💀"
         elif total_bearish > total_bullish:
             direction = "BEARISH"
-            direction_emoji = "🐻"
+            direction_emoji = "🐻‍❄️"
             kill_emoji = "💀"
         else:
             direction = "SIDEWAYS"
@@ -651,13 +651,13 @@ def calculate_predator_score(coin):
         # Rain level
         if rain_score >= 60:
             rain_level = "HEAVY CLOUDS"
-            rain_emoji = "🌧️🌧️"
+            rain_emoji = "⛈️"
         elif rain_score >= 35:
             rain_level = "LIGHT CLOUDS"
-            rain_emoji = "🌧️"
+            rain_emoji = "🌩️"
         else:
             rain_level = "CLEAR"
-            rain_emoji = "☀️"
+            rain_emoji = "⛅"
         
         # Target price
         if direction == "BULLISH":
@@ -751,7 +751,7 @@ def ultimate_predator_scan():
             else:
                 target_display = "🎯 Range trade"
             
-            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
+            teks = f"""🐾 ULTIMATE PREDATOR • {pred['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
 {pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
@@ -761,7 +761,7 @@ def ultimate_predator_scan():
 ⏱️ ETA: {pred['eta_minutes']} minutes
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📡 METRICS:
+🪶 METRICS:
 OB: {pred['ob_delta']:+.0f}% | CVD: {pred['cvd_change']:+.2f}M
 Vol: {pred['vol_spike']:.1f}x | OI: {pred['oi_change']:+.0f}%
 Funding: {pred['funding']:+.4f}% | Momentum: {pred['momentum']:+.2f}%/m
@@ -1341,7 +1341,7 @@ def check_divergence():
 {a['coin']}: Price +{a['price_change']:.0f}% but OI {a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL DOWN!"""
             else:
-                teks = f"""💀 BULLISH DIVERGENCE
+                teks = f"""🔥 BULLISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price {a['price_change']:.0f}% but OI +{a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL UP!"""
@@ -1845,7 +1845,7 @@ def get_session_analysis():
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🌏",
+            "emoji": "🇯🇵",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -2523,7 +2523,7 @@ def run_confluence_scanner():
                         "TRENDING_UP": "🚀",
                         "TRENDING_DOWN": "📉",
                         "VOLATILE": "⚡",
-                        "RANGING": "😴"
+                        "RANGING": "❄️"
                     }.get(regime_conf, "❓")
 
                     if volume < CONFLUENCE_CONFIG["min_volume_24h"]:
@@ -3140,7 +3140,7 @@ def casual_session_report():
 
         if 8 <= jam < 15:
             session = "ASIA"
-            session_emoji = "🌏"
+            session_emoji = "🇯🇵"
         elif 15 <= jam < 20:
             session = "LONDON"
             session_emoji = "🇬🇧"
@@ -3149,7 +3149,7 @@ def casual_session_report():
             session_emoji = "🇺🇸"
         else:
             session = "ASIA"
-            session_emoji = "🌏"
+            session_emoji = "❄️"
 
         opening = random.choice(OPENINGS_BY_SESSION[session])
         situation = random.choice(SITUATIONS[session])
@@ -3308,7 +3308,7 @@ def evaluate_predictions():
 
         teks = f"📑 Evaluasi Prediksi\n"
         teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
-        teks += f"☄️ Waktu prediksi: {pred_time}\n"
+        teks += f"🧐 Waktu prediksi: {pred_time}\n"
         teks += f"Gw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}\n\n"
         teks += "📈 Kenyataan:\n"
         teks += f"Harga sekarang: ${current_price:,.0f}\n"
@@ -3357,7 +3357,7 @@ def prediction_stats(message):
     correct = stats["correct"]
     accuracy = (correct / total * 100) if total > 0 else 0
 
-    teks = f"⌨️ STATISTIK PREDIKSI\n"
+    teks = f"🦾 STATISTIK PREDIKSI\n"
     teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
     teks += f"Total prediksi: {total} kali\n"
     teks += f"Bener arahnya: {correct} kali ({accuracy:.0f}%)\n\n"
@@ -9091,7 +9091,7 @@ if __name__ == "__main__":
     start_squeeze_alert()
     start_smc_alert()
 
-    logger.info("🦄🎀 HL Terminal Bot v4.0 FINAL - ONLINE")
+    logger.info("♈♉♊♋♌♍♎♏♐⛎♑♒♓")
     
     # Main polling loop
     while True:
