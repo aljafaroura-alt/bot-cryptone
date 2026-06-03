@@ -141,7 +141,7 @@ _wallet_last_alert = {}     # {address_coin: timestamp} cooldown 5 menit
 WALLET_TRACKER_FILE = "wallet_tracker_state.json"
 _wallet_discovery_last = 0  # Timestamp last auto-discovery
 WALLET_DISCOVERY_INTERVAL = 3600  # Re-discover tiap 1 jam
-WALLET_MAX_TRACK = 15     # Max wallet yang ditrack sekaligus
+WALLET_MAX_TRACK = 10     # Max wallet yang ditrack sekaligus
 
 
 # ========== COPYTRADE 3 MODE ==========
@@ -1790,16 +1790,16 @@ def get_market_mood_data():
             mood, emoji = "EXTREME GREED", "😈"
             signal = "💀 LIQUIDATION INCOMING! Ambil profit"
         elif avg_funding > 0.02:
-            mood, emoji = "GREEDY", "😊"
+            mood, emoji = "GREEDY", "🤑"
             signal = "⚠️ WASPADA LONG SQUEEZE!"
         elif avg_funding < -0.08:
-            mood, emoji = "EXTREME FEAR", "😱"
+            mood, emoji = "EXTREME FEAR", "🥵"
             signal = "🚀 BOTTOM SIGNAL! Siap2 beli"
         elif avg_funding < -0.02:
-            mood, emoji = "FEAR", "😨"
+            mood, emoji = "FEAR", "😰"
             signal = "🔥 SIAP2 SHORT SQUEEZE!"
         else:
-            mood, emoji = "NEUTRAL", "😎"
+            mood, emoji = "NEUTRAL", "😯"
             signal = "Santai trading, ikutin plan"
 
         return {
@@ -3683,10 +3683,10 @@ def check_entry_alert():
                 logger.info(f"[ENTRY_ALERT] {coin} in_zone={in_zone_count}/3 TF (score={deriv_score})")
 
                 # Filter zona:
-                # - Score <70 wajib di zona minimal 1 TF (cegah FOMO)
+                # - Score <65 wajib di zona minimal 1 TF (cegah FOMO)
                 # - Score >=70 boleh tanpa zona tapi harus ada minimal 1 TF non-NEUTRAL
                 # - Score >=85 bebas — sinyal kuat, biarkan masuk
-                if deriv_score < 70 and in_zone_count == 0:
+                if deriv_score < 65 and in_zone_count == 0:
                     stat["zone_fail"] += 1
                     logger.info(f"[ENTRY_ALERT] {coin} skip: score={deriv_score} borderline + 0 TF di zona OB/FVG")
                     continue
@@ -4143,7 +4143,7 @@ GM/GN 😼 {user}
 /gainers | /losers | /nuke
 /heatmap | /narrative | /topoi
 /summary | /btcdom | /volatility
-/oihistory 
+/oihistory | /atr
 
 📰 NEWS
 /news — Berita crypto terbaru
@@ -4266,7 +4266,7 @@ def session_cmd(message):
             now_label = "🇯🇵 ASIA AKTIF"
             rekomendasi = "Range trading — Avoid breakout"
         else:
-            now_label = "💤 DEAD ZONE"
+            now_label = "☠️ DEAD ZONE"
             rekomendasi = "SKIP — Volume rendah"
 
         txt = f"""
@@ -4332,7 +4332,7 @@ def screener(message):
         bot.send_message(message.chat.id, cached_results)
         return
     
-    msg = bot.send_message(message.chat.id, "☎️ MEMBANGUN MARKET DASHBOARD PRO (fast mode)...")
+    msg = bot.send_message(message.chat.id, "🟥🟧🟨 MEMBANGUN MARKET DASHBOARD PRO...")
     
     try:
         start_total = time.time()
@@ -8950,7 +8950,7 @@ def run_wallet_tracker():
     """Loop background: auto-discover tiap 1 jam, scan posisi tiap 60 detik"""
     global _wallet_discovery_last
 
-    logger.info("✅ WALLET TRACKER STARTED")
+    logger.info("🤫 WALLET TRACKER STARTED")
 
     # Discovery pertama saat startup
     try:
@@ -8993,7 +8993,7 @@ def run_wallet_tracker():
 def start_wallet_tracker():
     wt_thread = threading.Thread(target=run_wallet_tracker, daemon=True)
     wt_thread.start()
-    logger.info("✅ WALLET TRACKER THREAD LAUNCHED")
+    logger.info("😯 WALLET TRACKER THREAD LAUNCHED")
 
 
 
@@ -9025,7 +9025,7 @@ def run_warroom_alert():
 def start_warroom_alert():
     t = threading.Thread(target=run_warroom_alert, daemon=True)
     t.start()
-    logger.info("✅ WARROOM ALERT THREAD LAUNCHED")
+    logger.info("😬 WARROOM ALERT THREAD LAUNCHED")
 
 
 def run_entry_alert():
@@ -9058,13 +9058,13 @@ def run_entry_alert():
 def start_entry_alert():
     t = threading.Thread(target=run_entry_alert, daemon=True)
     t.start()
-    logger.info("✅ ENTRY ALERT THREAD LAUNCHED")
+    logger.info("🤑 ENTRY ALERT THREAD LAUNCHED")
     
 def start_confluence_scanner():
     try:
         conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
         conf_thread.start()
-        logger.info("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
+        logger.info("🥲 SMART MONEY CONFLUENCE SCANNER STARTED")
     except Exception as e:
         logger.error(f"Failed to start confluence scanner: {e}")
 # ============================================================
@@ -9091,7 +9091,7 @@ if __name__ == "__main__":
     start_squeeze_alert()
     start_smc_alert()
 
-    logger.info("♈♉♊♋♌♍♎♏♐⛎♑♒♓")
+    logger.info("🤖•♈♉♊♋♌♍♎♏♐⛎♑♒♓")
     
     # Main polling loop
     while True:
