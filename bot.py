@@ -132,6 +132,7 @@ _ask_wall_time = {}
 # ========== SMC AUTO ALERT STATE ==========
 _smc_alert_running = False
 _smc_alert_last = {}  # {coin: timestamp}
+_smc_volatile_mode = False  # Flag untuk SMC alert mode volatile
 
 # ========== WALLET TRACKER STATE ==========
 WATCHED_WALLETS = {}        # {address: label} — auto-populated + manual
@@ -3588,7 +3589,7 @@ def check_warroom_simple():
         logger.error(f"[WARROOM] check_warroom_simple error: {e}")
 
 def check_entry_alert():
-    """Scan untuk entry signal: score ≥60 + TF align, kirim alert simpel"""
+    """Scan untuk entry signal: score ≥60, longgar, banyak sinyal"""
     global _entry_alert_last
     
     try:
@@ -3609,9 +3610,9 @@ def check_entry_alert():
         
         now_time = time.time()
         alerts = []
-        stat = {"gap_fail": 0, "score_fail": 0, "tf_neutral": 0, "zone_fail": 0, "dir_mismatch": 0, "cooldown": 0, "passed": 0}
+        stat = {"gap_fail": 0, "score_fail": 0, "tf_neutral": 0, "cooldown": 0, "passed": 0}
         
-        logger.info(f"[ENTRY_ALERT] Scanning {len(top_coins)} coins...")
+        logger.info(f"[ENTRY_ALERT] Scanning {len(top_coins)} coins (AGRESSIVE MODE)...")
         
         for coin in top_coins:
             # Cooldown 30 menit per coin
@@ -3641,7 +3642,7 @@ def check_entry_alert():
                 
                 long_score, short_score = calculate_scores(ob_delta, funding, bid_wall, ask_wall, short_liq_size, long_liq_size)
                 
-                # FIX: gap threshold 15→10→7 (lebih realistis di kondisi normal)
+                # gap threshold 7
                 gap = abs(long_score - short_score)
                 if long_score > short_score and gap >= 7:
                     deriv_bias, deriv_score = "LONG", long_score
@@ -3649,16 +3650,14 @@ def check_entry_alert():
                     deriv_bias, deriv_score = "SHORT", short_score
                 else:
                     stat["gap_fail"] += 1
-                    logger.debug(f"[ENTRY_ALERT] {coin} skip: gap={gap} (long={long_score}, short={short_score})")
                     continue
                 
-                # FIX: threshold 70→60
+                # MAIN CHANGE: score ≥60 langsung lanjut (no extra filter)
                 if deriv_score < 60:
                     stat["score_fail"] += 1
-                    logger.debug(f"[ENTRY_ALERT] {coin} skip: score={deriv_score} < 60 ({deriv_bias})")
                     continue
                 
-                logger.info(f"[ENTRY_ALERT] {coin} score={deriv_score} ({deriv_bias}, gap={gap}) — fetching TF...")
+                logger.info(f"[ENTRY_ALERT] {coin} score={deriv_score} ({deriv_bias}) — fetching TF...")
                 
                 r_h1 = analyze_tf(coin, "1h")
                 time.sleep(0.3)
@@ -3667,60 +3666,36 @@ def check_entry_alert():
                 r_m5 = analyze_tf(coin, "5m")
                 time.sleep(0.3)
                 
-                # FIX: Hanya hitung TF non-None dan non-NEUTRAL
+                # Hitung TF biases (non-NEUTRAL)
                 tf_biases = []
                 for label, r in [("1h", r_h1), ("15m", r_m15), ("5m", r_m5)]:
-                    if r is None:
-                        logger.debug(f"[ENTRY_ALERT] {coin} {label}: None")
-                    elif r["bias"] == "NEUTRAL":
-                        logger.debug(f"[ENTRY_ALERT] {coin} {label}: NEUTRAL ({r['structure']}), skip")
-                    else:
+                    if r and r["bias"] != "NEUTRAL":
                         tf_biases.append(r["bias"])
-                        logger.debug(f"[ENTRY_ALERT] {coin} {label}: {r['bias']}")
                 
                 if not tf_biases:
                     stat["tf_neutral"] += 1
-                    logger.info(f"[ENTRY_ALERT] {coin} skip: semua TF NEUTRAL/None")
                     continue
-
-                # FIX: Cek konteks harga — apakah harga sedang di zona SMC (OB atau FVG)?
-                in_zone_count = sum(
-                    1 for r in [r_h1, r_m15, r_m5]
-                    if r and (r.get("in_ob") or r.get("in_fvg"))
-                )
-                logger.info(f"[ENTRY_ALERT] {coin} in_zone={in_zone_count}/3 TF (score={deriv_score})")
-
-                # Filter zona:
-                # - Score <70 wajib di zona minimal 1 TF (cegah FOMO)
-                # - Score >=70 boleh tanpa zona tapi harus ada minimal 1 TF non-NEUTRAL
-                # - Score >=85 bebas — sinyal kuat, biarkan masuk
-                if deriv_score < 70 and in_zone_count == 0:
-                    stat["zone_fail"] += 1
-                    logger.info(f"[ENTRY_ALERT] {coin} skip: score={deriv_score} borderline + 0 TF di zona OB/FVG")
-                    continue
-
+                
                 bullish = tf_biases.count("BULLISH")
                 bearish = tf_biases.count("BEARISH")
                 aligned = max(bullish, bearish)
                 dominant = "BULLISH" if bullish >= bearish else "BEARISH"
-
-                logger.info(f"[ENTRY_ALERT] {coin} TF: bullish={bullish}, bearish={bearish}, dominant={dominant}, deriv={deriv_bias}")
-
-                # FIX: need_align lebih longgar — cukup 1 TF align kalau total TF sedikit
-                # Sebelumnya max(1, len-1) → kalau 2 TF, butuh 2 align (terlalu ketat)
-                # Sekarang: cukup 1 TF align untuk fire, tapi dominan harus sama arah
+                
+                # FIX: need_align tetap 1 (agresif), HAPUS zone filter
                 need_align = 1
+                
                 if aligned >= need_align:
                     if (dominant == "BULLISH" and deriv_bias == "LONG") or (dominant == "BEARISH" and deriv_bias == "SHORT"):
                         sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, deriv_bias)
                         
-                        # Kumpulkan info zona per TF untuk ditampilkan di alert
+                        # Zone info cuma buat display, BUKAN filter
                         zone_tags = []
                         for label, r in [("1h", r_h1), ("15m", r_m15), ("5m", r_m5)]:
                             if r and r.get("in_ob"):
                                 zone_tags.append(f"{label}:OB")
                             elif r and r.get("in_fvg"):
                                 zone_tags.append(f"{label}:FVG")
+                        in_zone_count = len(zone_tags)
 
                         stat["passed"] += 1
                         alerts.append({
@@ -3743,39 +3718,35 @@ def check_entry_alert():
                         })
                     else:
                         stat["dir_mismatch"] += 1
-                        logger.info(f"[ENTRY_ALERT] {coin} skip: dominant={dominant} vs deriv={deriv_bias} bertentangan")
                 else:
-                    logger.info(f"[ENTRY_ALERT] {coin} skip: aligned={aligned}/{len(tf_biases)} kurang dari {need_align}")
+                    stat["dir_mismatch"] += 1
                         
             except Exception as e:
                 logger.warning(f"[ENTRY_ALERT] Error {coin}: {e}")
                 continue
         
         elapsed = time.time() - start_time
-        logger.info(f"[ENTRY_ALERT] Scan done {elapsed:.1f}s — {len(alerts)} alerts | cooldown={stat['cooldown']} gap_fail={stat['gap_fail']} score_fail={stat['score_fail']} tf_neutral={stat['tf_neutral']} zone_fail={stat['zone_fail']} dir_mismatch={stat['dir_mismatch']} passed={stat['passed']}")
+        logger.info(f"[ENTRY_ALERT] Scan done {elapsed:.1f}s — {len(alerts)} alerts | cooldown={stat['cooldown']} gap_fail={stat['gap_fail']} score_fail={stat['score_fail']} tf_neutral={stat['tf_neutral']} passed={stat['passed']}")
         
-        # Kirim alert simpel
+        # Kirim alert
         if alerts:
             alerts.sort(key=lambda x: x["score"], reverse=True)
-            for a in alerts[:3]:
+            for a in alerts[:5]:  # tambah jadi 5 alert (karena lebih banyak sinyal)
                 arrow = "🟢" if a["direction"] == "LONG" else "🔴"
-
-                # Zona context — bedain sinyal valid vs FOMO
+                
+                # Zone context cuma buat info, BUKAN filter
                 in_zone = a.get("in_zone_count", 0)
                 zone_tags = a.get("zone_tags", [])
                 if in_zone >= 2:
-                    zone_line = f"📐 Zona: {'  '.join(zone_tags)} ✅ KONFIRMASI"
-                    quality_tag = "✅ HIGH QUALITY"
+                    zone_line = f"📍 Zona: {'  '.join(zone_tags)} ✅"
                 elif in_zone == 1:
-                    zone_line = f"📐 Zona: {'  '.join(zone_tags)} ⚠️ PARTIAL"
-                    quality_tag = "⚠️ PARTIAL — tunggu retest"
+                    zone_line = f"📍 Zona: {'  '.join(zone_tags)} ⚠️"
                 else:
-                    zone_line = f"📐 Zona: ❌ Tidak di OB/FVG — harga bebas"
-                    quality_tag = "⚡ MOMENTUM — risiko FOMO, score tinggi"
+                    zone_line = f"📍 Zona: Tidak di OB/FVG"
 
                 teks = f"""{arrow} *ENTRY ALERT* • {a['coin']}{_cross_tag(a['coin'], a['direction'])}
 ━━━━━━━━━━━━━━━━━━━━━━
-📡 {a['direction']} | Score {a['score']} | {quality_tag}
+📡 {a['direction']} | Score {a['score']}
 💰 Harga: {fmt_price(a['price'])} | Δ {a['change']:+.1f}%
 📊 {a['alignment']}/{a.get('tf_total', 3)} TF align
 {zone_line}
@@ -3788,18 +3759,18 @@ def check_entry_alert():
 💡 /entry {a['coin']} | /warroom {a['coin']}"""
                 
                 try:
-                    bot.send_message(USER_ID, teks, parse_mode='Markdown')  # DM only — belum production
+                    bot.send_message(USER_ID, teks, parse_mode='Markdown')
                     _cross_record(a['coin'], a['direction'], "entry")
                     _entry_alert_last[a['coin']] = now_time
 
-                    # Track untuk learning engine — entry alert punya SL/TP lengkap
+                    # Track untuk learning engine
                     try:
                         ind_data = {
                             "funding_strong": abs(a.get("funding", 0)) > 0.02,
                             "ob_strong": abs(a.get("ob_delta", 0)) > 20,
                             "wall_strong": a.get("score", 0) >= 80,
                             "cvd_strong": False,
-                            "momentum_strong": a.get("alignment", 0) == 3,  # full align = momentum kuat
+                            "momentum_strong": a.get("alignment", 0) == 3,
                         }
                         track_signal_entry(a['coin'], a['direction'], a['price'], ind_data,
                                            sl_price=a['sl'], tp_price=a['tp'], source="entry_alert")
@@ -3812,7 +3783,6 @@ def check_entry_alert():
                     
     except Exception as e:
         logger.error(f"[ENTRY_ALERT] Error: {e}")
-
 
 # ============================================================
 # SQUEEZE ALERT (AUTO SCAN)
@@ -5189,41 +5159,83 @@ def detect_market_structure(candles):
 def find_ob_zone(candles, bias, max_distance_pct=2.0):
     """
     Cari Order Block terbaru dalam jarak max_distance_pct dari harga sekarang.
-    bias = "BULLISH" atau "BEARISH"
+    bias = "BULLISH" untuk cari OB bullish (untuk LONG entry)
+    bias = "BEARISH" untuk cari OB bearish (untuk SHORT entry)
+    
+    FIX: Hapus body_ratio requirement yang terlalu ketat.
+    Sekarang hanya perlu:
+    1. Candle OB berlawanan arah dengan bias (bearish untuk bullish OB)
+    2. Candle berikutnya impulsif (break structure, candle close lebih tinggi/lower)
+    3. Jarak zona ke harga sekarang dalam batas wajar
     """
     if not candles or len(candles) < 5:
         return None
+    
     current_price = float(candles[-1]['c'])
+    
+    # Scan dari candle terbaru ke lama (biar dapet OB paling recent)
     for i in range(len(candles) - 2, 2, -1):
         c = candles[i]
         next_c = candles[i + 1] if i + 1 < len(candles) else None
         if not next_c:
             continue
-        c_bull = float(c['c']) > float(c['o'])
-        c_bear = float(c['c']) < float(c['o'])
-        next_bull = float(next_c['c']) > float(next_c['o'])
-        next_bear = float(next_c['c']) < float(next_c['o'])
         
+        c_open = float(c['o'])
+        c_close = float(c['c'])
+        c_high = float(c['h'])
+        c_low = float(c['l'])
+        c_bull = c_close > c_open
+        c_bear = c_close < c_open
+        
+        next_open = float(next_c['o'])
+        next_close = float(next_c['c'])
+        next_bull = next_close > next_open
+        next_bear = next_close < next_open
+        
+        # === BULLISH OB (untuk LONG) ===
+        # OB bearish candle, lalu next candle bullish break structure
         if bias == "BULLISH" and c_bear and next_bull:
-            body_ratio = abs(float(next_c['c']) - float(next_c['o'])) / max(abs(float(c['c']) - float(c['o'])), 0.0001)
-            if body_ratio > 1.2:
-                # FIX: OB bullish = seluruh candle bearish sebelum impulse naik
-                # high = c['h'] (bukan c['o']), low = c['l']
-                ob_high = float(c['h'])
-                ob_low = float(c['l'])
-                # Cek jarak ke harga sekarang (pakai ob_low karena harga harusnya di bawah OB atau menyentuh)
-                dist_pct = abs(ob_low - current_price) / current_price * 100 if current_price > 0 else 99
-                if dist_pct <= max_distance_pct:
-                    return {"high": ob_high, "low": ob_low, "type": "bullish_ob", "idx": i}
+            # FIX: Hapus body_ratio check!
+            # OB zone = seluruh range candle bearish (high ke low)
+            ob_high = c_high
+            ob_low = c_low
+            
+            # Cek jarak ke harga sekarang (pakai mid zone)
+            zone_mid = (ob_high + ob_low) / 2
+            dist_pct = abs(zone_mid - current_price) / current_price * 100 if current_price > 0 else 99
+            
+            if dist_pct <= max_distance_pct:
+                return {
+                    "high": ob_high, 
+                    "low": ob_low, 
+                    "type": "bullish_ob", 
+                    "idx": i,
+                    "strength": "strong" if abs(c_close - c_open) / c_open * 100 > 1.0 else "normal"
+                }
+        
+        # === BEARISH OB (untuk SHORT) ===
+        # OB bullish candle, lalu next candle bearish break structure
         elif bias == "BEARISH" and c_bull and next_bear:
-            body_ratio = abs(float(next_c['c']) - float(next_c['o'])) / max(abs(float(c['c']) - float(c['o'])), 0.0001)
-            if body_ratio > 1.2:
-                ob_high = float(c['h'])
-                ob_low = float(c['o'])
-                dist_pct = abs(ob_high - current_price) / current_price * 100 if current_price > 0 else 99
-                if dist_pct <= max_distance_pct:
-                    return {"high": ob_high, "low": ob_low, "type": "bearish_ob", "idx": i}
+            # FIX: Hapus body_ratio check!
+            # OB zone = dari low ke high candle bullish
+            ob_high = c_high
+            ob_low = c_open  # low dari candle bullish (bukan high)
+            
+            # Cek jarak ke harga sekarang (pakai mid zone)
+            zone_mid = (ob_high + ob_low) / 2
+            dist_pct = abs(zone_mid - current_price) / current_price * 100 if current_price > 0 else 99
+            
+            if dist_pct <= max_distance_pct:
+                return {
+                    "high": ob_high, 
+                    "low": ob_low, 
+                    "type": "bearish_ob", 
+                    "idx": i,
+                    "strength": "strong" if abs(c_close - c_open) / c_open * 100 > 1.0 else "normal"
+                }
+    
     return None
+
 
 def find_fvg_smc(candles, max_distance_pct=2.0, fvg_type=None):
     """Cari FVG terbaru dalam jarak max_distance_pct dari harga sekarang.
@@ -5475,14 +5487,23 @@ def smc_command(message):
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 # ========== SMC AUTO ALERT ==========
-
 def check_smc_alert():
-    global _smc_alert_last
+    global _smc_alert_last, _smc_volatile_mode
+    
     try:
         start_time = time.time()
         data = get_cached_meta()
         assets = data[0]["universe"]
         ctxs = data[1]
+
+        # Threshold dinamis berdasarkan regime
+        if _smc_volatile_mode:
+            MIN_CONFIDENCE = 70
+            MIN_RR = 2.0
+            logger.debug("[SMC_ALERT] Volatile mode ACTIVE — min confidence 70%, min RR 2.0")
+        else:
+            MIN_CONFIDENCE = 60
+            MIN_RR = 1.8
 
         coins = []
         for asset, ctx in zip(assets, ctxs):
@@ -5495,24 +5516,37 @@ def check_smc_alert():
         now_time = time.time()
         alerts = []
 
-        logger.info(f"[SMC_ALERT] Scanning {len(top_coins)} coins...")
+        logger.info(f"[SMC_ALERT] Scanning {len(top_coins)} coins... (volatile_mode={_smc_volatile_mode})")
 
         for coin in top_coins:
-            # FIX: Cooldown per coin+direction (bukan hanya coin)
-            # Kalau LONG sudah alert, SHORT yang valid bisa tetap masuk dalam 1 jam
+            # Cooldown per coin+direction (1 jam)
             for direction in ["LONG", "SHORT"]:
                 cooldown_key = f"{coin}_{direction}"
                 with state_lock:
                     last_alert_time = _smc_alert_last.get(cooldown_key, 0)
                 if now_time - last_alert_time < 3600:
                     continue
+                    
                 try:
                     entry_low, entry_high, sl_price, tp_price, confidence, rr, zone_type, structure_bias = get_smc_levels_advanced(coin, direction)
-                    if not entry_low or confidence < 60 or rr < 1.8:
+                    
+                    # Filter dasar
+                    if not entry_low or confidence < MIN_CONFIDENCE or rr < MIN_RR:
                         continue
 
-                    # FIX: Tambah filter HTF (4H) — SMC tanpa 4H konfirmasi sering fakeout
-                    # Ini yang bikin SMC terlalu banyak fire tanpa quality check
+                    # ===== FILTER 1: HARGA LEWAT ZONA =====
+                    ctx_temp, mark = get_ctx(coin)
+                    if not ctx_temp or mark == 0:
+                        continue
+                    
+                    if direction == "LONG" and mark > entry_high * 1.005:
+                        logger.debug(f"[SMC_ALERT] {coin} LONG skip — harga {mark:.4f} sudah di atas zona {entry_high:.4f} (+0.5%)")
+                        continue
+                    if direction == "SHORT" and mark < entry_low * 0.995:
+                        logger.debug(f"[SMC_ALERT] {coin} SHORT skip — harga {mark:.4f} sudah di bawah zona {entry_low:.4f} (-0.5%)")
+                        continue
+
+                    # ===== FILTER 2: 4H STRUKTUR (HTF) =====
                     try:
                         r_4h = analyze_tf(coin, "4h")
                         if r_4h and r_4h["bias"] != "NEUTRAL":
@@ -5527,44 +5561,34 @@ def check_smc_alert():
                                (direction == "SHORT" and r_4h["bias"] == "BEARISH"):
                                 confidence = min(92, confidence + 8)
                     except Exception:
-                        pass  # kalau 4H gagal fetch, lanjut saja
+                        pass
 
-                    # FIX: Filter direction vs structure bias — jangan kirim alert konflik
-                    # LONG hanya valid kalau bias BULLISH atau NEUTRAL
-                    # SHORT hanya valid kalau bias BEARISH atau NEUTRAL
+                    # ===== FILTER 3: 1H STRUKTUR =====
                     if direction == "LONG" and structure_bias == "BEARISH":
-                        logger.info(f"[SMC_ALERT] {coin} LONG skip — structure bias BEARISH (konflik)")
+                        logger.info(f"[SMC_ALERT] {coin} LONG skip — 1H bias BEARISH (konflik)")
                         continue
                     if direction == "SHORT" and structure_bias == "BULLISH":
-                        logger.info(f"[SMC_ALERT] {coin} SHORT skip — structure bias BULLISH (konflik)")
+                        logger.info(f"[SMC_ALERT] {coin} SHORT skip — 1H bias BULLISH (konflik)")
                         continue
 
-                    ctx, mark = get_ctx(coin)
-                    if not ctx or mark == 0:
-                        continue
-
-                    funding = get_funding_pct(ctx)
-                    change = get_change(ctx)
-                    volume = float(ctx.get("dayNtlVlm") or 0) / 1e6
+                    # ===== FILTER 4: DERIVATIVES GATE (FUNDING + OB DELTA CONTRA) =====
+                    funding = get_funding_pct(ctx_temp)
+                    change = get_change(ctx_temp)
+                    volume = float(ctx_temp.get("dayNtlVlm") or 0) / 1e6
                     in_zone = entry_low <= mark <= entry_high
-
-                    # ── SMC DERIVATIVES GATE ──────────────────────────────
-                    # SMC sudah zone-first (struktur + OB/FVG), tapi funding
-                    # dan OB delta bisa jadi filter terakhir untuk menghindari
-                    # entry ke zona yang sedang di-exit oleh smart money.
-                    # Rule ringan: jangan kirim jika funding contra kuat (>0.05
-                    # untuk LONG atau <-0.05 untuk SHORT) DAN ob_delta juga contra.
                     ob_delta_smc = get_ob_delta(coin)
-                    funding_contra_long  = funding > 0.05 and ob_delta_smc < -10
+                    
+                    funding_contra_long = funding > 0.05 and ob_delta_smc < -10
                     funding_contra_short = funding < -0.05 and ob_delta_smc > 10
+                    
                     if direction == "LONG" and funding_contra_long:
                         logger.info(f"[SMC_ALERT] {coin} LONG skip — funding {funding:+.4f}% & OB delta {ob_delta_smc:+.0f}% contra")
                         continue
                     if direction == "SHORT" and funding_contra_short:
                         logger.info(f"[SMC_ALERT] {coin} SHORT skip — funding {funding:+.4f}% & OB delta {ob_delta_smc:+.0f}% contra")
                         continue
-                    # ─────────────────────────────────────────────────────
 
+                    # ===== LULUS SEMUA FILTER → TAMBAHKAN KE ALERTS =====
                     alerts.append({
                         "coin": coin, "direction": direction,
                         "entry_low": entry_low, "entry_high": entry_high,
@@ -5576,7 +5600,8 @@ def check_smc_alert():
                         "structure_bias": structure_bias,
                         "ob_delta": ob_delta_smc,
                     })
-                    logger.info(f"[SMC_ALERT] {coin} {direction} | conf={confidence}% | RR=1:{rr:.1f}")
+                    logger.info(f"[SMC_ALERT] ✅ {coin} {direction} | conf={confidence}% | RR=1:{rr:.1f} | zone={zone_type}")
+                    
                 except Exception as e:
                     logger.warning(f"[SMC_ALERT] {coin} {direction} error: {e}")
                     continue
@@ -5584,6 +5609,7 @@ def check_smc_alert():
         elapsed = time.time() - start_time
         logger.info(f"[SMC_ALERT] Scan done {elapsed:.1f}s — {len(alerts)} alerts")
 
+        # ===== KIRIM ALERT =====
         if alerts:
             alerts.sort(key=lambda x: x["confidence"] * x["rr"], reverse=True)
             for a in alerts[:3]:
@@ -5638,24 +5664,31 @@ def check_smc_alert():
 
     except Exception as e:
         logger.error(f"[SMC_ALERT] Error: {e}")
+        
 
 def run_smc_alert():
-    global _smc_alert_running
+    global _smc_alert_running, _smc_volatile_mode
     _smc_alert_running = True
     logger.info("[SMC_ALERT] Started (tiap 20 menit)")
+    
     while True:
         try:
             if not _smc_alert_running:
                 time.sleep(60)
                 continue
-            # FIX: Skip juga saat VOLATILE — zona SMC sering invalid kalau harga liar
+            
             regime = get_market_regime()
+            
+            # Set mode volatile berdasarkan regime
             if regime == "VOLATILE":
-                logger.debug("[SMC_ALERT] Skip — regime VOLATILE (zona sering fakeout)")
-                time.sleep(1200)
-                continue
+                _smc_volatile_mode = True
+                logger.debug("[SMC_ALERT] Volatile mode ACTIVE — filter lebih ketat")
+            else:
+                _smc_volatile_mode = False
+            
             check_smc_alert()
             time.sleep(1200)
+            
         except Exception as e:
             logger.error(f"[SMC_ALERT] run error: {e}")
             time.sleep(60)
