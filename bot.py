@@ -209,7 +209,7 @@ ENTRY_MIN_SCORE = 65  # Naik dari 60 — lebih selective
 ENTRY_MIN_RR = 1.8      # Naik dari 1.5
 ENTRY_NEED_ALIGN = 2
 
-SQUEEZE_MIN_SCORE = 62  # Naik dari 55 — lebih selective
+SQUEEZE_MIN_SCORE = 60  # Naik dari 55 — lebih selective
 SQUEEZE_MIN_RR = 1.5    # Naik dari 1.2
 SQUEEZE_MULT = 0.6      # Target pct multiplier untuk scalp squeeze
 
@@ -381,7 +381,7 @@ def get_sesi() -> str:
     elif 8 <= jam < 15:
         return "🇯🇵 ASIA SESSION"
     else:
-        return "😴 MARKET SEPI"
+        return "❄️ MARKET SEPI"
 
 
 def fmt_price(p: float) -> str:
@@ -444,7 +444,7 @@ def get_session_analysis() -> dict:
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🌏",
+            "emoji": "🇯🇵",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -689,10 +689,10 @@ def calculate_predator_score(coin):
         if total_bullish > total_bearish:
             direction = "BULLISH"
             direction_emoji = "🐋"
-            kill_emoji = "💀"
+            kill_emoji = "🔥"
         elif total_bearish > total_bullish:
             direction = "BEARISH"
-            direction_emoji = "🐻"
+            direction_emoji = "🐻‍❄️"
             kill_emoji = "💀"
         else:
             direction = "SIDEWAYS"
@@ -732,13 +732,13 @@ def calculate_predator_score(coin):
         # Rain level
         if rain_score >= 60:
             rain_level = "HEAVY CLOUDS"
-            rain_emoji = "🌧️🌧️"
+            rain_emoji = "⛈️"
         elif rain_score >= 35:
             rain_level = "LIGHT CLOUDS"
-            rain_emoji = "🌧️"
+            rain_emoji = "🌩️"
         else:
             rain_level = "CLEAR"
-            rain_emoji = "☀️"
+            rain_emoji = "🌤️"
         
         # Target price
         if direction == "BULLISH":
@@ -832,11 +832,11 @@ def ultimate_predator_scan():
             else:
                 target_display = "🎯 Range trade"
             
-            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
+            teks = f"""👹 ULTIMATE PREDATOR • {pred['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
 {pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
-{pred['kill_emoji']} KILL SHOT: {'✅ CONFIRMED' if pred['kill_shot'] else '⏳ WAITING'}
+{pred['kill_emoji']} KILL SHOT: {'✅ CONFIRMED' if pred['kill_shot'] else '🕰️ WAITING'}
 
 {pred['direction_emoji']} {target_display}
 ⏱️ ETA: {pred['eta_minutes']} minutes
@@ -1208,9 +1208,9 @@ def get_smart_money_signal(change, ob_delta, funding):
         signals.append("🐋 WHALE SHORT")
 
     if ob_delta > 10 and change > 1:
-        signals.append("💎 SMART LONG")
+        signals.append("🦈 SMART LONG")
     elif ob_delta < -10 and change < -1:
-        signals.append("💎 SMART SHORT")
+        signals.append("🦈 SMART SHORT")
 
     if change > 0.8 and ob_delta > 5:
         signals.append("🟢 LONG")
@@ -1218,14 +1218,14 @@ def get_smart_money_signal(change, ob_delta, funding):
         signals.append("🔴 SHORT")
 
     if change > 2:
-        signals.append("⚡ MOMENTUM UP")
+        signals.append("⬆️ MOMENTUM UP")
     elif change < -2:
-        signals.append("⚡ MOMENTUM DOWN")
+        signals.append("⬇️ MOMENTUM DOWN")
 
     if funding > 0.05:
-        signals.append("💰 FUNDING HOT")
+        signals.append("🔥 FUNDING HOT")
     elif funding < -0.05:
-        signals.append("💰 FUNDING COLD")
+        signals.append("❄️ FUNDING COLD")
 
     if len(signals) == 0:
         signals.append("📊 MONITOR")
@@ -1429,12 +1429,12 @@ def check_divergence():
                 teks = f"""💀 BEARISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price +{a['price_change']:.0f}% but OI {a['oi_change']:.0f}%
-⚠️ POTENTIAL REVERSAL DOWN!"""
+🟥 POTENTIAL REVERSAL DOWN!"""
             else:
-                teks = f"""💀 BULLISH DIVERGENCE
+                teks = f"""👹 BULLISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price {a['price_change']:.0f}% but OI +{a['oi_change']:.0f}%
-⚠️ POTENTIAL REVERSAL UP!"""
+🟩 POTENTIAL REVERSAL UP!"""
 
             bot.send_message(USER_ID, teks)
             time.sleep(1)
@@ -1935,7 +1935,7 @@ def get_session_analysis():
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🌏",
+            "emoji": "🇯🇵",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -2139,7 +2139,7 @@ def run_liquidation_scanner():
 def start_liquidation_scanner():
     liq_thread = threading.Thread(target=run_liquidation_scanner, daemon=True)
     liq_thread.start()
-    logger.info("✅ LIQUIDATION SCANNER STARTED")
+    logger.info("🟥🟧🟨🟩 LIQUIDATION SCANNER STARTED")
 
 
 
@@ -2492,7 +2492,7 @@ def detect_liquidity_hunt(coin, direction="LONG"):
             hunt_depth_pct = (penetration / atr_m5) if atr_m5 > 0 else 0
             
             # Hunt confirmed = penetrasi >= 0.5 * ATR
-            if hunt_depth_pct >= 0.5:
+            if hunt_depth_pct >= 0.3:
                 is_hunting = True
                 hunt_type = "BULLISH_HUNT"
                 # Confidence naik seiring penetrasi (max 100)
@@ -2570,7 +2570,7 @@ def get_smc_levels_advanced(coin, direction="LONG"):
         # LIQUIDITY HUNT CHECK — SKIP KALAU DALAM HUNT PHASE
         # ============================================================
         hunt_info = detect_liquidity_hunt(coin, direction)
-        if hunt_info.get("is_hunting") and hunt_info.get("confidence", 0) >= 60:
+        if hunt_info.get("is_hunting") and hunt_info.get("confidence", 0) >= 40:
             logger.info(f"[SMC_ADV] {coin} SKIP: {hunt_info['hunt_type']} hunting (conf={hunt_info['confidence']}%) — tunggu reversal")
             return None, None, None, None, 0, 0, f"HUNT:{hunt_info['hunt_type']}", None
         
@@ -2827,7 +2827,7 @@ def run_confluence_scanner():
                         "TRENDING_UP": "🚀",
                         "TRENDING_DOWN": "📉",
                         "VOLATILE": "⚡",
-                        "RANGING": "😴"
+                        "RANGING": "❄️"
                     }.get(regime_conf, "❓")
 
                     if volume < CONFLUENCE_CONFIG["min_volume_24h"]:
@@ -4032,7 +4032,7 @@ def check_entry_alert():
                         if sd and sd["low"] <= mark <= sd["high"]:
                             tag = f"{tf_label}:{'Demand' if deriv_bias == 'LONG' else 'Supply'}"
                             if sd["strength"] == "strong":
-                                tag += "⭐"
+                                tag += "🏅"
                                 sd_boost = max(sd_boost, 12)
                             else:
                                 sd_boost = max(sd_boost, 6)
@@ -4262,7 +4262,7 @@ def process_short_squeeze(coin, mark, short_score, short_liq, big_bid, big_ask, 
     if at_zone_m15: score += 6;  zone_context.append("M15:OB/FVG")
     if at_sd_1h:
         score += 15 if sd_strength == "strong" else 8
-        zone_context.append(f"1H:Demand{'⭐' if sd_strength == 'strong' else ''}")
+        zone_context.append(f"1H:Demand{'🎖️' if sd_strength == 'strong' else ''}")
     if m5_bias  == "BEARISH": score += 5
     if m15_bias == "BEARISH": score += 3
 
@@ -4328,7 +4328,7 @@ def process_long_squeeze(coin, mark, long_score, long_liq, big_bid, big_ask, fun
     if at_zone_m15: score += 6;  zone_context.append("M15:OB/FVG")
     if at_sd_1h:
         score += 15 if sd_strength == "strong" else 8
-        zone_context.append(f"1H:Supply{'⭐' if sd_strength == 'strong' else ''}")
+        zone_context.append(f"1H:Supply{'🎖️' if sd_strength == 'strong' else ''}")
     if m5_bias  == "BULLISH": score += 5
     if m15_bias == "BULLISH": score += 3
 
@@ -4510,7 +4510,7 @@ def run_squeeze_alert():
 def start_squeeze_alert():
     t = threading.Thread(target=run_squeeze_alert, daemon=True)
     t.start()
-    logger.info("✅ SQUEEZE ALERT THREAD LAUNCHED")
+    logger.info("🟥🟧🟨🟩 SQUEEZE ALERT THREAD LAUNCHED")
 
 
 # ============================================================
@@ -9605,7 +9605,7 @@ def run_wallet_tracker():
     """Loop background: auto-discover tiap 1 jam, scan posisi tiap 60 detik"""
     global _wallet_discovery_last
 
-    logger.info("✅ WALLET TRACKER STARTED")
+    logger.info("🟩🟨🟧🟥 WALLET TRACKER STARTED")
 
     # Discovery pertama saat startup
     try:
@@ -9648,7 +9648,7 @@ def run_wallet_tracker():
 def start_wallet_tracker():
     wt_thread = threading.Thread(target=run_wallet_tracker, daemon=True)
     wt_thread.start()
-    logger.info("✅ WALLET TRACKER THREAD LAUNCHED")
+    logger.info("🟩🟨🟧🟥 WALLET TRACKER THREAD LAUNCHED")
 
 
 
@@ -9680,7 +9680,7 @@ def run_warroom_alert():
 def start_warroom_alert():
     t = threading.Thread(target=run_warroom_alert, daemon=True)
     t.start()
-    logger.info("✅ WARROOM ALERT THREAD LAUNCHED")
+    logger.info("🟩🟨🟧🟥 WARROOM ALERT THREAD LAUNCHED")
 
 
 def run_entry_alert():
@@ -9713,13 +9713,13 @@ def run_entry_alert():
 def start_entry_alert():
     t = threading.Thread(target=run_entry_alert, daemon=True)
     t.start()
-    logger.info("✅ ENTRY ALERT THREAD LAUNCHED")
+    logger.info("🟩🟨🟧🟥 ENTRY ALERT THREAD LAUNCHED")
     
 def start_confluence_scanner():
     try:
         conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
         conf_thread.start()
-        logger.info("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
+        logger.info("🟩🟨🟧🟥 SMART MONEY CONFLUENCE SCANNER STARTED")
     except Exception as e:
         logger.error(f"Failed to start confluence scanner: {e}")
 # ============================================================
