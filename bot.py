@@ -14,7 +14,7 @@ import statistics
 from datetime import datetime
 
 import aiohttp
-
+import os
 try:
     from telegram import Update
     from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -27,8 +27,8 @@ except ImportError:
 # CONFIG — SINGLE SOURCE OF TRUTH
 # ============================================================
 
-TELEGRAM_TOKEN   = "YOUR_BOT_TOKEN_HERE"   # @BotFather
-TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"     # @userinfobot
+TELEGRAM_TOKEN   = os.environ.get("TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("CHAT_ID", "")
 
 # Watchlist Hyperliquid (format: "BTC", "ETH", dst)
 WATCHLIST = ["BTC", "ETH", "SOL", "TON", "HYPE", "ENA"]
