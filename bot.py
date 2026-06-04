@@ -5614,22 +5614,7 @@ def prediction_stats(message):
     from command_handlers_part1 import bot
     bot.send_message(message.chat.id, teks)
 
-# main.py
-get_market_regime()
-                new_mode = "AGGRO" if regime == "VOLATILE" else "INSANE"
-                sniper_on(new_mode)
-                _sniper_auto_state = "auto_on"
-                logger.info(f"[SCHEDULER] Auto-enabled sniper {new_mode}")
-            elif not in_active_session and running and _sniper_auto_state == "auto_on":
-                sniper_off()
-                _sniper_auto_state = None
-                logger.info("[SCHEDULER] Auto-disabled sniper")
-            
-            time.sleep(10)
-            
-        except Exception as e:
-            logger.error(f"[SCHEDULER] Error: {e}")
-            time.sleep(60)
+
 # main.py
 import time
 import threading
