@@ -4092,38 +4092,7 @@ def mood_command(message):
 # ============================================================
 # STATUS COMMAND
 # ============================================================
-@bot.message_handler(commands=['status'])
-def status_command(message):
-    try:
-        regime = get_market_regime()
-        sesi = get_sesi()
-        uptime = get_uptime_local()
-        
-        from entry_alert import _entry_alert_running
-        from squeeze_alert_part1 import _squeeze_alert_running
-        from smc_alert_part1 import _smc_alert_running
-        from sniper import sniper_status
-        
-        running, mode = sniper_status()
-        
-        teks = f"⚠️ SYSTEM STATUS\n"
-        teks += f"─────────────────────────────────\n"
-        teks += f"👾 Bot       : ✅ ONLINE\n"
-        teks += f"⏱️ Uptime    : {uptime}\n"
-        teks += f"📡 Session   : {sesi}\n"
-        teks += f"⏰ WIB       : {get_wib()}\n"
-        teks += f"📡 Regime    : {regime}\n"
-        teks += f"─────────────────────────────────\n"
-        teks += f"🕶️ SNIPER    : {'✅ ON' if running else '❌ OFF'} ({mode if running else '-'})\n"
-        teks += f"🔔 SMC       : {'✅ ON' if _smc_alert_running else '❌ OFF'}\n"
-        teks += f"🎯 ENTRY     : {'✅ ON' if _entry_alert_running else '❌ OFF'}\n"
-        teks += f"⚡ SQUEEZE   : {'✅ ON' if _squeeze_alert_running else '❌ OFF'}\n"
-        teks += f"─────────────────────────────────\n"
-        teks += f"✅ Bot sehat - Lets fvcking go"
-        
-        bot.reply_to(message, teks)
-    except Exception as e:
-        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+
 
 # ============================================================
 # PING COMMAND
@@ -4212,6 +4181,38 @@ def screener(message):
         
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+# ============================================================
+# PREDATOR COMMAND
+# ============================================================
+@bot.message_handler(commands=['predator'])
+def predator_cmd(message):
+    if not is_owner(message):
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        from predator import predator_status, _last_predator_scan
+        status = "✅ ON" if predator_status() else "❌ OFF"
+        last_scan = time.time() - _last_predator_scan if _last_predator_scan > 0 else 0
+        last_scan_str = f"{int(last_scan//60)} menit lalu" if last_scan < 3600 else f"{int(last_scan//3600)} jam lalu"
+        bot.reply_to(message, f"🐾 PREDATOR\nStatus: {status}\nLast scan: {last_scan_str}\n\n/predator on\n/predator off\n/predator scan")
+        return
+    
+    if parts[1] == "on":
+        from predator import predator_on
+        predator_on()
+        bot.reply_to(message, "✅ PREDATOR ON")
+    elif parts[1] == "off":
+        from predator import predator_off
+        predator_off()
+        bot.reply_to(message, "❌ PREDATOR OFF")
+    elif parts[1] == "scan":
+        bot.reply_to(message, "🔍 Scanning manual...")
+        from predator import ultimate_predator_scan
+        ultimate_predator_scan()
+    else:
+        bot.reply_to(message, "Gunakan: on / off / scan")
         
 
         
@@ -4230,6 +4231,7 @@ from squeeze_alert_part3 import start_squeeze_alert, _squeeze_alert_running
 from smc_alert_part3 import start_smc_alert, _smc_alert_running
 from sniper import check_sniper, sniper_on, sniper_off, sniper_status, _sniper_running
 from market_regime import get_market_regime
+from predator import start_predator, predator_status, predator_on, predator_off
 
 # Import command handlers (otomatis register)
 from command_handlers_part1 import bot
@@ -4242,6 +4244,997 @@ logger = logging.getLogger(__name__)
 _last_sniper_scan = 0
 _last_learning_eval = 0
 _sniper_auto_state = None
+
+
+# liquidation_scanner.py
+import time
+import logging
+import threading
+from config import LIQ_CONFIG
+from utils import fmt_price, get_wib
+from hyperliquid_data import get_cached_meta, get_ctx, get_oi_usd, get_funding_pct, get_candles_smc
+
+logger = logging.getLogger(__name__)
+
+_liq_scanner_running = False
+_liq_last_oi = {}
+_liq_last_notif = {}
+state_lock = threading.RLock()
+
+def estimate_liquidation_amount(oi_change_usd, price_change_pct):
+    if price_change_pct == 0:
+        return 0
+    return abs(oi_change_usd)
+
+def check_liquidation_for_coin(coin, ctx, mark):
+    global _liq_last_oi, _liq_last_notif
+    try:
+        oi_usd = get_oi_usd(ctx, mark)
+        funding = get_funding_pct(ctx)
+        
+        candles = get_candles_smc(coin, "1m", 5)
+        if not candles or len(candles) < 3:
+            return None
+        
+        price_1m_ago = float(candles[-2]['c'])
+        price_change_pct = ((mark - price_1m_ago) / price_1m_ago) * 100
+        
+        recent_vols = []
+        for c in candles[-5:-1]:
+            v = float(c.get('v', 0)) * mark
+            if v > 0:
+                recent_vols.append(v)
+        avg_vol = sum(recent_vols) / len(recent_vols) if recent_vols else 0
+        cur_vol = float(candles[-1].get('v', 0)) * mark
+        volume_spike = cur_vol / avg_vol if avg_vol > 0 else 1.0
+        
+        oi_baseline_key = f"{coin}_oi_2m"
+        oi_time_key = f"{coin}_oi_time"
+        now = time.time()
+        oi_baseline_age = now - _liq_last_oi.get(oi_time_key, 0)
+        
+        if oi_baseline_age >= 120:
+            _liq_last_oi[oi_baseline_key] = oi_usd
+            _liq_last_oi[oi_time_key] = now
+        
+        oi_prev = _liq_last_oi.get(oi_baseline_key, oi_usd)
+        oi_change_pct = ((oi_usd - oi_prev) / oi_prev * 100) if oi_prev > 0 else 0
+        oi_change_usd = oi_usd - oi_prev
+        
+        is_price_move = abs(price_change_pct) > LIQ_CONFIG["price_change_pct"]
+        is_oi_drop = oi_change_pct < -LIQ_CONFIG["oi_change_pct"]
+        is_volume_spike = volume_spike > LIQ_CONFIG["volume_spike"]
+        
+        if is_price_move and (is_oi_drop or is_volume_spike):
+            est_liq = estimate_liquidation_amount(oi_change_usd, price_change_pct)
+            
+            if est_liq < LIQ_CONFIG["min_liq_usd"] and is_volume_spike:
+                est_liq = cur_vol * 0.3
+            
+            if est_liq >= LIQ_CONFIG["min_liq_usd"]:
+                if coin in _liq_last_notif and now - _liq_last_notif[coin] < 300:
+                    return None
+                _liq_last_notif[coin] = now
+                
+                if price_change_pct > 0:
+                    liq_type, icon, direction = "SHORT SQUEEZE", "🔥", "🟢 shorts"
+                else:
+                    liq_type, icon, direction = "LIQUIDATION", "💀", "🔴 longs"
+                
+                nominal_str = f"${est_liq/1_000_000:.1f}M" if est_liq >= 1_000_000 else f"${est_liq/1_000:.0f}K"
+                
+                return {
+                    "coin": coin, "type": liq_type, "icon": icon,
+                    "nominal": nominal_str, "direction": direction,
+                    "price_change": price_change_pct, "price": mark,
+                    "volume_spike": volume_spike, "oi_change": oi_change_pct,
+                    "funding": funding
+                }
+        return None
+    except Exception as e:
+        logger.debug(f"Liquidation error {coin}: {e}")
+        return None
+
+def run_liquidation_scanner():
+    global _liq_scanner_running
+    _liq_scanner_running = True
+    logger.info("[LIQ] Scanner started")
+    
+    while True:
+        try:
+            meta_data = get_cached_meta()
+            meta_map = {}
+            for asset, ctx in zip(meta_data[0]["universe"], meta_data[1]):
+                mark = float(ctx.get("markPx") or 0)
+                if mark > 0:
+                    meta_map[asset["name"]] = (ctx, mark)
+            
+            for coin in list(meta_map.keys())[:60]:
+                ctx, mark = meta_map.get(coin, (None, 0))
+                if not ctx or mark == 0:
+                    continue
+                result = check_liquidation_for_coin(coin, ctx, mark)
+                if result:
+                    from command_handlers_part1 import bot, USER_ID
+                    teks = f"""{result['icon']} {result['type']} | {result['coin']}
+─────────────────────────────────
+💰 {result['nominal']} {result['direction']} wiped
+📊 ${result['price']:.4f} ({result['price_change']:+.1f}%)
+📈 Volume {result['volume_spike']:.0f}x normal
+─────────────────────────────────
+🎯 /warroom {result['coin']}"""
+                    bot.send_message(USER_ID, teks)
+                    time.sleep(2)
+                time.sleep(0.5)
+            
+            time.sleep(LIQ_CONFIG["scan_interval"])
+        except Exception as e:
+            logger.error(f"[LIQ] Error: {e}")
+            time.sleep(60)
+
+def start_liquidation_scanner():
+    t = threading.Thread(target=run_liquidation_scanner, daemon=True)
+    t.start()
+    logger.info("✅ LIQUIDATION SCANNER STARTED")
+
+# schedule_manager.py
+import time
+import logging
+import threading
+import schedule
+from utils import get_wib, get_narrative_coins
+from hyperliquid_data import get_cached_meta, get_ctx, get_change, get_funding_pct, get_ob_delta, get_bid_wall_level, get_ask_wall_level, get_oi_usd
+from market_regime import get_market_regime
+
+logger = logging.getLogger(__name__)
+
+schedule_jobs = {}
+TEMEN_COOLDOWN = {}
+TEMEN_MODE = False
+TEMEN_LAST_RUN = 0
+
+def get_smart_money_signal(change, ob_delta, funding):
+    signals = []
+    if ob_delta > 15 and funding < 0:
+        signals.append("🐋 WHALE LONG")
+    elif ob_delta < -15 and funding > 0:
+        signals.append("🐋 WHALE SHORT")
+    if ob_delta > 10 and change > 1:
+        signals.append("💎 SMART LONG")
+    elif ob_delta < -10 and change < -1:
+        signals.append("💎 SMART SHORT")
+    if change > 0.8 and ob_delta > 5:
+        signals.append("🟢 LONG")
+    elif change < -0.8 and ob_delta < -5:
+        signals.append("🔴 SHORT")
+    if change > 2:
+        signals.append("⚡ MOMENTUM UP")
+    elif change < -2:
+        signals.append("⚡ MOMENTUM DOWN")
+    if funding > 0.05:
+        signals.append("💰 FUNDING HOT")
+    elif funding < -0.05:
+        signals.append("💰 FUNDING COLD")
+    if not signals:
+        signals.append("📊 MONITOR")
+    return signals
+
+def run_temen_scan(chat_id):
+    global TEMEN_COOLDOWN
+    try:
+        data = get_cached_meta()
+        now = time.time()
+        regime = get_market_regime()
+        regime_emoji = {"TRENDING_UP": "🚀", "TRENDING_DOWN": "📉", "VOLATILE": "🔥", "RANGING": "↔️"}.get(regime, "❓")
+        alerts = []
+        
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            try:
+                coin = asset["name"]
+                if coin in TEMEN_COOLDOWN and now - TEMEN_COOLDOWN[coin] < 300:
+                    continue
+                mark = float(ctx.get("markPx") or 0)
+                if mark == 0:
+                    continue
+                vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
+                if vol < 5:
+                    continue
+                change = get_change(ctx)
+                funding = get_funding_pct(ctx)
+                ob_delta = get_ob_delta(coin)
+                
+                if abs(change) > 1.0 or abs(ob_delta) > 15 or abs(funding) > 0.03:
+                    signals = get_smart_money_signal(change, ob_delta, funding)
+                    alerts.append({
+                        'coin': coin, 'change': change, 'ob_delta': ob_delta,
+                        'funding': funding, 'signals': signals,
+                        'score': abs(change)*10 + abs(ob_delta) + abs(funding)*100
+                    })
+                    TEMEN_COOLDOWN[coin] = now
+            except:
+                continue
+        
+        from command_handlers_part1 import bot
+        if not alerts:
+            bot.send_message(chat_id, f"🚭 TEMEN • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\nNo trigger.\n{regime_emoji} {regime}")
+            return
+        
+        alerts.sort(key=lambda x: x['score'], reverse=True)
+        for a in alerts[:3]:
+            arrow = "🚀" if a['change'] > 0 else "📉"
+            teks = f"{arrow} {a['coin']:<8}{a['change']:+.1f}% | OB{a['ob_delta']:+.0f}%"
+            if abs(a['funding']) > 0.03:
+                fund_icon = "🔴" if a['funding'] > 0 else "🟢"
+                teks += f" | {fund_icon}{a['funding']:+.2f}%"
+            teks += "\n"
+            for sig in a['signals']:
+                teks += f"   └ {sig}\n"
+            bot.send_message(chat_id, teks)
+            time.sleep(0.5)
+    except Exception as e:
+        logger.error(f"Temen error: {e}")
+
+def job_insane_radar(chat_id):
+    try:
+        coins = get_narrative_coins()
+        hasil_anomali = []
+        OI_HISTORY = {}
+        
+        for coin in coins[:40]:
+            try:
+                ctx, mark = get_ctx(coin)
+                if not ctx or mark == 0:
+                    continue
+                vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
+                if vol < 3:
+                    continue
+                
+                ob_delta = get_ob_delta(coin)
+                funding = get_funding_pct(ctx)
+                bid_wall, _ = get_bid_wall_level(coin)
+                ask_wall, _ = get_ask_wall_level(coin)
+                oi_usd = get_oi_usd(ctx, mark)
+                
+                oi_prev = OI_HISTORY.get(coin, oi_usd)
+                oi_change_pct = ((oi_usd - oi_prev) / oi_prev * 100) if oi_prev > 0 else 0
+                OI_HISTORY[coin] = oi_usd
+                
+                anomaly = None
+                if abs(ob_delta) > 8:
+                    anomaly = f"OB{ob_delta:+.0f}%"
+                elif max(bid_wall, ask_wall) > 25000:
+                    anomaly = f"Wall ${max(bid_wall,ask_wall)/1000:.0f}K"
+                elif abs(oi_change_pct) > 2:
+                    anomaly = f"OI {oi_change_pct:+.0f}%"
+                elif funding > 0.03 and ob_delta < -5:
+                    anomaly = f"Funding flip +{funding:.3f}% & OB{ob_delta:.0f}"
+                elif funding < -0.03 and ob_delta > 5:
+                    anomaly = f"Funding flip {funding:.3f}% & OB+{ob_delta:.0f}"
+                
+                if anomaly:
+                    hasil_anomali.append(f"{coin}: {anomaly}")
+                time.sleep(0.1)
+            except:
+                continue
+        
+        from command_handlers_part1 import bot
+        if hasil_anomali:
+            teks = f"🍌 INSANE RADAR • {get_wib()}\n━━━━━━━━━━━━━━━━━━━━━━\n🔍 Anomali ringan terdeteksi:\n\n"
+            for i, line in enumerate(hasil_anomali[:12], 1):
+                teks += f"{i}. {line}\n"
+            if len(hasil_anomali) > 12:
+                teks += f"\n... +{len(hasil_anomali)-12} lainnya"
+            bot.send_message(chat_id, teks)
+        else:
+            bot.send_message(chat_id, f"✅ INSANE RADAR • {get_wib()}\nTidak ada anomali signifikan.")
+    except Exception as e:
+        logger.error(f"Insane radar error: {e}")
+
+def cancel_all_schedules(chat_id):
+    if chat_id in schedule_jobs:
+        for job in schedule_jobs[chat_id].values():
+            schedule.cancel_job(job)
+        schedule_jobs[chat_id] = {}
+        return True
+    return False
+
+def set_schedule(chat_id, interval, mode):
+    if chat_id not in schedule_jobs:
+        schedule_jobs[chat_id] = {}
+    if mode == 'insane':
+        job = schedule.every(interval).minutes.do(job_insane_radar, chat_id=chat_id)
+        schedule_jobs[chat_id]['insane'] = job
+    elif mode == 'temen':
+        job = schedule.every(interval).minutes.do(run_temen_scan, chat_id=chat_id)
+        schedule_jobs[chat_id]['temen'] = job
+    return True
+
+# copytrade.py
+import os
+import time
+import json
+import logging
+import threading
+import requests
+
+from config import WALLET_TRACKER_FILE
+from utils import fmt_price, get_wib, get_narrative
+from hyperliquid_data import info, get_all_mids
+
+logger = logging.getLogger(__name__)
+
+# Global state
+WATCHED_WALLETS = {}
+MANUAL_WALLETS = {}
+_wallet_last_positions = {}
+_wallet_last_alert = {}
+_wallet_discovery_last = 0
+WALLET_DISCOVERY_INTERVAL = 3600
+WALLET_MAX_TRACK = 15
+COPYTRADE_MODE = "PRO"
+COPYTRADE_SIZE_FILTER = {"CASUAL": 10000, "PRO": 25000, "INSANE": 100000}
+state_lock = threading.RLock()
+
+# ============================================================
+# PERSISTENCE
+# ============================================================
+def load_wallet_state():
+    global _wallet_last_positions, WATCHED_WALLETS, MANUAL_WALLETS, COPYTRADE_MODE
+    try:
+        if os.path.exists(WALLET_TRACKER_FILE):
+            with open(WALLET_TRACKER_FILE, 'r') as f:
+                data = json.load(f)
+            with state_lock:
+                _wallet_last_positions = data.get("positions", {})
+                saved_manual = data.get("manual_wallets", {})
+                if saved_manual:
+                    MANUAL_WALLETS.update(saved_manual)
+                saved_wallets = data.get("watched_wallets", {})
+                if saved_wallets:
+                    WATCHED_WALLETS.update(saved_wallets)
+                WATCHED_WALLETS.update(MANUAL_WALLETS)
+                saved_mode = data.get("copytrade_mode")
+                if saved_mode in ["CASUAL", "PRO", "INSANE"]:
+                    COPYTRADE_MODE = saved_mode
+        logger.info(f"[COPYTRADE] Loaded {len(WATCHED_WALLETS)} wallets, mode={COPYTRADE_MODE}")
+    except Exception as e:
+        logger.error(f"[COPYTRADE] Load error: {e}")
+
+def save_wallet_state():
+    try:
+        with state_lock:
+            data = {
+                "positions": dict(_wallet_last_positions),
+                "watched_wallets": dict(WATCHED_WALLETS),
+                "manual_wallets": dict(MANUAL_WALLETS),
+                "copytrade_mode": COPYTRADE_MODE,
+                "saved_at": time.time()
+            }
+        with open(WALLET_TRACKER_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"[COPYTRADE] Save error: {e}")
+
+# ============================================================
+# FETCH WALLETS FROM LEADERBOARD
+# ============================================================
+def fetch_leaderboard_wallets(limit: int = 15):
+    try:
+        url = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        if isinstance(data, dict):
+            data = data.get("leaderboardRows") or data.get("data") or []
+        if not isinstance(data, list):
+            return []
+        
+        traders = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            addr = entry.get("ethAddress") or entry.get("address") or ""
+            if not addr or len(addr) < 10:
+                continue
+            
+            perfs = entry.get("windowPerformances") or []
+            pnl = 0
+            for wp in perfs:
+                if isinstance(wp, (list, tuple)) and len(wp) == 2:
+                    window_name, perf_data = wp
+                    if window_name == "week" and isinstance(perf_data, dict):
+                        pnl = float(perf_data.get("pnl") or 0)
+                        break
+                elif isinstance(wp, dict):
+                    if wp.get("period") == "week" or wp.get("window") == "week":
+                        pnl = float(wp.get("pnl") or 0)
+                        break
+            if pnl == 0:
+                pnl = float(entry.get("pnl") or 0)
+            traders.append((addr, pnl))
+        
+        traders.sort(key=lambda x: x[1], reverse=True)
+        result = []
+        for i, (addr, pnl) in enumerate(traders[:limit]):
+            label = f"LB#{i+1} PnL${pnl/1000:.0f}K"
+            result.append((addr, label, pnl))
+        return result
+    except Exception as e:
+        logger.error(f"[COPYTRADE] Leaderboard error: {e}")
+        return []
+
+def fetch_high_oi_wallets(limit: int = 10):
+    try:
+        url = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        if isinstance(data, dict):
+            data = data.get("leaderboardRows") or data.get("data") or []
+        if not isinstance(data, list):
+            return []
+        
+        trade_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
+        traders = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            addr = entry.get("ethAddress") or entry.get("address") or ""
+            if not addr or len(addr) < 10:
+                continue
+            acct_val = float(entry.get("accountValue") or 0)
+            if acct_val < trade_filter:
+                continue
+            traders.append((addr, acct_val))
+        
+        traders.sort(key=lambda x: x[1], reverse=True)
+        result = []
+        for i, (addr, acct_val) in enumerate(traders[15:15+limit]):
+            label = f"HiOI#{i+1} ${acct_val/1000:.0f}K"
+            result.append((addr, label, acct_val))
+        return result
+    except Exception as e:
+        logger.error(f"[COPYTRADE] Hi-OI error: {e}")
+        return []
+
+def auto_discover_wallets():
+    global WATCHED_WALLETS, _wallet_discovery_last
+    logger.info("[COPYTRADE] Auto-discovering wallets...")
+    
+    lb_wallets = fetch_leaderboard_wallets(limit=15)
+    time.sleep(1)
+    oi_wallets = fetch_high_oi_wallets(limit=10)
+    
+    new_wallets = {}
+    for addr, label, _ in lb_wallets:
+        new_wallets[addr] = label
+    for addr, label, _ in oi_wallets:
+        if addr not in new_wallets:
+            new_wallets[addr] = label
+    
+    with state_lock:
+        manual_snap = dict(MANUAL_WALLETS)
+    
+    if not new_wallets and not manual_snap:
+        with state_lock:
+            _wallet_discovery_last = time.time()
+        return
+    
+    final_wallets = dict(manual_snap)
+    remaining_slots = WALLET_MAX_TRACK - len(final_wallets)
+    for addr, label in list(new_wallets.items()):
+        if remaining_slots <= 0:
+            break
+        if addr not in final_wallets:
+            final_wallets[addr] = label
+            remaining_slots -= 1
+    
+    with state_lock:
+        if len(final_wallets) > 0:
+            WATCHED_WALLETS = final_wallets
+        _wallet_discovery_last = time.time()
+    
+    logger.info(f"[COPYTRADE] Discovery: {len(WATCHED_WALLETS)} wallets tracked")
+
+# ============================================================
+# GET WALLET POSITIONS
+# ============================================================
+def get_wallet_positions(address: str):
+    try:
+        state = info.user_state(address)
+        positions = {}
+        mids = get_all_mids()
+        size_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
+        
+        for pos in state.get("assetPositions", []):
+            p = pos.get("position", {})
+            coin = p.get("coin")
+            size = float(p.get("szi", 0))
+            if coin and size != 0:
+                entry_px = float(p.get("entryPx") or 0)
+                mark_px = float(mids.get(coin, entry_px) or entry_px)
+                notional = abs(size) * mark_px
+                if notional < size_filter:
+                    continue
+                positions[coin] = {
+                    "side": "LONG" if size > 0 else "SHORT",
+                    "size": abs(size),
+                    "entry": entry_px,
+                    "pnl": float(p.get("unrealizedPnl") or 0),
+                    "leverage": float(p.get("leverage", {}).get("value") or 1),
+                    "notional": notional,
+                }
+        return positions
+    except Exception as e:
+        logger.debug(f"[COPYTRADE] Fetch error {address[:8]}...: {e}")
+        return {}
+
+# ============================================================
+# FORMAT ALERT
+# ============================================================
+def format_wallet_alert(label, address, coin, change_type, data):
+    now = get_wib()
+    addr_short = f"{address[:6]}...{address[-4:]}"
+    narrative = get_narrative(coin)
+    mode_badge = {"CASUAL": "🟢", "PRO": "🟡", "INSANE": "🔴"}.get(COPYTRADE_MODE, "🟡")
+    
+    size_display = f"${data['notional']/1000:.0f}K"
+    if data['notional'] >= 1_000_000:
+        size_display = f"${data['notional']/1_000_000:.1f}M"
+    
+    if change_type == "OPEN":
+        side_emoji = "🟢" if data["side"] == "LONG" else "🔴"
+        return (f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
+                f"⏰ {now} | 📍 {addr_short}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{side_emoji} OPEN {data['side']} {coin}\n"
+                f"🧿 {narrative}\n"
+                f"📶 Size: {data['size']:.4f} ({size_display})\n"
+                f"💲 Entry: {fmt_price(data['entry'])}\n"
+                f"🔼 Lev: {data['leverage']:.0f}x")
+    elif change_type == "CLOSE":
+        pnl = data.get("pnl", 0)
+        pnl_emoji = "✅" if pnl >= 0 else "❌"
+        return (f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
+                f"⏰ {now} | 📍 {addr_short}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🛑 CLOSE {data['side']} {coin}\n"
+                f"🛜 {narrative}\n"
+                f"📶 Size: {data['size']:.4f} ({size_display})\n"
+                f"{pnl_emoji} PnL: ${pnl:+.2f}")
+    elif change_type == "SIZE_UP":
+        return (f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
+                f"⏰ {now} | 📍 {addr_short}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"⬆️ SIZE UP {data['side']} {coin}\n"
+                f"🧿 {narrative}\n"
+                f"📶 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
+                f"💲 Entry: {fmt_price(data['entry'])}")
+    elif change_type == "SIZE_DOWN":
+        return (f"{mode_badge} WALLET {COPYTRADE_MODE} • {label}\n"
+                f"⏰ {now} | 📍 {addr_short}\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"⬇️ SIZE DOWN {data['side']} {coin}\n"
+                f"🧿 {narrative}\n"
+                f"📶 {data['prev_size']:.4f} → {data['size']:.4f} ({size_display})\n"
+                f"💲 Entry: {fmt_price(data['entry'])}")
+    return ""
+
+# ============================================================
+# SCAN SINGLE WALLET
+# ============================================================
+def scan_wallet(address: str, label: str):
+    global _wallet_last_positions, _wallet_last_alert
+    
+    current = get_wallet_positions(address)
+    with state_lock:
+        prev = _wallet_last_positions.get(address, {})
+    
+    if not current and not prev:
+        return
+    
+    COOLDOWN_BY_MODE = {"CASUAL": 300, "PRO": 600, "INSANE": 900}
+    alert_cooldown = COOLDOWN_BY_MODE.get(COPYTRADE_MODE, 600)
+    now_time = time.time()
+    all_coins = set(list(current.keys()) + list(prev.keys()))
+    
+    for coin in all_coins:
+        cur_pos = current.get(coin)
+        prv_pos = prev.get(coin)
+        cooldown_key = f"{address}_{coin}"
+        
+        with state_lock:
+            last_alert = _wallet_last_alert.get(cooldown_key, 0)
+        if now_time - last_alert < alert_cooldown:
+            continue
+        
+        if cur_pos and not prv_pos:
+            from command_handlers_part1 import bot, USER_ID
+            msg = format_wallet_alert(label, address, coin, "OPEN", cur_pos)
+            if msg:
+                bot.send_message(USER_ID, msg)
+                with state_lock:
+                    _wallet_last_alert[cooldown_key] = now_time
+                time.sleep(1)
+        elif not cur_pos and prv_pos:
+            from command_handlers_part1 import bot, USER_ID
+            msg = format_wallet_alert(label, address, coin, "CLOSE", prv_pos)
+            if msg:
+                bot.send_message(USER_ID, msg)
+                with state_lock:
+                    _wallet_last_alert[cooldown_key] = now_time
+                time.sleep(1)
+        elif cur_pos and prv_pos:
+            prev_size = prv_pos["size"]
+            cur_size = cur_pos["size"]
+            threshold = prev_size * 0.10
+            if cur_size > prev_size + threshold:
+                from command_handlers_part1 import bot, USER_ID
+                msg = format_wallet_alert(label, address, coin, "SIZE_UP", {**cur_pos, "prev_size": prev_size})
+                if msg:
+                    bot.send_message(USER_ID, msg)
+                    with state_lock:
+                        _wallet_last_alert[cooldown_key] = now_time
+                    time.sleep(1)
+            elif cur_size < prev_size - threshold:
+                from command_handlers_part1 import bot, USER_ID
+                msg = format_wallet_alert(label, address, coin, "SIZE_DOWN", {**cur_pos, "prev_size": prev_size})
+                if msg:
+                    bot.send_message(USER_ID, msg)
+                    with state_lock:
+                        _wallet_last_alert[cooldown_key] = now_time
+                    time.sleep(1)
+    
+    with state_lock:
+        _wallet_last_positions[address] = current
+
+# ============================================================
+# BACKGROUND THREAD
+# ============================================================
+def run_wallet_tracker():
+    global _wallet_discovery_last
+    logger.info("[COPYTRADE] Tracker started")
+    
+    try:
+        auto_discover_wallets()
+    except Exception as e:
+        logger.error(f"[COPYTRADE] Initial discovery error: {e}")
+    
+    while True:
+        try:
+            now = time.time()
+            if now - _wallet_discovery_last >= WALLET_DISCOVERY_INTERVAL:
+                auto_discover_wallets()
+            
+            with state_lock:
+                wallets_snapshot = dict(WATCHED_WALLETS)
+            
+            if not wallets_snapshot:
+                logger.warning("[COPYTRADE] No wallets tracked")
+            else:
+                for address, label in wallets_snapshot.items():
+                    scan_wallet(address, label)
+                    time.sleep(2)
+                save_wallet_state()
+            
+            time.sleep(60)
+        except Exception as e:
+            logger.error(f"[COPYTRADE] Tracker error: {e}")
+            time.sleep(60)
+
+def start_copytrade():
+    t = threading.Thread(target=run_wallet_tracker, daemon=True)
+    t.start()
+    logger.info("✅ COPYTRADE THREAD LAUNCHED")
+
+# prediction_engine.py
+import os
+import json
+import random
+import logging
+import time
+from datetime import datetime
+
+from config import PREDICTION_FILE, WIB
+from utils import get_wib, get_wib_hour, get_random_opening, get_random_situation, get_volatility_params
+from hyperliquid_data import get_ctx, get_oi_usd, get_change, get_funding_pct, get_ob_delta, get_all_mids
+from market_regime import get_market_regime
+from atr_sltp import get_adaptive_sltp
+
+logger = logging.getLogger(__name__)
+
+# ============================================================
+# PREDICTION CORE
+# ============================================================
+def load_predictions():
+    if os.path.exists(PREDICTION_FILE):
+        try:
+            with open(PREDICTION_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {"predictions": [], "stats": {"total": 0, "correct": 0}}
+    return {"predictions": [], "stats": {"total": 0, "correct": 0}}
+
+def save_predictions(data):
+    try:
+        with open(PREDICTION_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Save predictions error: {e}")
+
+def get_casual_prediction(coin="BTC"):
+    try:
+        ctx, mark = get_ctx(coin)
+        if not ctx:
+            return None, None
+        
+        funding = get_funding_pct(ctx)
+        oi_usd = get_oi_usd(ctx, mark)
+        oi_prev = OI_HISTORY.get(coin, oi_usd)
+        oi_change = ((oi_usd - oi_prev) / oi_prev * 100) if oi_prev > 0 else 0
+        OI_HISTORY[coin] = oi_usd
+        ob_delta = get_ob_delta(coin)
+        regime = get_market_regime()
+        
+        # EMA trend dari candle 1H
+        trend_signal = "NEUTRAL"
+        vol_trend = "FLAT"
+        try:
+            from hyperliquid_data import get_candles_smc
+            c1h = get_candles_smc(coin, "1h", 50)
+            if c1h and len(c1h) >= 21:
+                closes = [float(c['c']) for c in c1h[-21:]]
+                vols = [float(c['v']) for c in c1h[-10:]]
+                
+                def _ema(px, n):
+                    k = 2 / (n + 1)
+                    e = px[0]
+                    for p in px[1:]:
+                        e = p * k + e * (1 - k)
+                    return e
+                
+                ema8 = _ema(closes, 8)
+                ema21 = _ema(closes, 21)
+                if ema8 > ema21 * 1.002:
+                    trend_signal = "BULLISH_TREND"
+                elif ema8 < ema21 * 0.998:
+                    trend_signal = "BEARISH_TREND"
+                
+                if len(vols) >= 6:
+                    rv = sum(vols[-3:]) / 3
+                    pv = sum(vols[-6:-3]) / 3
+                    if rv > pv * 1.3:
+                        vol_trend = "INCREASING"
+                    elif rv < pv * 0.7:
+                        vol_trend = "DECREASING"
+        except:
+            pass
+        
+        # Scoring
+        bull, bear = 0, 0
+        if funding > 0.05: bear += 3
+        elif funding > 0.02: bear += 2
+        elif funding < -0.05: bull += 3
+        elif funding < -0.02: bull += 2
+        
+        if oi_change > 10: bull += 2
+        elif oi_change < -10: bear += 2
+        
+        if ob_delta > 30: bull += 3
+        elif ob_delta > 15: bull += 2
+        elif ob_delta < -30: bear += 3
+        elif ob_delta < -15: bear += 2
+        
+        if trend_signal == "BULLISH_TREND": bull += 2
+        elif trend_signal == "BEARISH_TREND": bear += 2
+        
+        if vol_trend == "INCREASING":
+            if bull > bear: bull += 1
+            elif bear > bull: bear += 1
+        
+        if regime == "TRENDING_UP": bull += 1
+        elif regime == "TRENDING_DOWN": bear += 1
+        
+        align = abs(bull - bear)
+        base_conf = min(78, 40 + align * 5)
+        if vol_trend == "INCREASING" and align >= 3:
+            base_conf = min(80, base_conf + 4)
+        
+        if bull > bear + 2:
+            direction = "bullish"
+            target = mark * (1 + 0.01 + align * 0.003)
+            confidence = base_conf
+            reason = f"EMA {trend_signal.replace('_',' ')}, funding {funding:+.3f}%, OB {ob_delta:+.0f}%"
+            if vol_trend == "INCREASING":
+                reason += ", volume naik 🔥"
+        elif bear > bull + 2:
+            direction = "bearish"
+            target = mark * (1 - 0.01 - align * 0.003)
+            confidence = base_conf
+            reason = f"EMA {trend_signal.replace('_',' ')}, funding {funding:+.3f}%, OB {ob_delta:+.0f}%"
+            if vol_trend == "INCREASING":
+                reason += ", distribusi volume ⚠️"
+        else:
+            direction = "sideways"
+            target = mark
+            confidence = 62
+            reason = "Indikator ga align. Tunggu konfirmasi."
+        
+        reason += f" [Regime: {regime}]"
+        
+        return {
+            "direction": direction, "target": target, "confidence": confidence,
+            "reason": reason, "price": mark, "funding": funding,
+            "oi_change": oi_change, "ob_delta": ob_delta,
+            "trend_signal": trend_signal, "vol_trend": vol_trend, "regime": regime
+        }, oi_change
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        return None, None
+
+OI_HISTORY = {}
+
+def casual_session_report():
+    try:
+        jam = get_wib_hour()
+        if 8 <= jam < 15: session, emoji = "ASIA", "🌏"
+        elif 15 <= jam < 20: session, emoji = "LONDON", "🇬🇧"
+        elif 20 <= jam < 24: session, emoji = "NY", "🇺🇸"
+        else: session, emoji = "ASIA", "🌏"
+        
+        opening = get_random_opening(session)
+        situation = get_random_situation(session)
+        
+        pred_data, oi_change = get_casual_prediction("BTC")
+        if not pred_data:
+            from command_handlers_part1 import send_to_owner
+            send_to_owner("❌ Gagal ambil data untuk prediksi")
+            return
+        
+        price = pred_data['price']
+        target = pred_data['target']
+        funding = pred_data['funding']
+        ob_delta = pred_data['ob_delta']
+        
+        if pred_data['direction'] == "bullish":
+            direction_emoji, direction_text, direction_arrow = "🟢", "bullish", "naik"
+            target_pct = ((target - price) / price * 100) if target > price else 1.5
+            saran = "cari setup LONG"
+            _, sl_pct, _, tp_pct, _ = get_adaptive_sltp("BTC", price, "LONG")
+            sl_price = price * (1 - sl_pct/100)
+            tp_price = price * (1 + tp_pct/100)
+            sl_text = f"Stop loss: {fmt_price(sl_price)} (-{sl_pct:.1f}%)"
+            tp_text = f"Target: {fmt_price(tp_price)} (+{tp_pct:.1f}%)"
+        elif pred_data['direction'] == "bearish":
+            direction_emoji, direction_text, direction_arrow = "🔴", "bearish", "turun"
+            target_pct = ((price - target) / price * 100) if target < price else 1.5
+            saran = "cari setup SHORT"
+            _, sl_pct, _, tp_pct, _ = get_adaptive_sltp("BTC", price, "SHORT")
+            sl_price = price * (1 + sl_pct/100)
+            tp_price = price * (1 - tp_pct/100)
+            sl_text = f"Stop loss: {fmt_price(sl_price)} (+{sl_pct:.1f}%)"
+            tp_text = f"Target: {fmt_price(tp_price)} (-{tp_pct:.1f}%)"
+        else:
+            direction_emoji, direction_text, direction_arrow = "⚪", "sideways", "gerak ke samping"
+            target_pct = 0
+            saran = "range trading aja, jangan FOMO breakout"
+            tp_text = f"Support: ${target - 500:,.0f} | Resistance: ${target + 500:,.0f}"
+            sl_text = ""
+        
+        funding_text = f"+{funding:.3f}% (mulai panas 🔥)" if funding > 0.03 else f"{funding:.3f}% (dingin ❄️)" if funding < -0.03 else f"{funding:.3f}% (normal)"
+        ob_text = f"OB +{ob_delta:.0f}% (buyer dominan 🟢)" if ob_delta > 15 else f"OB {ob_delta:.0f}% (seller dominan 🔴)" if ob_delta < -15 else f"OB {ob_delta:.0f}% (seimbang)"
+        
+        from utils import fmt_price
+        from command_handlers_part1 import send_to_both
+        
+        teks = f"{opening} | {get_wib()}\n"
+        teks += "━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"{emoji} {situation}\n\n"
+        teks += "📡 Kondisi BTC now:\n"
+        teks += f"Harga: ${price:,.0f}\n"
+        teks += f"Funding: {funding_text}\n"
+        teks += f"{ob_text}\n\n"
+        teks += "☄️ Ramalan gw:\n"
+        teks += f"{pred_data['reason']}\n"
+        teks += f"Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}\n"
+        teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
+        teks += "💡 Saran gw:\n"
+        teks += f"{saran}\n\n"
+        teks += f"📌 {tp_text}\n"
+        if sl_text:
+            teks += f"| {sl_text}\n"
+        teks += "\n⚠️ DYOR ya. Ga 100% akurat.\nmaintain risk management"
+        
+        history = load_predictions()
+        history["predictions"].append({
+            "time": datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S"),
+            "session": session, "direction": pred_data['direction'],
+            "target": target, "confidence": pred_data['confidence'],
+            "price_at_prediction": price
+        })
+        if len(history["predictions"]) > 50:
+            history["predictions"] = history["predictions"][-50:]
+        save_predictions(history)
+        send_to_both(teks)
+    except Exception as e:
+        logger.error(f"Casual report error: {e}")
+
+def evaluate_predictions():
+    try:
+        history = load_predictions()
+        if len(history["predictions"]) < 2:
+            return
+        last_pred = history["predictions"][-2]
+        if not last_pred:
+            return
+        
+        mids = get_all_mids()
+        current_price = float(mids.get("BTC", 0))
+        if current_price == 0:
+            return
+        
+        predicted_dir = last_pred["direction"]
+        predicted_target = last_pred["target"]
+        pred_time = last_pred["time"]
+        
+        if predicted_dir == "bullish":
+            correct_dir = current_price > last_pred["price_at_prediction"]
+        elif predicted_dir == "bearish":
+            correct_dir = current_price < last_pred["price_at_prediction"]
+        else:
+            correct_dir = abs(current_price - last_pred["price_at_prediction"]) < 500
+        
+        if predicted_dir == "sideways":
+            score = 80 if correct_dir else 40
+        else:
+            target_achieved = abs(current_price - predicted_target) / predicted_target * 100 < 1.0
+            score = 70 if correct_dir else 30
+            if target_achieved:
+                score += 10
+        
+        from command_handlers_part1 import bot, USER_ID
+        direction_result = "✅ BENER" if correct_dir else "❎ SALAH"
+        teks = f"📑 Evaluasi Prediksi\n━━━━━━━━━━━━━━━━━━━━━━\n☄️ Waktu prediksi: {pred_time}\nGw bilang: {predicted_dir.upper()}, target ${predicted_target:,.0f}\n\n📈 Kenyataan:\nHarga sekarang: ${current_price:,.0f}\n"
+        if predicted_dir != "sideways":
+            teks += f"Selisih target: ${abs(current_price - predicted_target):,.0f}\n"
+        else:
+            teks += f"Gerak: {current_price - last_pred['price_at_prediction']:+.0f}\n"
+        teks += f"\n📊 Nilai: {score}/100\nArah: {direction_result}\n\n💡 Yang gw pelajari:\n"
+        teks += "Prediksi gw bener. Lumayan lah.\n" if correct_dir else "Wah meleset. Ada faktor yang ga keitung kayaknya.\n"
+        if score < 60:
+            teks += "\n📈 Update: /warroom BTC buat analisis ulang."
+        else:
+            teks += "\n📈 Update: Gw masih percaya sama data."
+        
+        stats = history.get("stats", {"total": 0, "correct": 0})
+        stats["total"] += 1
+        if correct_dir:
+            stats["correct"] += 1
+        history["stats"] = stats
+        save_predictions(history)
+        bot.send_message(USER_ID, teks)
+    except Exception as e:
+        logger.error(f"Evaluation error: {e}")
+
+def prediction_stats(message):
+    history = load_predictions()
+    stats = history.get("stats", {"total": 0, "correct": 0})
+    total = stats["total"]
+    correct = stats["correct"]
+    accuracy = (correct / total * 100) if total > 0 else 0
+    
+    teks = f"⌨️ STATISTIK PREDIKSI\n━━━━━━━━━━━━━━━━━━━━━━\nTotal prediksi: {total} kali\nBener arahnya: {correct} kali ({accuracy:.0f}%)\n\n💡 Akurasi: "
+    if accuracy > 65: teks += "Lumayan bagus\n"
+    elif accuracy > 50: teks += "Masih belajar\n"
+    else: teks += "Payah, butuh perbaikan\n"
+    teks += "\n🎯 /warroom BTC untuk analisis terkini"
+    from command_handlers_part1 import bot
+    bot.send_message(message.chat.id, teks)
+
+
+
 
 # ============================================================
 # SCHEDULER THREAD
