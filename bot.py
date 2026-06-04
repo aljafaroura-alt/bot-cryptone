@@ -2563,6 +2563,7 @@ def detect_liquidity_hunt(coin, direction="LONG"):
 def get_smc_levels_advanced(coin, direction="LONG"):
     """
     Advanced SMC levels dengan confidence scoring & entry zone diperlebar.
+    Dilengkapi LIQUIDITY HUNT DETECTION + TREND LINE (4H+1H)
     Returns: (entry_low, entry_high, sl_price, tp_price, confidence, rr, zone_type, structure_bias)
     """
     try:
@@ -2587,7 +2588,9 @@ def get_smc_levels_advanced(coin, direction="LONG"):
         structure = detect_market_structure(candles_1h)
         bias_1h = structure["bias"]
         
-        # Cari zona OB/FVG (prioritas 15m -> 1h -> 4h)
+        # ============================================================
+        # ZONE DETECTION (OB -> FVG -> S&D)
+        # ============================================================
         zone = None
         zone_type = None
         zone_tf = None
@@ -2596,14 +2599,17 @@ def get_smc_levels_advanced(coin, direction="LONG"):
             if not tf_candles:
                 continue
             ob_bias = "BULLISH" if direction == "LONG" else "BEARISH"
-            # FIX BUG4: detect structure per-TF biar BOS confirmation akurat per timeframe
             tf_structure = detect_market_structure(tf_candles)
+            
+            # 1. Cari OB
             ob = find_ob_zone(tf_candles, ob_bias, max_distance_pct=2.5, structure=tf_structure)
             if ob:
                 zone = ob
                 zone_type = f"OB ({tf_name})"
                 zone_tf = tf_name
                 break
+            
+            # 2. Cari FVG
             fvg_type_needed = "bullish" if direction == "LONG" else "bearish"
             fvg = find_fvg_smc(tf_candles, max_distance_pct=2.5, fvg_type=fvg_type_needed)
             if fvg:
@@ -2611,7 +2617,8 @@ def get_smc_levels_advanced(coin, direction="LONG"):
                 zone_type = f"FVG ({tf_name})"
                 zone_tf = tf_name
                 break
-            # Tier 3: Supply/Demand zone — lebih HTF, skip 15m (terlalu noise untuk S/D)
+            
+            # 3. Cari Supply/Demand (hanya 1h dan 4h)
             if tf_name in ("1h", "4h"):
                 sd = find_sd_zone(tf_candles, ob_bias, max_distance_pct=3.0)
                 if sd:
@@ -2627,34 +2634,39 @@ def get_smc_levels_advanced(coin, direction="LONG"):
         entry_low = zone["low"]
         entry_high = zone["high"]
         
-        # Hitung confidence
+        # ============================================================
+        # BASE CONFIDENCE
+        # ============================================================
         confidence = 55
         if zone_tf == "15m":
-            confidence -= 5   # 15m lebih noise
+            confidence -= 5
         elif zone_tf == "1h":
             confidence += 10
         elif zone_tf == "4h":
             confidence += 20
 
-        # Bonus kalau zona OB (lebih reliable dari FVG untuk intraday)
+        # Bonus zona OB atau S/D
         if zone_type and "OB" in zone_type:
             confidence += 8
-        # S/D zone bonus — strong S/D lebih reliable dari FVG, setara OB
         elif zone_type and ("Demand" in zone_type or "Supply" in zone_type):
             if zone and zone.get("strength") == "strong":
-                confidence += 10  # strong S/D = base 3+ candle + impulse 2.5%+
+                confidence += 10
             else:
                 confidence += 5
 
-        # Structure bias — penalty lebih besar kalau NEUTRAL atau contra
+        # ============================================================
+        # STRUCTURE BIAS (1H)
+        # ============================================================
         if (direction == "LONG" and bias_1h == "BULLISH") or (direction == "SHORT" and bias_1h == "BEARISH"):
-            confidence += 20  # struktur align → bonus
+            confidence += 20
         elif bias_1h == "NEUTRAL":
-            confidence -= 20  # FIX: NEUTRAL bukan +5, harusnya penalty — struktur tidak mendukung
+            confidence -= 20
         else:
-            confidence -= 25  # contra struktur → penalty besar
+            confidence -= 25
 
-        # OB Delta & funding — penalty kalau contra atau nol
+        # ============================================================
+        # OB DELTA & FUNDING (DERIVATIVES)
+        # ============================================================
         ctx, _ = get_ctx(coin)
         ob_delta = 0
         funding = 0
@@ -2662,54 +2674,116 @@ def get_smc_levels_advanced(coin, direction="LONG"):
             ob_delta = get_ob_delta(coin)
             funding = get_funding_pct(ctx)
 
-            # OB delta — granular penalty/bonus sesuai magnitude
             if direction == "LONG":
-                if ob_delta > 30:   confidence += 15   # buyer overwhelm → bagus untuk LONG
+                if ob_delta > 30:   confidence += 15
                 elif ob_delta > 10: confidence += 10
-                elif ob_delta < -30: confidence -= 25  # seller overwhelm → contra LONG kuat
+                elif ob_delta < -30: confidence -= 25
                 elif ob_delta < -10: confidence -= 15
             elif direction == "SHORT":
-                if ob_delta < -30:  confidence += 15   # seller overwhelm → bagus untuk SHORT
+                if ob_delta < -30:  confidence += 15
                 elif ob_delta < -10: confidence += 10
-                elif ob_delta > 30:  confidence -= 25  # buyer overwhelm → contra SHORT kuat (+60% = -25)
+                elif ob_delta > 30:  confidence -= 25
                 elif ob_delta > 10:  confidence -= 15
 
-            # Funding — granular dari netral ke extreme
             if direction == "LONG":
-                if funding < -0.05:    confidence += 15  # shorts sangat overextended
-                elif funding < -0.02:  confidence += 10  # shorts overextended
-                elif funding < -0.005: confidence += 5   # funding mulai negatif = setup makin matang
-                elif funding > 0.05:   confidence -= 10  # longs overextended = risky LONG
-                elif funding > 0.02:   confidence -= 5   # funding positif = sedikit risky
+                if funding < -0.05:    confidence += 15
+                elif funding < -0.02:  confidence += 10
+                elif funding < -0.005: confidence += 5
+                elif funding > 0.05:   confidence -= 10
+                elif funding > 0.02:   confidence -= 5
             elif direction == "SHORT":
-                if funding > 0.05:     confidence += 15  # longs sangat overextended
-                elif funding > 0.02:   confidence += 10  # longs overextended
-                elif funding > 0.005:  confidence += 5   # funding mulai positif = setup makin matang
-                elif funding < -0.05:  confidence -= 10  # shorts overextended = risky SHORT
-                elif funding < -0.02:  confidence -= 5   # funding negatif = sedikit risky
+                if funding > 0.05:     confidence += 15
+                elif funding > 0.02:   confidence += 10
+                elif funding > 0.005:  confidence += 5
+                elif funding < -0.05:  confidence -= 10
+                elif funding < -0.02:  confidence -= 5
 
-            # Momentum penalty — granular sesuai magnitude
             try:
                 change_pct = get_change(ctx)
                 if direction == "SHORT":
-                    if change_pct > 5.0:   confidence -= 15  # momentum naik kencang banget
+                    if change_pct > 5.0:   confidence -= 15
                     elif change_pct > 3.0: confidence -= 10
                 elif direction == "LONG":
-                    if change_pct < -5.0:  confidence -= 15  # momentum turun kencang banget
+                    if change_pct < -5.0:  confidence -= 15
                     elif change_pct < -3.0: confidence -= 10
             except Exception:
                 pass
 
+        # Zone proximity bonus
         in_zone = entry_low <= current_price <= entry_high
         if in_zone:
             confidence += 15
 
-        # FIX: Cap range lebih realistis — min 40 (biar bisa ke-reject threshold 60), max 92
-        confidence = min(92, max(40, confidence))
-        
-        # Cari swing points untuk SL & TP
-        # Intraday: pakai 1H swing biar SL/TP lebih tight dan realistis
-        # Fallback ke 4H kalau 1H swing kurang
+        # ============================================================
+        # TREND LINE KONFIRMASI (4H + 1H untuk SMC)
+        # ============================================================
+        tl_4h = detect_trendline(coin, direction, lookback=40, timeframe="4h")
+        tl_1h = detect_trendline(coin, direction, lookback=50, timeframe="1h")
+
+        trendline_bonus = 0
+        trendline_type_str = ""
+        zone_mid = (entry_low + entry_high) / 2
+
+        # Trend line 4H (prioritas tertinggi untuk SMC)
+        if tl_4h.get("has_trendline") and not tl_4h.get("is_broken"):
+            tl_price = tl_4h.get("price", 0)
+            zone_to_tl_dist = abs(zone_mid - tl_price) / zone_mid * 100 if zone_mid > 0 else 99
+            tl_touches = tl_4h.get("touches", 0)
+            tl_type = "Support" if direction == "LONG" else "Resistance"
+            
+            if zone_to_tl_dist < 0.3:
+                trendline_bonus += 18
+                trendline_type_str = f"4H {tl_type} ✅ ({tl_touches}x, {zone_to_tl_dist:.2f}%)"
+                logger.info(f"[SMC_ADV] {coin} {direction} 4H TL strong bonus +18")
+            elif zone_to_tl_dist < 0.6:
+                trendline_bonus += 12
+                trendline_type_str = f"4H {tl_type} ⚠️ ({zone_to_tl_dist:.2f}%)"
+                logger.info(f"[SMC_ADV] {coin} {direction} 4H TL bonus +12")
+            elif zone_to_tl_dist < 1.0:
+                trendline_bonus += 6
+                trendline_type_str = f"4H {tl_type} 📏 ({zone_to_tl_dist:.2f}%)"
+
+        # Trend line 1H (konfirmasi tambahan)
+        if tl_1h.get("has_trendline") and not tl_1h.get("is_broken"):
+            tl_price = tl_1h.get("price", 0)
+            zone_to_tl_dist = abs(zone_mid - tl_price) / zone_mid * 100 if zone_mid > 0 else 99
+            tl_touches = tl_1h.get("touches", 0)
+            tl_type = "Support" if direction == "LONG" else "Resistance"
+            
+            if zone_to_tl_dist < 0.3:
+                trendline_bonus += 10
+                if trendline_type_str:
+                    trendline_type_str += f" | 1H {tl_type} ✅"
+                else:
+                    trendline_type_str = f"1H {tl_type} ✅ ({tl_touches}x)"
+                logger.info(f"[SMC_ADV] {coin} {direction} 1H TL bonus +10")
+            elif zone_to_tl_dist < 0.6:
+                trendline_bonus += 6
+                if trendline_type_str:
+                    trendline_type_str += f" | 1H {tl_type} ⚠️"
+                else:
+                    trendline_type_str = f"1H {tl_type} ⚠️"
+
+        # Double konfirmasi (4H + 1H align)
+        if tl_4h.get("has_trendline") and tl_1h.get("has_trendline"):
+            if not tl_4h.get("is_broken") and not tl_1h.get("is_broken"):
+                if tl_4h.get("distance_pct", 99) < 1.0 and tl_1h.get("distance_pct", 99) < 1.0:
+                    trendline_bonus += 8
+                    trendline_type_str += " | 🔁CONFIRM"
+                    logger.info(f"[SMC_ADV] {coin} {direction} double TL confirm +8")
+
+        # Tambahkan trendline bonus ke confidence
+        confidence = min(92, confidence + trendline_bonus)
+
+        # Simpan trendline info ke zone_type (opsional, untuk ditampilkan)
+        if trendline_type_str and zone_type:
+            zone_type = f"{zone_type} [TL: {trendline_type_str}]"
+        elif trendline_type_str:
+            zone_type = f"TL: {trendline_type_str}"
+
+        # ============================================================
+        # SWING POINTS UNTUK SL & TP
+        # ============================================================
         swing_highs, swing_lows = detect_swing_points(candles_1h, lookback=3)
         if len(swing_highs) < 2 or len(swing_lows) < 2:
             swing_highs, swing_lows = detect_swing_points(candles_4h, lookback=3)
@@ -2723,23 +2797,20 @@ def get_smc_levels_advanced(coin, direction="LONG"):
             valid_lows = [s["price"] for s in swing_lows if s["price"] < entry_low]
             if not valid_lows:
                 valid_lows = [s["price"] for s in swing_lows if s["price"] < current_price]
-            sl_price = max(valid_lows) * (1 - buffer) if valid_lows else entry_low * 0.99  # FIX: max = swing low TERDEKAT, bukan min (terjauh)
+            sl_price = max(valid_lows) * (1 - buffer) if valid_lows else entry_low * 0.99
             valid_highs = [s["price"] for s in swing_highs if s["price"] > entry_high]
             tp_price = min(valid_highs) * 0.998 if valid_highs else entry_high * 1.03
-        else:  # SHORT
+        else:
             valid_highs = [s["price"] for s in swing_highs if s["price"] > entry_high]
             if not valid_highs:
                 valid_highs = [s["price"] for s in swing_highs if s["price"] > current_price]
-            sl_price = min(valid_highs) * (1 + buffer) if valid_highs else entry_high * 1.01  # FIX: min = swing high TERDEKAT, bukan max (terjauh)
+            sl_price = min(valid_highs) * (1 + buffer) if valid_highs else entry_high * 1.01
             valid_lows = [s["price"] for s in swing_lows if s["price"] < entry_low]
             if not valid_lows:
                 valid_lows = [s["price"] for s in swing_lows if s["price"] < current_price]
-            # FIX: TP SHORT = swing low TERENDAH (min), bukan max
-            # max(valid_lows) = swing low terdekat → RR jelek
-            # min(valid_lows) = swing low terbawah → TP yang masuk akal
             tp_price = min(valid_lows) * 1.002 if valid_lows else entry_low * 0.97
 
-        # CAP SL pakai ATR-based max — cegah SL kejauhan akibat swing 4H yang terlalu lebar
+        # CAP SL pakai ATR-based max
         try:
             _, _atr_sl_pct, _, _, _ = get_adaptive_sltp(coin, current_price, direction)
             max_sl_pct = _atr_sl_pct / 100
@@ -2748,7 +2819,7 @@ def get_smc_levels_advanced(coin, direction="LONG"):
                 sl_min = entry_mid_check * (1 - max_sl_pct)
                 if sl_price < sl_min:
                     sl_price = sl_min
-            else:  # SHORT
+            else:
                 sl_max = entry_mid_check * (1 + max_sl_pct)
                 if sl_price > sl_max:
                     sl_price = sl_max
@@ -3883,8 +3954,10 @@ def check_warroom_simple():
     except Exception as e:
         logger.error(f"[WARROOM] check_warroom_simple error: {e}")
 
+
+
 def check_entry_alert():
-    """Scan untuk entry signal: score ≥60, longgar, banyak sinyal"""
+    """Scan untuk entry signal: score ≥65, wajib zona, wajib 2/3 TF align, + trend line bonus"""
     global _entry_alert_last
     
     try:
@@ -3893,7 +3966,7 @@ def check_entry_alert():
         assets = data[0]["universe"]
         ctxs = data[1]
         
-        # Ambil top 20 coin based on volume
+        # Ambil top 25 coin based on volume (dari 20 jadi 25 biar lebih banyak)
         coins = []
         for asset, ctx in zip(assets, ctxs):
             vol = float(ctx.get("dayNtlVlm") or 0)
@@ -3901,13 +3974,14 @@ def check_entry_alert():
                 coins.append((asset["name"], vol))
         
         coins.sort(key=lambda x: x[1], reverse=True)
-        top_coins = [c[0] for c in coins[:20]]
+        top_coins = [c[0] for c in coins[:25]]
         
         now_time = time.time()
         alerts = []
-        stat = {"gap_fail": 0, "score_fail": 0, "tf_neutral": 0, "cooldown": 0, "passed": 0, "zone_fail": 0}
+        stat = {"gap_fail": 0, "score_fail": 0, "tf_neutral": 0, "cooldown": 0, 
+                "passed": 0, "zone_fail": 0, "trendline_hit": 0}
         
-        logger.info(f"[ENTRY_ALERT] Scanning {len(top_coins)} coins (AGRESSIVE MODE)...")
+        logger.info(f"[ENTRY_ALERT] Scanning {len(top_coins)} coins (with TREND LINE 1H+15m)...")
         
         for coin in top_coins:
             # Cooldown 30 menit per coin
@@ -3937,7 +4011,7 @@ def check_entry_alert():
                 
                 long_score, short_score = calculate_scores(ob_delta, funding, bid_wall, ask_wall, short_liq_size, long_liq_size)
 
-                # === INTELLIGENCE BOOST #1: CVD ===
+                # INTELLIGENCE BOOST #1: CVD
                 try:
                     cvd = get_cvd(coin, hours=1)
                     if cvd > 0.5:    long_score += 5
@@ -3945,7 +4019,7 @@ def check_entry_alert():
                 except Exception:
                     pass
 
-                # === INTELLIGENCE BOOST #2: MOMENTUM ACCELERATION ===
+                # INTELLIGENCE BOOST #2: MOMENTUM ACCELERATION
                 try:
                     m5_candles = get_candles_cached(coin, "5m", 10)
                     if m5_candles and len(m5_candles) >= 5:
@@ -3958,6 +4032,7 @@ def check_entry_alert():
                             else:                short_score += 5
                 except Exception:
                     pass
+                    
                 gap = abs(long_score - short_score)
                 if long_score > short_score and gap >= 7:
                     deriv_bias, deriv_score = "LONG", long_score
@@ -3967,7 +4042,6 @@ def check_entry_alert():
                     stat["gap_fail"] += 1
                     continue
                 
-                # MAIN CHANGE: score ≥ ENTRY_MIN_SCORE (68) untuk quality control
                 if deriv_score < ENTRY_MIN_SCORE:
                     stat["score_fail"] += 1
                     continue
@@ -3975,11 +4049,11 @@ def check_entry_alert():
                 logger.info(f"[ENTRY_ALERT] {coin} score={deriv_score} ({deriv_bias}) — fetching TF...")
                 
                 r_h1 = analyze_tf(coin, "1h")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 r_m15 = analyze_tf(coin, "15m")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 r_m5 = analyze_tf(coin, "5m")
-                time.sleep(0.3)
+                time.sleep(0.2)
 
                 # Hitung TF biases (non-NEUTRAL)
                 tf_biases = []
@@ -3996,11 +4070,7 @@ def check_entry_alert():
                 aligned = max(bullish, bearish)
                 dominant = "BULLISH" if bullish >= bearish else "BEARISH"
 
-                # PATCH: need_align naik ke 2 — minimal 2 dari 3 TF harus sejalan
-                # 1 TF saja terlalu mudah lolos, sering counter-trend di TF lain
-                need_align = 2
-
-                # Direction harus match antara derivatives bias dan TF dominant
+                need_align = 2  # minimal 2 dari 3 TF
                 dir_match = (dominant == "BULLISH" and deriv_bias == "LONG") or \
                             (dominant == "BEARISH" and deriv_bias == "SHORT")
 
@@ -4009,8 +4079,9 @@ def check_entry_alert():
                     logger.info(f"[ENTRY_ALERT] {coin} SKIP: aligned={aligned}/{need_align} dir_match={dir_match}")
                     continue
 
-                # PATCH: Zone filter WAJIB — entry hanya kalau harga di dalam OB/FVG/S&D
-                # Zone bukan dekorasi, ini adalah entry trigger sesuai SMC philosophy
+                # ============================================================
+                # ZONE DETECTION (OB, FVG, S&D)
+                # ============================================================
                 zone_tags = []
                 sd_boost = 0
                 for label, r in [("1h", r_h1), ("15m", r_m15), ("5m", r_m5)]:
@@ -4042,37 +4113,84 @@ def check_entry_alert():
                 except Exception:
                     pass
 
-                # PATCH: Reject kalau harga tidak di zona apapun
-                # in_zone_count = 0 = harga di luar semua OB/FVG/S&D = skip
+                # WAJIB di zona (OB/FVG/S&D)
                 if in_zone_count == 0:
-                    logger.info(f"[ENTRY_ALERT] {coin} SKIP: harga tidak di OB/FVG/S&D — tunggu pullback ke zona")
-                    stat["gap_fail"] = stat.get("gap_fail", 0) + 1
+                    logger.info(f"[ENTRY_ALERT] {coin} SKIP: tidak di zona OB/FVG/S&D")
+                    stat["zone_fail"] = stat.get("zone_fail", 0) + 1
                     continue
 
-                # PATCH: SL/TP dari swing structure via get_smc_levels_advanced
-                # Bukan persentase flat dari mark price — harus berbasis swing high/low terdekat
+                # ============================================================
+                # TREND LINE KONFIRMASI (1H utama + 15m bonus)
+                # ============================================================
+                tl_1h = detect_trendline(coin, deriv_bias, lookback=50, timeframe="1h")
+                tl_15m = detect_trendline(coin, deriv_bias, lookback=30, timeframe="15m")
+
+                trendline_bonus = 0
+                trendline_tags = []
+
+                # Trend line 1H (utama)
+                if tl_1h.get("has_trendline") and not tl_1h.get("is_broken"):
+                    tl_dist = tl_1h.get("distance_pct", 99)
+                    tl_touches = tl_1h.get("touches", 0)
+                    tl_type = "Spprt" if deriv_bias == "LONG" else "Res"
+                    
+                    if tl_dist < 0.3:
+                        trendline_bonus += 18
+                        trendline_tags.append(f"1H:{tl_type}✅({tl_touches})")
+                        stat["trendline_hit"] += 1
+                    elif tl_dist < 0.6:
+                        trendline_bonus += 12
+                        trendline_tags.append(f"1H:{tl_type}⚠️({tl_touches})")
+                    elif tl_dist < 1.0:
+                        trendline_bonus += 6
+                        trendline_tags.append(f"1H:{tl_type}📏")
+                    else:
+                        trendline_tags.append(f"1H:{tl_type}")
+
+                # Trend line 15m (bonus konfirmasi)
+                if tl_15m.get("has_trendline") and not tl_15m.get("is_broken"):
+                    tl_dist = tl_15m.get("distance_pct", 99)
+                    tl_touches = tl_15m.get("touches", 0)
+                    tl_type = "Spprt" if deriv_bias == "LONG" else "Res"
+                    
+                    if tl_dist < 0.3:
+                        trendline_bonus += 10
+                        trendline_tags.append(f"15m:{tl_type}✅({tl_touches})")
+                    elif tl_dist < 0.6:
+                        trendline_bonus += 6
+                        trendline_tags.append(f"15m:{tl_type}⚠️")
+                    else:
+                        trendline_tags.append(f"15m:{tl_type}")
+
+                # Double konfirmasi (1H + 15m align)
+                if tl_1h.get("has_trendline") and tl_15m.get("has_trendline"):
+                    if not tl_1h.get("is_broken") and not tl_15m.get("is_broken"):
+                        if tl_1h.get("distance_pct", 99) < 1.0 and tl_15m.get("distance_pct", 99) < 1.0:
+                            trendline_bonus += 8
+                            trendline_tags.append("🔁CONFIRM")
+
+                # ============================================================
+                # SL/TP DARI SWING STRUCTURE
+                # ============================================================
                 smc_entry_low, smc_entry_high, smc_sl, smc_tp, smc_conf, smc_rr, smc_zone_type, smc_bias = \
                     get_smc_levels_advanced(coin, deriv_bias)
 
                 if smc_sl and smc_tp and smc_rr >= 1.5:
-                    # Pakai SL/TP dari struktur swing
                     sl_p = smc_sl
                     tp_p = smc_tp
                     rr = smc_rr
-                    # Hitung pct untuk display
                     sl_pct = abs(mark - sl_p) / mark * 100
                     tp_pct = abs(tp_p - mark) / mark * 100
                     logger.info(f"[ENTRY_ALERT] {coin} swing SL/TP OK: SL={sl_p:.4f} TP={tp_p:.4f} RR={rr:.1f}")
                 else:
-                    # Fallback ke ATR-based hanya kalau swing gagal, dengan RR minimum lebih ketat
                     sl_p, sl_pct, tp_p, tp_pct, rr = get_adaptive_sltp(coin, mark, deriv_bias)
                     if rr < 1.5:
                         logger.info(f"[ENTRY_ALERT] {coin} SKIP: RR fallback {rr:.1f} < 1.5")
                         continue
                     logger.info(f"[ENTRY_ALERT] {coin} fallback ATR SL/TP: RR={rr:.1f}")
 
-                # Apply S/D boost ke score (capped 99)
-                boosted_score = min(99, deriv_score + sd_boost)
+                # Apply S/D boost + trendline boost ke score (capped 99)
+                boosted_score = min(99, deriv_score + sd_boost + trendline_bonus)
 
                 stat["passed"] += 1
                 alerts.append({
@@ -4081,6 +4199,8 @@ def check_entry_alert():
                     "score": boosted_score,
                     "score_raw": deriv_score,
                     "sd_boost": sd_boost,
+                    "trendline_bonus": trendline_bonus,
+                    "trendline_tags": trendline_tags,
                     "price": mark,
                     "change": get_change(ctx),
                     "sl": sl_p,
@@ -4101,16 +4221,19 @@ def check_entry_alert():
                 continue
         
         elapsed = time.time() - start_time
-        logger.info(f"[ENTRY_ALERT] Scan done {elapsed:.1f}s — {len(alerts)} alerts | cooldown={stat['cooldown']} gap_fail={stat.get('gap_fail',0)} score_fail={stat['score_fail']} tf_neutral={stat['tf_neutral']} zone_fail={stat['zone_fail']} passed={stat['passed']}")
+        logger.info(f"[ENTRY_ALERT] Scan done {elapsed:.1f}s — {len(alerts)} alerts | "
+                    f"trendline_hit={stat['trendline_hit']} | "
+                    f"cooldown={stat['cooldown']} gap_fail={stat.get('gap_fail',0)} "
+                    f"score_fail={stat['score_fail']} tf_neutral={stat['tf_neutral']} "
+                    f"zone_fail={stat.get('zone_fail',0)} passed={stat['passed']}")
 
         # Kirim alert
         if alerts:
             alerts.sort(key=lambda x: x["score"], reverse=True)
-            # PATCH: max 3 alert (bukan 5) — lebih selektif, kualitas > kuantitas
             for a in alerts[:3]:
                 arrow = "🟢" if a["direction"] == "LONG" else "🔴"
 
-                # Zone sekarang mandatory — semua alert pasti sudah di zona
+                # Zone display
                 in_zone = a.get("in_zone_count", 0)
                 zone_tags = a.get("zone_tags", [])
                 if in_zone >= 2:
@@ -4118,17 +4241,29 @@ def check_entry_alert():
                 else:
                     zone_line = f"📍 Zona: {'  '.join(zone_tags)} ✅"
 
-                # Score display: tunjukkan boost kalau ada
+                # Trend line display
+                tl_tags = a.get("trendline_tags", [])
+                if tl_tags:
+                    tl_line = f"\n📈 TL: {' | '.join(tl_tags)}"
+                else:
+                    tl_line = ""
+
+                # Score display with boosts
                 score_display = f"{a['score']}"
+                boost_parts = []
                 if a.get('sd_boost', 0) > 0:
-                    score_display += f" (+{a['sd_boost']} S&D)"
+                    boost_parts.append(f"S&D +{a['sd_boost']}")
+                if a.get('trendline_bonus', 0) > 0:
+                    boost_parts.append(f"TL +{a['trendline_bonus']}")
+                if boost_parts:
+                    score_display += f" ({', '.join(boost_parts)})"
 
                 teks = f"""{arrow} *ENTRY ALERT* • {a['coin']}{_cross_tag(a['coin'], a['direction'])}
 ━━━━━━━━━━━━━━━━━━━━━━
 📡 {a['direction']} | Score {score_display}
 💰 Harga: {fmt_price(a['price'])} | Δ {a['change']:+.1f}%
 📊 {a['alignment']}/{a.get('tf_total', 3)} TF align
-{zone_line}
+{zone_line}{tl_line}
 
 🎯 ENTRY: {fmt_price(a['price'])}
 ⛔ SL: {fmt_price(a['sl'])} ({'%.2f' % a['sl_pct']}%) [swing]
@@ -5910,6 +6045,233 @@ def find_sd_zone(candles, bias, max_distance_pct=3.0):
 
     return None
 
+
+# ============================================================
+# TREND LINE DETECTION (MULTI-TIMEFRAME)
+# ============================================================
+
+def detect_trendline(coin: str, direction: str, lookback: int = 50, timeframe: str = "1h") -> dict:
+    """
+    Deteksi trend line support (untuk LONG) atau resistance (untuk SHORT)
+    
+    Args:
+        coin: Nama coin (BTC, ETH, dll)
+        direction: "LONG" (cari support trend line) atau "SHORT" (cari resistance trend line)
+        lookback: Jumlah candle untuk analisis (default 50)
+        timeframe: Timeframe (4h, 1h, 15m, 5m)
+    
+    Returns:
+        dict: {
+            "has_trendline": bool,
+            "type": "SUPPORT" | "RESISTANCE" | None,
+            "price": float,              # harga trend line pada candle terakhir
+            "distance_pct": float,       # jarak harga sekarang ke trend line (%)
+            "touches": int,              # jumlah sentuhan (validity)
+            "slope": float,              # kemiringan (% per candle)
+            "is_broken": bool,           # apakah sudah tembus (2 candle konfirmasi)
+            "confidence": int,           # 0-100
+            "timeframe": str,
+        }
+    """
+    try:
+        candles = get_candles_smc(coin, timeframe, limit=lookback + 30)
+        if not candles or len(candles) < 25:
+            return {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
+        
+        current_price = float(candles[-1]['c'])
+        swing_highs, swing_lows = detect_swing_points(candles, lookback=3)
+        
+        # ============================================================
+        # LONG: Cari SUPPORT TREND LINE (menghubungkan swing lows)
+        # ============================================================
+        if direction == "LONG":
+            if len(swing_lows) < 3:
+                return {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
+            
+            # Ambil 5 swing low terakhir
+            recent_lows = sorted(swing_lows, key=lambda x: x['idx'])[-6:]
+            if len(recent_lows) < 2:
+                return {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
+            
+            best = None
+            best_score = 0
+            
+            for i in range(len(recent_lows)):
+                for j in range(i+1, len(recent_lows)):
+                    p1 = recent_lows[i]
+                    p2 = recent_lows[j]
+                    
+                    x1, y1 = p1['idx'], p1['price']
+                    x2, y2 = p2['idx'], p2['price']
+                    
+                    if x2 == x1:
+                        continue
+                    
+                    slope = (y2 - y1) / (x2 - x1)
+                    
+                    # Support trend line seharusnya naik (slope positif) atau datar
+                    if slope < -0.0001:
+                        continue
+                    
+                    intercept = y1 - slope * x1
+                    last_idx = len(candles) - 1
+                    trendline_price = slope * last_idx + intercept
+                    
+                    # Hitung berapa banyak swing low yang menyentuh garis
+                    touches = 0
+                    for low in recent_lows:
+                        line_price = slope * low['idx'] + intercept
+                        dist_pct = abs(low['price'] - line_price) / low['price'] * 100
+                        if dist_pct < 0.25:
+                            touches += 1
+                    
+                    # Cek apakah sudah broken (2 candle close di bawah trend line)
+                    is_broken = False
+                    break_count = 0
+                    for k in range(max(0, len(candles) - 12), len(candles)):
+                        c_close = float(candles[k]['c'])
+                        line_at_k = slope * k + intercept
+                        if c_close < line_at_k * 0.995:
+                            break_count += 1
+                        else:
+                            break_count = 0
+                        if break_count >= 2:
+                            is_broken = True
+                            break
+                    
+                    distance = trendline_price - current_price
+                    distance_pct = abs(distance) / current_price * 100
+                    
+                    # Hitung confidence
+                    conf = 35
+                    conf += touches * 12
+                    if distance_pct < 0.3:
+                        conf += 30
+                    elif distance_pct < 0.6:
+                        conf += 20
+                    elif distance_pct < 1.0:
+                        conf += 10
+                    if not is_broken:
+                        conf += 15
+                    if slope > 0:
+                        conf += 5
+                    
+                    conf = min(92, conf)
+                    
+                    # Score untuk memilih trend line terbaik
+                    score = touches * 100 + (80 if not is_broken else 0) + (50 - distance_pct * 10)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best = {
+                            "has_trendline": True,
+                            "type": "SUPPORT",
+                            "price": trendline_price,
+                            "distance_pct": distance_pct,
+                            "touches": touches,
+                            "slope": slope,
+                            "is_broken": is_broken,
+                            "confidence": conf,
+                            "timeframe": timeframe,
+                        }
+            
+            return best if best else {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
+        
+        # ============================================================
+        # SHORT: Cari RESISTANCE TREND LINE (menghubungkan swing highs)
+        # ============================================================
+        else:  # direction == "SHORT"
+            if len(swing_highs) < 3:
+                return {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
+            
+            recent_highs = sorted(swing_highs, key=lambda x: x['idx'])[-6:]
+            if len(recent_highs) < 2:
+                return {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
+            
+            best = None
+            best_score = 0
+            
+            for i in range(len(recent_highs)):
+                for j in range(i+1, len(recent_highs)):
+                    p1 = recent_highs[i]
+                    p2 = recent_highs[j]
+                    
+                    x1, y1 = p1['idx'], p1['price']
+                    x2, y2 = p2['idx'], p2['price']
+                    
+                    if x2 == x1:
+                        continue
+                    
+                    slope = (y2 - y1) / (x2 - x1)
+                    
+                    # Resistance trend line seharusnya turun (slope negatif) atau datar
+                    if slope > 0.0001:
+                        continue
+                    
+                    intercept = y1 - slope * x1
+                    last_idx = len(candles) - 1
+                    trendline_price = slope * last_idx + intercept
+                    
+                    touches = 0
+                    for high in recent_highs:
+                        line_price = slope * high['idx'] + intercept
+                        dist_pct = abs(high['price'] - line_price) / high['price'] * 100
+                        if dist_pct < 0.25:
+                            touches += 1
+                    
+                    # Cek apakah sudah broken (2 candle close di atas trend line)
+                    is_broken = False
+                    break_count = 0
+                    for k in range(max(0, len(candles) - 12), len(candles)):
+                        c_close = float(candles[k]['c'])
+                        line_at_k = slope * k + intercept
+                        if c_close > line_at_k * 1.005:
+                            break_count += 1
+                        else:
+                            break_count = 0
+                        if break_count >= 2:
+                            is_broken = True
+                            break
+                    
+                    distance = current_price - trendline_price
+                    distance_pct = abs(distance) / current_price * 100
+                    
+                    conf = 35
+                    conf += touches * 12
+                    if distance_pct < 0.3:
+                        conf += 30
+                    elif distance_pct < 0.6:
+                        conf += 20
+                    elif distance_pct < 1.0:
+                        conf += 10
+                    if not is_broken:
+                        conf += 15
+                    if slope < 0:
+                        conf += 5
+                    
+                    conf = min(92, conf)
+                    
+                    score = touches * 100 + (80 if not is_broken else 0) + (50 - distance_pct * 10)
+                    
+                    if score > best_score:
+                        best_score = score
+                        best = {
+                            "has_trendline": True,
+                            "type": "RESISTANCE",
+                            "price": trendline_price,
+                            "distance_pct": distance_pct,
+                            "touches": touches,
+                            "slope": slope,
+                            "is_broken": is_broken,
+                            "confidence": conf,
+                            "timeframe": timeframe,
+                        }
+            
+            return best if best else {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
+        
+    except Exception as e:
+        logger.error(f"[TRENDLINE] {coin} {timeframe} error: {e}")
+        return {"has_trendline": False, "confidence": 0, "timeframe": timeframe}
 
 def analyze_tf(coin, timeframe):
     """Full SMC analysis satu timeframe dengan distance filter"""
