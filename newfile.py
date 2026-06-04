@@ -215,6 +215,11 @@ _candle_cache_ttl = {"5m": 300, "15m": 300, "1h": 600, "4h": 1200}
 _cvd_last_time = {}
 _cvd_accum = {}
 
+# Global variables untuk status
+_last_divergence_check = 0
+_last_cvd_check = 0
+_last_smart_money_check = 0
+
 # ========== CACHED META ==========
 def get_cached_meta():
     global _cached_meta_data, _cached_meta_time
@@ -2989,7 +2994,17 @@ def save_learning_data():
             }, f, indent=2)
     except Exception as e:
         logger.error(f"[LEARNING] Save error: {e}")
-        
+
+def save_persistent_state():
+    """Simpan state ke file (placeholder)"""
+    try:
+        # Implementasi sederhana, bisa dikembangkan
+        pass
+    except Exception as e:
+        logger.debug(f"Save persistent state error: {e}")
+
+
+
 # command_handlers_part1.py
 import time
 import logging
@@ -4045,6 +4060,11 @@ def start_predator():
     t.start()
     logger.info("✅ PREDATOR THREAD LAUNCHED")
         
+
+
+# ============================================================
+# ANJING COMMAND
+# ============================================================
 # command_handlers_part3.py
 import time
 import logging
@@ -4069,6 +4089,9 @@ def get_uptime_local():
     elif m > 0: return f"{m}m {s}d"
     else: return f"{s}d"
 
+def is_owner(message):
+    return message.from_user.id in ALLOWED_USERS
+
 # ============================================================
 # MOOD COMMAND
 # ============================================================
@@ -4090,10 +4113,292 @@ def mood_command(message):
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 # ============================================================
-# STATUS COMMAND
+# STATUS COMMAND (LENGKAP)
 # ============================================================
+@bot.message_handler(commands=['status'])
+def status_command(message):
+    try:
+        regime = get_market_regime()
+        sesi = get_sesi()
+        uptime = get_uptime_local()
+        
+        # Import status dari berbagai module
+        from entry_alert import _entry_alert_running
+        from squeeze_alert_part1 import _squeeze_alert_running
+        from smc_alert_part1 import _smc_alert_running
+        from sniper import sniper_status
+        from predator import predator_status, _last_predator_scan
+        from liquidation_scanner import _liq_scanner_running
+        from schedule_manager import TEMEN_MODE
+        
+        # Sniper status
+        running, mode = sniper_status()
+        sniper_text = f"✅ {mode}" if running else "❌ OFF"
+        
+        # Temen status
+        temen_text = "✅ ON" if TEMEN_MODE else "❌ OFF"
+        
+        # Divergence status (dari hyperliquid_data)
+        try:
+            from hyperliquid_data import _last_divergence_check
+            divergence_text = "✅ ON (tiap 30 menit)" if _last_divergence_check > 0 else "🟡 IDLE"
+        except:
+            divergence_text = "🟡 IDLE"
+        
+        # CVD status
+        try:
+            from hyperliquid_data import _last_cvd_check
+            cvd_text = "✅ ON (tiap 1 jam)" if _last_cvd_check > 0 else "🟡 IDLE"
+        except:
+            cvd_text = "🟡 IDLE"
+        
+        # Smart Flow status
+        try:
+            from hyperliquid_data import _last_smart_money_check
+            smart_text = "✅ ON (adaptif)" if _last_smart_money_check > 0 else "🟡 IDLE"
+        except:
+            smart_text = "🟡 IDLE"
+        
+        # Predator status
+        pred_status = predator_status()
+        predator_text = "✅ ON (tiap 30 menit)" if pred_status else "🟡 IDLE"
+        
+        # Warroom alert status
+        try:
+            from command_handlers_part1 import _warroom_alert_running
+            warroom_text = "✅ ON (≥60, tiap 15m)" if _warroom_alert_running else "❌ OFF"
+        except:
+            warroom_text = "❌ OFF"
+        
+        # Entry alert status
+        entry_text = "✅ ON (≥60, tiap 15m)" if _entry_alert_running else "❌ OFF"
+        
+        # Squeeze alert status
+        squeeze_text = "✅ ON (≥55, tiap 20m)" if _squeeze_alert_running else "❌ OFF"
+        
+        # SMC alert status
+        smc_text = "✅ ON (≥60%, RR≥1.8, tiap 20m)" if _smc_alert_running else "❌ OFF"
+        
+        # CopyTrade status
+        try:
+            from copytrade import WATCHED_WALLETS, MANUAL_WALLETS, COPYTRADE_MODE, COPYTRADE_SIZE_FILTER
+            ct_total = len(WATCHED_WALLETS)
+            ct_manual = len(MANUAL_WALLETS)
+            ct_auto = ct_total - ct_manual
+            mode_emoji = {"CASUAL": "🟢", "PRO": "🟡", "INSANE": "🔴"}.get(COPYTRADE_MODE, "🟡")
+            size_filter = COPYTRADE_SIZE_FILTER.get(COPYTRADE_MODE, 25000)
+            size_display = f"${size_filter/1000:.0f}K" if size_filter < 1000000 else f"${size_filter/1000000:.0f}M"
+            if ct_total > 0:
+                copytrade_text = f"{mode_emoji} {COPYTRADE_MODE} | {ct_total}w ({ct_auto}🔍 {ct_manual}✋) | min {size_display}"
+            else:
+                copytrade_text = f"{mode_emoji} {COPYTRADE_MODE} | 🟡 Discovering..."
+        except:
+            copytrade_text = "🟡 Discovering..."
+        
+        # Casual report
+        casual_text = "✅ ON (tiap 4 jam)" if not DEBUG_MODE else "🟡 DEBUG"
+        
+        # Liq scanner status
+        liq_text = "✅ ON" if _liq_scanner_running else "❌ OFF"
+        
+        # Build status teks
+        teks = f"⚠️ SYSTEM STATUS\n"
+        teks += f"─────────────────────────────────\n"
+        teks += f"🦄 Bot       : ✅ ONLINE\n"
+        teks += f"⏱️ Uptime    : {uptime}\n"
+        teks += f"📡 Session   : {sesi}\n"
+        teks += f"⏰ WIB       : {get_wib()}\n"
+        teks += f"─────────────────────────────────\n"
+        teks += f"🕶️ SNIPER    : {sniper_text}\n"
+        teks += f"👽 TEMEN     : {temen_text}\n"
+        teks += f"⛔ LIQ SCAN  : {liq_text}\n"
+        teks += f"💀 DIVERGENCE: {divergence_text}\n"
+        teks += f"💎 CVD       : {cvd_text}\n"
+        teks += f"🌐 SMART FLOW: {smart_text}\n"
+        teks += f"🐾 PREDATOR  : {predator_text}\n"
+        teks += f"⚓ WARROOM   : {warroom_text}\n"
+        teks += f"🎯 ENTRY     : {entry_text}\n"
+        teks += f"⚡ SQUEEZE   : {squeeze_text}\n"
+        teks += f"💵 SMC       : {smc_text}\n"
+        teks += f"🧠 CASUAL    : {casual_text}\n"
+        teks += f"📊 PREDIKSI  : ✅ ON\n"
+        teks += f"🔊 COPYTRADE : {copytrade_text}\n"
+        teks += f"─────────────────────────────────\n"
+        teks += f"✅ Lets fvcking go"
+        
+        bot.reply_to(message, teks)
+        
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error status: {str(e)[:200]}")
 
+# ============================================================
+# PING COMMAND
+# ============================================================
+@bot.message_handler(commands=['ping'])
+def ping(message):
+    try:
+        start_time = time.time()
+        msg = bot.reply_to(message, "🏓 Pinging...")
+        response_ms = (time.time() - start_time) * 1000
+        uptime = get_uptime_local()
+        
+        teks = f"🏓 PONG!\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"⚡ Response   : {response_ms:.0f}ms\n"
+        teks += f"🕐 WIB        : {get_wib()}\n"
+        teks += f"⏱️ Uptime     : {uptime}\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"✅ Bot sehat, siap membantu!"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
+# ============================================================
+# SCREENER COMMAND
+# ============================================================
+@bot.message_handler(commands=['screener'])
+def screener(message):
+    msg = bot.reply_to(message, "📊 Scanning market...")
+    
+    try:
+        data = get_cached_meta()
+        assets = data[0]["universe"]
+        ctxs = data[1]
+        
+        coins_data = []
+        for asset, ctx in zip(assets, ctxs):
+            coin = asset["name"]
+            mark = float(ctx.get("markPx") or 0)
+            if mark == 0:
+                continue
+            
+            change = get_change(ctx)
+            funding = get_funding_pct(ctx)
+            oi_usd = get_oi_usd(ctx, mark)
+            vol = float(ctx.get("dayNtlVlm") or 0) / 1e6
+            
+            if vol < 5:
+                continue
+            
+            coins_data.append({
+                "coin": coin,
+                "change": change,
+                "funding": funding,
+                "oi": oi_usd,
+                "vol": vol,
+                "price": mark
+            })
+        
+        if not coins_data:
+            bot.edit_message_text("❌ Gagal ambil data", msg.chat.id, msg.message_id)
+            return
+        
+        gainers = sorted(coins_data, key=lambda x: x["change"], reverse=True)[:5]
+        losers = sorted(coins_data, key=lambda x: x["change"])[:5]
+        
+        teks = f"📊 MARKET SCREENER\n"
+        teks += f"⏰ {get_wib()} | {get_sesi()}\n"
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        teks += f"🚀 TOP GAINERS\n"
+        for i, c in enumerate(gainers, 1):
+            teks += f"{i}. {c['coin']} | {c['change']:+.1f}%\n"
+            teks += f"   {fmt_price(c['price'])} | Vol ${c['vol']:.0f}M\n\n"
+        
+        teks += f"📉 TOP LOSERS\n"
+        for i, c in enumerate(losers, 1):
+            teks += f"{i}. {c['coin']} | {c['change']:+.1f}%\n"
+            teks += f"   {fmt_price(c['price'])} | Vol ${c['vol']:.0f}M\n\n"
+        
+        teks += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        teks += f"💡 /price BTC | /warroom BTC"
+        
+        bot.edit_message_text(teks, msg.chat.id, msg.message_id)
+        
+    except Exception as e:
+        bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
+
+# ============================================================
+# PREDATOR COMMAND
+# ============================================================
+@bot.message_handler(commands=['predator'])
+def predator_cmd(message):
+    if not is_owner(message):
+        return
+    
+    parts = message.text.split()
+    if len(parts) < 2:
+        from predator import predator_status, _last_predator_scan
+        status = "✅ ON" if predator_status() else "❌ OFF"
+        last_scan = time.time() - _last_predator_scan if _last_predator_scan > 0 else 0
+        last_scan_str = f"{int(last_scan//60)} menit lalu" if last_scan < 3600 else f"{int(last_scan//3600)} jam lalu"
+        bot.reply_to(message, f"🐾 PREDATOR\nStatus: {status}\nLast scan: {last_scan_str}\n\n/predator on\n/predator off\n/predator scan")
+        return
+    
+    if parts[1] == "on":
+        from predator import predator_on
+        predator_on()
+        bot.reply_to(message, "✅ PREDATOR ON")
+    elif parts[1] == "off":
+        from predator import predator_off
+        predator_off()
+        bot.reply_to(message, "❌ PREDATOR OFF")
+    elif parts[1] == "scan":
+        bot.reply_to(message, "🔍 Scanning manual...")
+        from predator import ultimate_predator_scan
+        ultimate_predator_scan()
+    else:
+        bot.reply_to(message, "Gunakan: on / off / scan")
+
+# ============================================================
+# LIQUIDATIONS COMMAND
+# ============================================================
+@bot.message_handler(commands=['liquidations'])
+def liquidations(message):
+    try:
+        data = get_cached_meta()
+        total_long = 0
+        total_short = 0
+        results = []
+        
+        for asset, ctx in zip(data[0]["universe"], data[1]):
+            try:
+                name = asset["name"]
+                mark = float(ctx.get("markPx") or 0)
+                if mark == 0:
+                    continue
+                oi = get_oi_usd(ctx, mark)
+                change = get_change(ctx)
+                est = oi * abs(change) / 100
+                if change < -1.5:
+                    total_long += est
+                    direction = "LONG"
+                elif change > 1.5:
+                    total_short += est
+                    direction = "SHORT"
+                else:
+                    direction = "MINIMAL"
+                if est > 0.1 and direction != "MINIMAL":
+                    results.append((name, est, direction, change))
+            except:
+                continue
+        
+        results = sorted(results, key=lambda x: x[1], reverse=True)[:7]
+        
+        txt = f"🔴 LIQUIDATION RADAR\n─────────────────\n{get_wib()}\n\n"
+        txt += f"💥 Long Liq : ${total_long:.2f}M\n💥 Short Liq: ${total_short:.2f}M\n\n"
+        if results:
+            txt += "Top Candidates:\n"
+            for name, liq, direction, change in results:
+                icon = "🔴" if direction == "LONG" else "🟢"
+                txt += f"  {icon} {name} | ${liq:.2f}M | {direction} | {change:+.1f}%\n"
+        else:
+            txt += "✅ Tidak ada kandidat liq besar.\n"
+        txt += "\n📌 Estimasi dari OI × price move"
+        bot.reply_to(message, txt)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {e}")
 # ============================================================
 # PING COMMAND
 # ============================================================
@@ -5233,16 +5538,63 @@ def prediction_stats(message):
     from command_handlers_part1 import bot
     bot.send_message(message.chat.id, teks)
 
+# main.py
+import time
+import threading
+import logging
+import os
 
+from config import TOKEN, USER_ID, DEBUG_MODE
+from utils import get_wib, get_wib_hour
+from hyperliquid_data import info
+from learning_engine import load_learning_data, evaluate_signal_outcomes
+from entry_alert import start_entry_alert, _entry_alert_running
+from squeeze_alert_part3 import start_squeeze_alert, _squeeze_alert_running
+from smc_alert_part3 import start_smc_alert, _smc_alert_running
+from sniper import check_sniper, sniper_on, sniper_off, sniper_status, _sniper_running
+from market_regime import get_market_regime
+from predator import start_predator, predator_status, predator_on, predator_off, _last_predator_scan
+from liquidation_scanner import start_liquidation_scanner, _liq_scanner_running
+from copytrade import start_copytrade, load_wallet_state
+from schedule_manager import schedule_jobs, TEMEN_MODE, TEMEN_LAST_RUN, run_temen_scan, set_schedule
 
+# Import command handlers (otomatis register)
+from command_handlers_part1 import bot
+from command_handlers_part2 import bot
+from command_handlers_part3 import bot
+
+logger = logging.getLogger(__name__)
+
+# Global state untuk scheduler
+_last_sniper_scan = 0
+_last_learning_eval = 0
+_last_divergence_check = 0
+_last_cvd_check = 0
+_last_smart_money_check = 0
+_last_persist_save = 0
+_last_casual_report = 0
+_last_evaluation = 0
+_sniper_auto_state = None
+
+# Update global variables di hyperliquid_data
+import hyperliquid_data
+hyperliquid_data._last_divergence_check = _last_divergence_check
+hyperliquid_data._last_cvd_check = _last_cvd_check
+hyperliquid_data._last_smart_money_check = _last_smart_money_check
 
 # ============================================================
 # SCHEDULER THREAD
 # ============================================================
 def run_scheduler():
     global _last_sniper_scan, _last_learning_eval, _sniper_auto_state
+    global _last_divergence_check, _last_cvd_check, _last_smart_money_check
+    global _last_persist_save, _last_casual_report, _last_evaluation
     
     logger.info("[SCHEDULER] Started")
+    
+    # Import fungsi yang dibutuhkan
+    from hyperliquid_data import check_divergence, check_cvd_divergence, check_smart_money_rotation, save_persistent_state
+    from prediction_engine import casual_session_report, evaluate_predictions
     
     while True:
         try:
@@ -5258,7 +5610,40 @@ def run_scheduler():
                 evaluate_signal_outcomes()
                 _last_learning_eval = now
             
-            # Auto session manager
+            # Divergence check (30 menit)
+            if now - _last_divergence_check >= 1800:
+                check_divergence()
+                _last_divergence_check = now
+                hyperliquid_data._last_divergence_check = _last_divergence_check
+            
+            # CVD check (1 jam)
+            if now - _last_cvd_check >= 3600:
+                check_cvd_divergence()
+                _last_cvd_check = now
+                hyperliquid_data._last_cvd_check = _last_cvd_check
+            
+            # Smart money flow (adaptif, default 1 jam)
+            if now - _last_smart_money_check >= 3600:
+                check_smart_money_rotation()
+                _last_smart_money_check = now
+                hyperliquid_data._last_smart_money_check = _last_smart_money_check
+            
+            # Casual report (4 jam) - hanya jika tidak DEBUG
+            if not DEBUG_MODE and now - _last_casual_report >= 14400:
+                casual_session_report()
+                _last_casual_report = now
+            
+            # Evaluasi prediksi (4 jam)
+            if now - _last_evaluation >= 14400:
+                evaluate_predictions()
+                _last_evaluation = now
+            
+            # Persist state ke file (tiap 15 menit)
+            if now - _last_persist_save >= 900:
+                save_persistent_state()
+                _last_persist_save = now
+            
+            # Auto session manager (sniper auto on/off)
             jam = get_wib_hour()
             in_active_session = (15 <= jam < 20) or (20 <= jam <= 23) or (0 <= jam < 2)
             
@@ -5291,6 +5676,7 @@ if __name__ == "__main__":
     
     # Load data
     load_learning_data()
+    load_wallet_state()
     
     # Start background threads
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
@@ -5301,6 +5687,8 @@ if __name__ == "__main__":
     start_squeeze_alert()
     start_smc_alert()
     start_predator()
+    start_liquidation_scanner()
+    start_copytrade()
     
     logger.info("🦄 HL TERMINAL BOT v5.0 - ONLINE")
     logger.info(f"⏰ WIB: {get_wib()}")
@@ -5318,4 +5706,3 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Polling error: {e}")
             time.sleep(15)
-            
