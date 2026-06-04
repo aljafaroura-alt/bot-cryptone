@@ -143,7 +143,7 @@ _wallet_last_alert = {}     # {address_coin: timestamp} cooldown 5 menit
 WALLET_TRACKER_FILE = "wallet_tracker_state.json"
 _wallet_discovery_last = 0  # Timestamp last auto-discovery
 WALLET_DISCOVERY_INTERVAL = 3600  # Re-discover tiap 1 jam
-WALLET_MAX_TRACK = 15     # Max wallet yang ditrack sekaligus
+WALLET_MAX_TRACK = 11     # Max wallet yang ditrack sekaligus
 
 
 # ========== COPYTRADE 3 MODE ==========
@@ -302,7 +302,7 @@ def get_sesi() -> str:
     elif 8 <= jam < 15:
         return "🇯🇵 ASIA SESSION"
     else:
-        return "😴 MARKET SEPI"
+        return "🏴‍☠️ MARKET SEPI"
 
 
 def fmt_price(p: float) -> str:
@@ -365,7 +365,7 @@ def get_session_analysis() -> dict:
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🌏",
+            "emoji": "🇯🇵",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -610,14 +610,14 @@ def calculate_predator_score(coin):
         if total_bullish > total_bearish:
             direction = "BULLISH"
             direction_emoji = "🐋"
-            kill_emoji = "💀"
+            kill_emoji = "🔥"
         elif total_bearish > total_bullish:
             direction = "BEARISH"
-            direction_emoji = "🐻"
+            direction_emoji = "🐻‍❄️"
             kill_emoji = "💀"
         else:
             direction = "SIDEWAYS"
-            direction_emoji = "⚡"
+            direction_emoji = "❄️"
             kill_emoji = "⚪"
         
         # Confidence — lebih realistis
@@ -653,13 +653,13 @@ def calculate_predator_score(coin):
         # Rain level
         if rain_score >= 60:
             rain_level = "HEAVY CLOUDS"
-            rain_emoji = "🌧️🌧️"
+            rain_emoji = "⛈️"
         elif rain_score >= 35:
             rain_level = "LIGHT CLOUDS"
-            rain_emoji = "🌧️"
+            rain_emoji = "🌩️"
         else:
             rain_level = "CLEAR"
-            rain_emoji = "☀️"
+            rain_emoji = "🌥️"
         
         # Target price
         if direction == "BULLISH":
@@ -753,7 +753,7 @@ def ultimate_predator_scan():
             else:
                 target_display = "🎯 Range trade"
             
-            teks = f"""💀 ULTIMATE PREDATOR • {pred['coin']}
+            teks = f"""🐗 ULTIMATE PREDATOR • {pred['coin']}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {pred['rain_emoji']} RAIN: {pred['rain_level']} ({pred['rain_score']})
 {pred['direction_emoji']} DIRECTION: {pred['direction']} ({pred['confidence']}%)
@@ -763,12 +763,12 @@ def ultimate_predator_scan():
 ⏱️ ETA: {pred['eta_minutes']} minutes
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📡 METRICS:
+🐽 METRICS:
 OB: {pred['ob_delta']:+.0f}% | CVD: {pred['cvd_change']:+.2f}M
 Vol: {pred['vol_spike']:.1f}x | OI: {pred['oi_change']:+.0f}%
 Funding: {pred['funding']:+.4f}% | Momentum: {pred['momentum']:+.2f}%/m
 
-💀 FIRE!"""
+🐊 FIRE!"""
             
             send_to_both(teks)
             pred_dir = "LONG" if pred["direction"] == "BULLISH" else "SHORT"
@@ -1352,7 +1352,7 @@ def check_divergence():
 {a['coin']}: Price +{a['price_change']:.0f}% but OI {a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL DOWN!"""
             else:
-                teks = f"""💀 BULLISH DIVERGENCE
+                teks = f"""👹 BULLISH DIVERGENCE
 ━━━━━━━━━━━━━━━━━━━━━━
 {a['coin']}: Price {a['price_change']:.0f}% but OI +{a['oi_change']:.0f}%
 ⚠️ POTENTIAL REVERSAL UP!"""
@@ -1470,7 +1470,7 @@ def get_strength_and_action(score, bias):
     if score >= 60:
         return "STRONG ✅", "🎯 READY — Entry sekarang"
     elif score >= 40:
-        return "MEDIUM ⚠️", "⏳ Waspada — Konfirmasi tambahan"
+        return "MEDIUM ⚠️", "🚦 Waspada — Konfirmasi tambahan"
     elif score >= 25:
         return "WEAK ⚠️", "📊 Monitor — Belum optimal"
     else:
@@ -1798,19 +1798,19 @@ def get_market_mood_data():
         green_pct = (green_coins / total_coins * 100)
 
         if avg_funding > 0.08:
-            mood, emoji = "EXTREME GREED", "😈"
+            mood, emoji = "EXTREME GREED", "🙀"
             signal = "💀 LIQUIDATION INCOMING! Ambil profit"
         elif avg_funding > 0.02:
-            mood, emoji = "GREEDY", "😊"
+            mood, emoji = "GREEDY", "😺"
             signal = "⚠️ WASPADA LONG SQUEEZE!"
         elif avg_funding < -0.08:
-            mood, emoji = "EXTREME FEAR", "😱"
+            mood, emoji = "EXTREME FEAR", "😿"
             signal = "🚀 BOTTOM SIGNAL! Siap2 beli"
         elif avg_funding < -0.02:
-            mood, emoji = "FEAR", "😨"
+            mood, emoji = "FEAR", "😾"
             signal = "🔥 SIAP2 SHORT SQUEEZE!"
         else:
-            mood, emoji = "NEUTRAL", "😎"
+            mood, emoji = "NEUTRAL", "😺"
             signal = "Santai trading, ikutin plan"
 
         return {
@@ -1856,7 +1856,7 @@ def get_session_analysis():
     if 8 <= jam < 15:
         return {
             "name": "ASIA",
-            "emoji": "🌏",
+            "emoji": "🇯🇵",
             "vol": "rendah",
             "karakter": "sideways, suka tipu-tipu",
             "pembuka": "🌅 Pagi-pagi masih pada sarapan nih",
@@ -2060,7 +2060,7 @@ def run_liquidation_scanner():
 def start_liquidation_scanner():
     liq_thread = threading.Thread(target=run_liquidation_scanner, daemon=True)
     liq_thread.start()
-    logger.info("✅ LIQUIDATION SCANNER STARTED")
+    logger.info("🟨🟧🟥🟩 LIQUIDATION SCANNER STARTED")
 
 
 
@@ -2555,9 +2555,9 @@ def run_confluence_scanner():
                     regime_conf = get_market_regime()
                     regime_emoji_conf = {
                         "TRENDING_UP": "🚀",
-                        "TRENDING_DOWN": "📉",
-                        "VOLATILE": "⚡",
-                        "RANGING": "😴"
+                        "TRENDING_DOWN": "☄️",
+                        "VOLATILE": "🔥",
+                        "RANGING": "❄️"
                     }.get(regime_conf, "❓")
 
                     if volume < CONFLUENCE_CONFIG["min_volume_24h"]:
@@ -3262,7 +3262,7 @@ def casual_session_report():
         teks += f"Harga: ${price:,.0f}\n"
         teks += f"Funding: {funding_text}\n"
         teks += f"{ob_text}\n\n"
-        teks += "☄️ Ramalan gw:\n"
+        teks += "🤖 Ramalan gw:\n"
         teks += f"{pred_data['reason']}\n"
         teks += f"Kemungkinan {direction_emoji} {direction_text}, bisa {direction_arrow} sekitar {target_pct:.1f}% ke ${target:,.0f}\n"
         teks += f"Keyakinan gw: {pred_data['confidence']}%\n\n"
@@ -4249,7 +4249,7 @@ def run_squeeze_alert():
 def start_squeeze_alert():
     t = threading.Thread(target=run_squeeze_alert, daemon=True)
     t.start()
-    logger.info("✅ SQUEEZE ALERT THREAD LAUNCHED")
+    logger.info("🟨🟧🟥🟩 SQUEEZE ALERT THREAD LAUNCHED")
 
 
 # ============================================================
@@ -4411,11 +4411,11 @@ def session_cmd(message):
 ⏰ SESSION {coin} • {wib_now.strftime('%d/%m %H:%M')} WIB
 ─────────────────────────────────
 
-{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥🌡️", "NY")}
+{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🗽", "NY")}
 
-{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌬️🔥", "London")}
+{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🗼", "London")}
 
-{fmt_session("ASIA", "🇯🇵", "07:00-15:00", "❄️", "Asia")}
+{fmt_session("ASIA", "🇯🇵", "07:00-15:00", "⛩️", "Asia")}
 
 ─────────────────────────────────
 📡 {now_label}
@@ -4444,7 +4444,7 @@ def ping(message):
         now = get_wib()
         teks = f"""🏓 PONG!
 ━━━━━━━━━━━━━━━━━━━━━━
-🔋 Status     : ✅ ONLINE
+🩻 Status     : ✅ ONLINE
 ⚡ Response   : {response_ms:.0f}ms
 🕐 WIB        : {now}
 ⏱️ Uptime     : {uptime}
@@ -4775,7 +4775,7 @@ def sparkline(message):
         change_24h = ((closes[-1] - closes[0]) / closes[0] * 100) if closes[0] > 0 else 0
         change_12h = ((last_12h[-1] - last_12h[0]) / last_12h[0] * 100) if last_12h[0] > 0 else 0
         trend = "🟢" if change_12h >= 0 else "🔴"
-        txt = f"📊 SPARKLINE {coin}\n─────────────────\n{spark} {trend}\n\nPrice {fmt_price(closes[-1])}\n12H {change_12h:+.2f}%\n24H {change_24h:+.2f}%\nHigh {fmt_price(max_p)}\nLow {fmt_price(min_p)}\n\n⏰ {get_wib()}"
+        txt = f"🤖 SPARKLINE {coin}\n─────────────────\n{spark} {trend}\n\nPrice {fmt_price(closes[-1])}\n12H {change_12h:+.2f}%\n24H {change_24h:+.2f}%\nHigh {fmt_price(max_p)}\nLow {fmt_price(min_p)}\n\n⏰ {get_wib()}"
         bot.edit_message_text(txt, msg.chat.id, msg.message_id)
     except Exception as e:
         bot.edit_message_text(f"❌ Error: {str(e)[:100]}", msg.chat.id, msg.message_id)
@@ -8194,7 +8194,7 @@ def status_cmd(message):
     
     teks = f"""⚠️ SYSTEM STATUS
 ─────────────────────────────────
-👾 Bot       : ✅ ONLINE [{token_src}]
+🦄 Bot       : ✅ ONLINE [{token_src}]
 🔐 Token     : {token_preview}
 ⏱️ Uptime    : {uptime}
 📡 Session   : {session_text}
@@ -8207,7 +8207,7 @@ def status_cmd(message):
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
-🐾 PREDATOR  : {predator_text}
+🐗 PREDATOR  : {predator_text}
 ⚓ WARROOM   : {warroom_alert_status}
 🎯 ENTRY     : {entry_alert_status}
 ⚡ SQUEEZE   : {squeeze_alert_status}
@@ -8222,7 +8222,7 @@ def status_cmd(message):
     mood_data = get_market_mood_data()
     if mood_data:
         teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n   Funding avg: {mood_data['funding']:+.4f}%\n   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
-    teks += "─────────────────────────────────\n✅ Lets fvcking go"
+    teks += "─────────────────────────────────\n🚦 Lets fvcking go"
     bot.send_message(chat_id, teks)
     
 # ---------- COPYTRADE ----------
@@ -8428,7 +8428,7 @@ def trackedwallets_cmd(message):
             positions_snap = dict(_wallet_last_positions)
 
         if not wallets_snap:
-            bot.reply_to(message, f"😴 Belum ada wallet yang ditrack.\n\nAuto-discovery jalan tiap {WALLET_DISCOVERY_INTERVAL//60} menit.\nAtau /addwallet 0xABC untuk tambah manual.")
+            bot.reply_to(message, f"😑 Belum ada wallet yang ditrack.\n\nAuto-discovery jalan tiap {WALLET_DISCOVERY_INTERVAL//60} menit.\nAtau /addwallet 0xABC untuk tambah manual.")
             return
 
         teks = f"🔊 TRACKED WALLETS ({len(wallets_snap)})\n"
@@ -9354,7 +9354,7 @@ def run_wallet_tracker():
     """Loop background: auto-discover tiap 1 jam, scan posisi tiap 60 detik"""
     global _wallet_discovery_last
 
-    logger.info("✅ WALLET TRACKER STARTED")
+    logger.info("🟨🟧🟥🟩 WALLET TRACKER STARTED")
 
     # Discovery pertama saat startup
     try:
@@ -9397,7 +9397,7 @@ def run_wallet_tracker():
 def start_wallet_tracker():
     wt_thread = threading.Thread(target=run_wallet_tracker, daemon=True)
     wt_thread.start()
-    logger.info("✅ WALLET TRACKER THREAD LAUNCHED")
+    logger.info("🟩🟥🟧🟨 WALLET TRACKER THREAD LAUNCHED")
 
 
 
@@ -9429,7 +9429,7 @@ def run_warroom_alert():
 def start_warroom_alert():
     t = threading.Thread(target=run_warroom_alert, daemon=True)
     t.start()
-    logger.info("✅ WARROOM ALERT THREAD LAUNCHED")
+    logger.info("🟨🟧🟥🟩 WARROOM ALERT THREAD LAUNCHED")
 
 
 def run_entry_alert():
@@ -9462,13 +9462,13 @@ def run_entry_alert():
 def start_entry_alert():
     t = threading.Thread(target=run_entry_alert, daemon=True)
     t.start()
-    logger.info("✅ ENTRY ALERT THREAD LAUNCHED")
+    logger.info("🟩🟥🟧🟨 ENTRY ALERT THREAD LAUNCHED")
     
 def start_confluence_scanner():
     try:
         conf_thread = threading.Thread(target=run_confluence_scanner, daemon=True)
         conf_thread.start()
-        logger.info("✅ SMART MONEY CONFLUENCE SCANNER STARTED")
+        logger.info("🟩🟥🟧🟨 SMART MONEY CONFLUENCE SCANNER STARTED")
     except Exception as e:
         logger.error(f"Failed to start confluence scanner: {e}")
 # ============================================================
