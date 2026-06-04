@@ -9746,7 +9746,7 @@ if __name__ == "__main__":
     start_squeeze_alert()
     start_smc_alert()
 
-    logger.info("🦄🎀 HL Terminal Bot v4.0 FINAL - ONLINE")
+    logger.info("♈♉♊♋♌♍♎♏ HL Terminal Bot v4.0 FINAL - ONLINE")
     
     # Main polling loop
     while True:
