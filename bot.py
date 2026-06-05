@@ -4522,7 +4522,6 @@ def check_warroom_simple():
         logger.info(f"[WARROOM] Scanning {len(top_coins)} coins...")
         
         for coin in top_coins:
-            # Cooldown 1 jam per coin
             if coin in _warroom_alert_last and now_time - _warroom_alert_last[coin] < 3600:
                 skipped_cooldown += 1
                 continue
@@ -4548,46 +4547,41 @@ def check_warroom_simple():
                 long_liq_size = below[0]['size'] if below else 0
                 
                 long_score, short_score = calculate_scores(ob_delta, funding, bid_wall, ask_wall, short_liq_size, long_liq_size)
-                
-                # FIX: gap threshold 15→10 (lebih realistis)
                 gap = abs(long_score - short_score)
                 if long_score > short_score and gap >= 10:
                     deriv_bias, deriv_score = "LONG", long_score
                 elif short_score > long_score and gap >= 10:
                     deriv_bias, deriv_score = "SHORT", short_score
                 else:
-                    logger.debug(f"[WARROOM] {coin} skip: gap={gap} (long={long_score}, short={short_score})")
+                    logger.debug(f"[WARROOM] {coin} skip: gap={gap}")
                     skipped_score += 1
                     continue
                 
-                # FIX: threshold 70→60 (max realistis score tanpa liq data ~70-80)
                 if deriv_score < 60:
-                    logger.debug(f"[WARROOM] {coin} skip: score={deriv_score} < 60 ({deriv_bias})")
+                    logger.debug(f"[WARROOM] {coin} skip: score={deriv_score} < 60")
                     skipped_score += 1
                     continue
                 
-                logger.info(f"[WARROOM] {coin} score={deriv_score} ({deriv_bias}, gap={gap}) — fetching TF...")
+                logger.info(f"[WARROOM] {coin} score={deriv_score} ({deriv_bias}) — fetching TF...")
 
                 r_h1 = analyze_tf(coin, "1h")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 r_m15 = analyze_tf(coin, "15m")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 r_m5 = analyze_tf(coin, "5m")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 
-                # FIX: Hanya hitung TF yang return non-None dan non-NEUTRAL
                 tf_biases = []
                 for label, r in [("1h", r_h1), ("15m", r_m15), ("5m", r_m5)]:
                     if r is None:
-                        logger.debug(f"[WARROOM] {coin} {label}: None (candles kurang)")
+                        logger.debug(f"[WARROOM] {coin} {label}: None")
                     elif r["bias"] == "NEUTRAL":
-                        logger.debug(f"[WARROOM] {coin} {label}: NEUTRAL ({r['structure']}), dikecualikan dari alignment")
+                        logger.debug(f"[WARROOM] {coin} {label}: NEUTRAL")
                     else:
                         tf_biases.append(r["bias"])
-                        logger.debug(f"[WARROOM] {coin} {label}: {r['bias']} ({r['structure']})")
                 
                 if not tf_biases:
-                    logger.info(f"[WARROOM] {coin} skip: semua TF NEUTRAL/None")
+                    logger.info(f"[WARROOM] {coin} skip: semua TF NEUTRAL")
                     skipped_align += 1
                     continue
                 
@@ -4596,187 +4590,193 @@ def check_warroom_simple():
                 aligned = max(bullish, bearish)
                 dominant = "BULLISH" if bullish >= bearish else "BEARISH"
                 
-                logger.info(f"[WARROOM] {coin} TF result: bullish={bullish}, bearish={bearish}, dominant={dominant}, deriv={deriv_bias}")
-                
-                # Trigger: setidaknya 1 TF non-NEUTRAL align dengan deriv, aligned >= 2 dari total valid
-                need_align = max(1, len(tf_biases) - 1)  # 2/3 atau 1/2 kalau ada TF yang None
-                if aligned >= need_align:
-                    if (dominant == "BULLISH" and deriv_bias == "LONG") or (dominant == "BEARISH" and deriv_bias == "SHORT"):
-
-                        # ── WARROOM ZONE GATE ──────────────────────────────
-                        # Warroom = early radar, boleh fire tanpa zona ASALKAN
-                        # score ≥75. Kalau score borderline (60-74), wajib ada
-                        # minimal 1 TF di OB atau FVG.
-                        # Ini cegah notif saat harga di tengah nowhere + score pas-pasan.
-                        in_zone_wr = sum(
-                            1 for r in [r_h1, r_m15, r_m5]
-                            if r and (r.get("in_ob") or r.get("in_fvg"))
-                        )
-                        if deriv_score < 75 and in_zone_wr == 0:
-                            logger.info(f"[WARROOM] {coin} skip: score={deriv_score} borderline + 0 TF di OB/FVG")
-                            skipped_align += 1
-                            continue
-
-                        zone_tags_wr = [
-                            f"{lbl}:{'OB' if r.get('in_ob') else 'FVG'}"
-                            for lbl, r in [("1h", r_h1), ("15m", r_m15), ("5m", r_m5)]
-                            if r and (r.get("in_ob") or r.get("in_fvg"))
-                        ]
-                        # ──────────────────────────────────────────────────
-
-                        # ── WARROOM SIGNAL ENRICHMENT ─────────────────────
-                        # Tambahkan fitur canggih yang sebelumnya hanya ada di
-                        # entry_alert & smc_alert, supaya warroom lebih informatif.
-
-                        # 1. Confirmation Candle
-                        try:
-                            conf_wr, body_wr, _, _ = has_confirmation_candle(coin, deriv_bias)
-                            if conf_wr:
-                                deriv_score += 20
-                                zone_tags_wr.append(f"🕯️CONF {body_wr:.1f}%")
-                        except Exception:
-                            conf_wr = False
-
-                        # 2. Liquidity Sweep
-                        try:
-                            sweep_wr = detect_liquidity_sweep(coin, deriv_bias)
-                            if sweep_wr.get("is_sweeping") and sweep_wr.get("status") == "SWEPT":
-                                deriv_score += 15
-                                zone_tags_wr.append("🌊SWEPT")
-                        except Exception:
-                            sweep_wr = {}
-
-                        # 3. BOS + Retest
-                        try:
-                            bos_wr, _, _, _ = is_break_retest(coin, deriv_bias)
-                            if bos_wr:
-                                deriv_score += 12
-                                zone_tags_wr.append("🎯BOS")
-                        except Exception:
-                            bos_wr = False
-
-                        # 4. CVD Acceleration
-                        try:
-                            _, is_accel_wr, accel_dir_wr = get_cvd_acceleration(coin)
-                            cvd_matches = (deriv_bias == "LONG" and accel_dir_wr == "BULLISH") or                                           (deriv_bias == "SHORT" and accel_dir_wr == "BEARISH")
-                            if is_accel_wr and cvd_matches:
-                                deriv_score += 10
-                                zone_tags_wr.append("⚡CVD")
-                        except Exception:
-                            pass
-
-                        # 5. OI Impulse
-                        try:
-                            oi_pct_wr, is_oi_wr, oi_dir_wr = oi_impulse(coin)
-                            oi_matches = (deriv_bias == "LONG" and oi_dir_wr == "LONG") or                                          (deriv_bias == "SHORT" and oi_dir_wr == "SHORT")
-                            if is_oi_wr and oi_matches:
-                                deriv_score += 15
-                                zone_tags_wr.append(f"🚀OI+{oi_pct_wr:.0f}%")
-                        except Exception:
-                            pass
-
-                        # 6. HTF Close
-                        try:
-                            htf_wr = get_htf_close_info(coin)
-                            if htf_wr.get("is_4h_close"):
-                                deriv_score += 5
-                                zone_tags_wr.append("⏰4H")
-                            if htf_wr.get("is_daily_close"):
-                                deriv_score += 8
-                                zone_tags_wr.append("📅D")
-                        except Exception:
-                            pass
-
-                        # 7. Multi-TF OB Alignment
-                        try:
-                            aligned_wr, _ = multi_tf_ob_alignment(coin, deriv_bias)
-                            if aligned_wr:
-                                deriv_score += min(20, len(aligned_wr) * 7)
-                                zone_tags_wr.append(f"🔲{','.join(aligned_wr)}")
-                        except Exception:
-                            pass
-                        # ─────────────────────────────────────────────────
-
-                        alerts.append({
-                            "coin": coin,
-                            "direction": deriv_bias,
-                            "score": deriv_score,
-                            "price": mark,
-                            "change": get_change(ctx),
-                            "alignment": aligned,
-                            "tf_total": len(tf_biases),
-                            "ob_delta": ob_delta,
-                            "funding": funding,
-                            "in_zone": in_zone_wr,
-                            "zone_tags": zone_tags_wr,
-                        })
+                need_align = max(1, len(tf_biases) - 1)
+                if aligned >= need_align and ((dominant == "BULLISH" and deriv_bias == "LONG") or (dominant == "BEARISH" and deriv_bias == "SHORT")):
+                    
+                    # ========== PERKAYA DATA SEPERTI ALERT LAIN ==========
+                    # Spread warning
+                    spread_pct, is_wide, spread_msg = get_spread_warning(coin)
+                    
+                    # Confirmation candle
+                    conf_candle, body_pct, _, _ = has_confirmation_candle(coin, deriv_bias)
+                    
+                    # Liquidity sweep
+                    sweep = detect_liquidity_sweep(coin, deriv_bias)
+                    sweep_tag = ""
+                    if sweep.get("is_sweeping"):
+                        if sweep["status"] == "SWEEPING":
+                            sweep_tag = f"🌊 SWEEP {sweep['sweep_type']}"
+                        elif sweep["status"] == "SWEPT":
+                            sweep_tag = f"✅ SWEPT {sweep['sweep_type']}"
+                    
+                    # BOS + Retest
+                    bos_valid, bos_price, retest_price, _ = is_break_retest(coin, deriv_bias)
+                    bos_tag = f"🎯 BOS" if bos_valid else ""
+                    
+                    # CVD acceleration
+                    _, is_accel, accel_dir = get_cvd_acceleration(coin)
+                    cvd_tag = f"⚡ CVD" if is_accel and accel_dir == deriv_bias else ""
+                    
+                    # OI impulse
+                    oi_pct, is_oi, oi_dir = oi_impulse(coin)
+                    oi_tag = f"🚀 OI +{oi_pct:.0f}%" if is_oi and oi_dir == deriv_bias else ""
+                    
+                    # Multi TF OB alignment
+                    aligned_tfs, ob_strength = multi_tf_ob_alignment(coin, deriv_bias)
+                    ob_align_tag = f"🔲 {','.join(aligned_tfs)}" if aligned_tfs else ""
+                    
+                    # HTF close
+                    htf_info = get_htf_close_info(coin)
+                    htf_tag = ""
+                    if htf_info.get("is_4h_close"):
+                        htf_tag += f"⏰ 4H "
+                    if htf_info.get("is_daily_close"):
+                        htf_tag += f"📅 D"
+                    
+                    # Cross validation
+                    cross_tag = _cross_tag(coin, deriv_bias)
+                    
+                    # Estimasi hold time
+                    hold_eta = "1-2 jam"
+                    if r_m15 and (r_m15.get("in_ob") or r_m15.get("in_fvg")):
+                        hold_eta = "2-4 jam"
+                    elif r_h1 and (r_h1.get("in_ob") or r_h1.get("in_fvg")):
+                        hold_eta = "4-8 jam"
+                    
+                    # ========== SCORING BONUSES (dengan bobot kecil) ==========
+                    # 1. Confirmation Candle (+10)
+                    if conf_candle:
+                        deriv_score += 10
+                    
+                    # 2. Liquidity Sweep (+8)
+                    if sweep.get("is_sweeping") and sweep.get("status") == "SWEPT":
+                        deriv_score += 8
+                    
+                    # 3. BOS + Retest (+6)
+                    if bos_valid:
+                        deriv_score += 6
+                    
+                    # 4. CVD Acceleration (+5)
+                    if is_accel and accel_dir == deriv_bias:
+                        deriv_score += 5
+                    
+                    # 5. OI Impulse (+8)
+                    if is_oi and oi_dir == deriv_bias:
+                        deriv_score += 8
+                    
+                    # 6. Multi TF OB Alignment (+5-15)
+                    if aligned_tfs:
+                        deriv_score += min(15, len(aligned_tfs) * 5)
+                    
+                    # 7. HTF Close (+4/6)
+                    if htf_info.get("is_4h_close"):
+                        deriv_score += 4
+                    if htf_info.get("is_daily_close"):
+                        deriv_score += 6
+                    
+                    # Cap score di 99
+                    deriv_score = min(99, deriv_score)
+                    
+                    # Keyakinan emoji
+                    if deriv_score >= 80:
+                        conf_emoji = "🟢"
+                    elif deriv_score >= 65:
+                        conf_emoji = "🟡"
                     else:
-                        skipped_align += 1
-                        logger.info(f"[WARROOM] {coin} skip: dominant={dominant} vs deriv={deriv_bias} bertentangan")
+                        conf_emoji = "🟠"
+                    
+                    alerts.append({
+                        "coin": coin,
+                        "direction": deriv_bias,
+                        "score": deriv_score,
+                        "conf_emoji": conf_emoji,
+                        "price": mark,
+                        "change": get_change(ctx),
+                        "alignment": aligned,
+                        "tf_total": len(tf_biases),
+                        "spread_msg": spread_msg,
+                        "conf_candle": conf_candle,
+                        "body_pct": body_pct,
+                        "sweep_tag": sweep_tag,
+                        "bos_tag": bos_tag,
+                        "cvd_tag": cvd_tag,
+                        "oi_tag": oi_tag,
+                        "ob_align_tag": ob_align_tag,
+                        "htf_tag": htf_tag,
+                        "cross_tag": cross_tag,
+                        "hold_eta": hold_eta,
+                    })
                 else:
                     skipped_align += 1
-                    logger.info(f"[WARROOM] {coin} skip: aligned={aligned}/{len(tf_biases)} kurang dari {need_align}")
                         
             except Exception as e:
                 logger.warning(f"[WARROOM] Error {coin}: {e}")
                 continue
         
         elapsed = time.time() - start_time
-        logger.info(f"[WARROOM] Scan done {elapsed:.1f}s — alerts={len(alerts)}, skip: cooldown={skipped_cooldown}, score={skipped_score}, align={skipped_align}")
+        logger.info(f"[WARROOM] Scan done {elapsed:.1f}s — alerts={len(alerts)}, skip: {skipped_cooldown}/{skipped_score}/{skipped_align}")
         
         # Kirim alert
         if alerts:
             alerts.sort(key=lambda x: x["score"], reverse=True)
             for a in alerts[:3]:
                 arrow = "🟢" if a["direction"] == "LONG" else "🔴"
+                
+                # Tampilkan extra tags
+                extra = []
+                if a.get("conf_candle"):
+                    extra.append(f"🕯️CONF {a['body_pct']:.1f}%")
+                if a.get("sweep_tag"):
+                    extra.append(a["sweep_tag"])
+                if a.get("bos_tag"):
+                    extra.append(a["bos_tag"])
+                if a.get("cvd_tag"):
+                    extra.append(a["cvd_tag"])
+                if a.get("oi_tag"):
+                    extra.append(a["oi_tag"])
+                if a.get("ob_align_tag"):
+                    extra.append(a["ob_align_tag"])
+                if a.get("htf_tag"):
+                    extra.append(a["htf_tag"])
+                extra_line = f"\n📡 {'  '.join(extra)}" if extra else ""
+                
+                spread_warn = f"\n⚠️ {a.get('spread_msg', '')}" if "wide" in a.get('spread_msg', '').lower() else ""
+                
+                teks = f"""{arrow} *WARROOM ALERT* • {a['coin']}
+━━━━━━━━━━━━━━━━━━━━━━
+📡 {a['direction']} | {a['conf_emoji']} Score {a['score']}
+💰 Harga: {fmt_price(a['price'])} | Δ {a['change']:+.1f}%
+📊 {a['alignment']}/{a.get('tf_total', 3)} TF align{extra_line}{spread_warn}
+⏱️ ETA: {a.get('hold_eta', '1-3 jam')}{a.get('cross_tag', '')}
 
-                in_zone = a.get("in_zone", 0)
-                zone_tags = a.get("zone_tags", [])
-                if in_zone >= 2:
-                    zone_line = f"📍 {'  '.join(zone_tags)} ✅"
-                elif in_zone == 1:
-                    zone_line = f"📍 {'  '.join(zone_tags)} ⚠️"
-                else:
-                    zone_line = f"📍 No OB/FVG — harga bebas"
-
-                teks = f"{arrow} *{a['coin']}* | {a['direction']} | Score {a['score']}\n"
-                teks += f"💰 {fmt_price(a['price'])} | {a['change']:+.1f}%\n"
-                teks += f"📊 {a['alignment']}/{a.get('tf_total', 3)} TF align\n"
-                teks += f"{zone_line}\n"
-                # Tampilkan signal tags (conf, sweep, bos, cvd, oi, htf, ob-align) kalau ada
-                extra_tags = [t for t in a.get("zone_tags", []) if not t.startswith(("1h:", "15m:", "5m:"))]
-                if extra_tags:
-                    teks += f"📡 {'  '.join(extra_tags)}\n"
-                teks += f"\n🎯 /warroom {a['coin']} | /entry {a['coin']}"
+🎯 /warroom {a['coin']} | /entry {a['coin']}"""
                 
                 try:
-                    send_to_both(teks, parse_mode='Markdown')  # FIX BUG5: warroom alert → channel juga
+                    send_to_both(teks, parse_mode='Markdown')
                     _warroom_alert_last[a['coin']] = now_time
-
+                    _cross_record(a['coin'], a['direction'], "warroom")
+                    
                     # Track untuk learning engine
                     try:
                         sl_p, _, tp_p, _, _ = get_adaptive_sltp(a['coin'], a['price'], a['direction'])
-                        _wtags = a.get("zone_tags", [])
                         ind_data = {
-                            "funding_strong": abs(a.get("funding", 0)) > 0.02,
-                            "ob_strong": abs(a.get("ob_delta", 0)) > 20,
+                            "funding_strong": abs(ob_delta) > 0.02,
+                            "ob_strong": abs(ob_delta) > 20,
                             "wall_strong": a.get("score", 0) >= 70,
-                            "cvd_strong": any("CVD" in t for t in _wtags),
-                            "momentum_strong": any(t in ("🎯BOS", "🌊SWEPT") for t in _wtags),
+                            "cvd_strong": a.get("cvd_tag") != "",
+                            "momentum_strong": a.get("bos_tag") != "" or a.get("sweep_tag") != "",
                         }
                         track_signal_entry(a['coin'], a['direction'], a['price'], ind_data,
                                            sl_price=sl_p, tp_price=tp_p, source="warroom")
                     except Exception:
                         pass
-
+                    
                     time.sleep(0.5)
                 except Exception as send_err:
                     logger.error(f"[WARROOM] Gagal kirim alert {a['coin']}: {send_err}")
                 
     except Exception as e:
         logger.error(f"[WARROOM] check_warroom_simple error: {e}")
-
-
 
 
 def get_spread_warning_text(coin):
@@ -8477,11 +8477,21 @@ def warroom(message):
         m5_bear = m5_result and m5_result["bias"] == "BEARISH"
         m5_event = m5_result["last_event"] if m5_result and m5_result["last_event"] else None
 
+        # Add confidence emoji
+        conf_emoji_warroom = "🟢" if deriv_score >= 80 else "🟡" if deriv_score >= 65 else "🟠"
+        
+        # Add spread warning
+        try:
+            spread_pct_w, is_wide_w, spread_msg_w = get_spread_warning(coin)
+            spread_warn_w = f"\n⚠️ {spread_msg_w}" if is_wide_w else ""
+        except Exception:
+            spread_warn_w = ""
+        
         if (smc_bull and deriv_long) or (smc_bear and deriv_short):
             # Full konfirmasi — SMC align dengan derivatives
             direction = "LONG" if smc_bull else "SHORT"
             dir_emoji = "🟢" if smc_bull else "🔴"
-            teks += f"{dir_emoji} {direction} | Score {deriv_score} | {smc['prob']}\n"
+            teks += f"{dir_emoji} {direction} | {conf_emoji_warroom} Score {deriv_score} | {smc['prob']}{spread_warn_w}\n"
             if smc["aligned_count"] >= 3:
                 teks += "⚡ SMC + DERIV KONFIRM — /entry untuk eksekusi"
             else:
