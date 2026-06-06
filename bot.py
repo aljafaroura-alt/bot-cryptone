@@ -173,7 +173,7 @@ _wallet_last_alert = {}     # {address_coin: timestamp} cooldown 5 menit
 WALLET_TRACKER_FILE = "wallet_tracker_state.json"
 _wallet_discovery_last = 0  # Timestamp last auto-discovery
 WALLET_DISCOVERY_INTERVAL = 3600  # Re-discover tiap 1 jam
-WALLET_MAX_TRACK = 15     # Max wallet yang ditrack sekaligus
+WALLET_MAX_TRACK = 5     # Max wallet yang ditrack sekaligus
 
 
 # ========== COPYTRADE 3 MODE ==========
