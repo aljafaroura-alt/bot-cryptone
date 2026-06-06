@@ -1,4 +1,3 @@
-
 name: Bot Cryptone 24/7
 
 on:
@@ -6,16 +5,16 @@ on:
     branches: [ main ]
   workflow_dispatch:
   schedule:
-    - cron: '*/20 * * * *'  # tiap 20 menit (biar ga bentrok)
+    - cron: '*/20 * * * *'  # tiap 20 menit
 
 concurrency:
   group: bot-cryptone
-  cancel-in-progress: false  # biar ga matiin proses lama
+  cancel-in-progress: false
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 350  # tetap, tapi bot akan mati setelah ini
     
     steps:
       - name: Checkout repo
@@ -31,7 +30,8 @@ jobs:
             learning_data.json
             predictions.json
             wallet_tracker_state.json
-          key: bot-state-${{ runner.os }}-${{ github.run_id }}
+          # PERBAIKAN: Gunakan key tetap (bukan run_id)
+          key: bot-state-${{ runner.os }}-persist
           restore-keys: bot-state-${{ runner.os }}-
       
       - name: Install dependencies
@@ -53,4 +53,5 @@ jobs:
             learning_data.json
             predictions.json
             wallet_tracker_state.json
-          key: bot-state-${{ runner.os }}-${{ github.run_id }}
+          # PERBAIKAN: Gunakan key yang sama dengan restore
+          key: bot-state-${{ runner.os }}-persist
