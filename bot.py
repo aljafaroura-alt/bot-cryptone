@@ -6445,12 +6445,12 @@ GM/GN 😼 {user}
 /entry BTC — Entry + TP/SL
 /squeeze BTC — Squeeze scanner
 
-🌏 MARKET DATA
+🏛️ MARKET DATA
 /price | /funding | /oi | /spark
 /gainers | /losers | /nuke
 /heatmap | /narrative | /topoi
 /summary | /btcdom | /volatility
-/oihistory 
+/oihistory | /atr
 
 📰 NEWS
 /news — Berita crypto terbaru
@@ -6469,7 +6469,7 @@ GM/GN 😼 {user}
 /positions 0xABC | /pnl 0xABC 
 /history 0xABC 
 
-🛰️ COPYTRADE
+🔊 COPYTRADE
 /copytrade — Status & tracked wallets
 /addwallet 0xABC — Track wallet
 /removewallet 0xABC — Hapus wallet
@@ -6501,6 +6501,7 @@ GM/GN 😼 {user}
 /report — Manual report
 
 🔔 ALERTS
+/copytradealert on
 /warroomalert on
 /entryalert on
 /squeezealert on
@@ -6538,11 +6539,11 @@ def session_cmd(message):
         def fmt_session(name, flag, hours_str, emoji_heat, skey):
             status, eta = sessions[skey]
             if status == "AKTIF":
-                status_txt = "✅ AKTIF"
+                status_txt = "🛜 AKTIF"
             elif status == "BELUM":
-                status_txt = f"⏳ Belum ({eta})"
+                status_txt = f"🔜 Belum ({eta})"
             else:
-                status_txt = "💤 Lewat"
+                status_txt = "🔚 Lewat"
             if use_default:
                 d = SESSION_DEFAULT[skey]
                 avg_move = price * d["avg_move_pct"] / 100
@@ -6561,28 +6562,28 @@ def session_cmd(message):
    Peak {peak} | Status {status_txt}"""
 
         if sessions["NY"][0] == "AKTIF" and sessions["London"][0] == "AKTIF":
-            now_label = "🔥 OVERLAP NY+LONDON"
+            now_label = "🌇 OVERLAP NY+LONDON"
             rekomendasi = "PRIME TIME — Setup apapun valid"
         elif sessions["NY"][0] == "AKTIF":
-            now_label = "🇺🇸 NY AKTIF"
+            now_label = "🗽 NY AKTIF"
             rekomendasi = "Breakout play — TP agresif"
         elif sessions["London"][0] == "AKTIF":
-            now_label = "🇬🇧 LONDON AKTIF"
+            now_label = "🗼 LONDON AKTIF"
             rekomendasi = "Waspada reversal — TP cepet"
         elif sessions["Asia"][0] == "AKTIF":
-            now_label = "🇯🇵 ASIA AKTIF"
+            now_label = "🗻 ASIA AKTIF"
             rekomendasi = "Range trading — Avoid breakout"
         else:
-            now_label = "💤 DEAD ZONE"
+            now_label = "🌆 DEAD ZONE"
             rekomendasi = "SKIP — Volume rendah"
 
         txt = f"""
 ⏰ SESSION {coin} • {wib_now.strftime('%d/%m %H:%M')} WIB
 ─────────────────────────────────
 
-{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🔥🔥🌡️", "NY")}
+{fmt_session("NEW YORK", "🇺🇸", "20:00-02:00", "🌀🔥⚡", "NY")}
 
-{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌬️🔥", "London")}
+{fmt_session("LONDON", "🇬🇧", "14:00-22:00", "🌀🔥", "London")}
 
 {fmt_session("ASIA", "🇯🇵", "07:00-15:00", "❄️", "Asia")}
 
@@ -6613,7 +6614,7 @@ def ping(message):
         now = get_wib()
         teks = f"""🏓 PONG!
 ━━━━━━━━━━━━━━━━━━━━━━
-🔋 Status     : ✅ ONLINE
+📡 Status     : ✅ ONLINE
 ⚡ Response   : {response_ms:.0f}ms
 🕐 WIB        : {now}
 ⏱️ Uptime     : {uptime}
