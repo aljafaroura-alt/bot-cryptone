@@ -172,15 +172,15 @@ _wallet_last_positions = {} # {address: {coin: {side, size, entry}}}
 _wallet_last_alert = {}     # {address_coin: timestamp} cooldown 5 menit
 WALLET_TRACKER_FILE = "wallet_tracker_state.json"
 _wallet_discovery_last = 0  # Timestamp last auto-discovery
-WALLET_DISCOVERY_INTERVAL = 3600  # Re-discover tiap 1 jam
-WALLET_MAX_TRACK = 5     # Max wallet yang ditrack sekaligus
+WALLET_DISCOVERY_INTERVAL = 7200  # Re-discover tiap 1 jam
+WALLET_MAX_TRACK = 7     # Max wallet yang ditrack sekaligus
 
 
 # ========== COPYTRADE 3 MODE ==========
 COPYTRADE_MODE = "PRO"  # CASUAL, PRO, INSANE
 COPYTRADE_SIZE_FILTER = {
-    "CASUAL": 10_000,
-    "PRO": 25_000,
+    "CASUAL": 20_000,
+    "PRO": 50_000,
     "INSANE": 100_000
 }
 
