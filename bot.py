@@ -7579,7 +7579,8 @@ GM/GN 😼 {user}
 /regime — Market regime & adaptive
 /report — Manual report
 
-🔔 ALERTS
+🔔 TOGGLE & ALERTS
+/predatortoggle on
 /copytradealert on
 /warroomalert on
 /entryalert on
@@ -12489,18 +12490,19 @@ def status_cmd(message):
 💀 DIVERGENCE: {div_text}
 💎 CVD       : {cvd_text}
 🌐 SMART FLOW: {smart_text}
-🐾 PREDATOR  : {predator_text}
+👹 PREDATOR  : {predator_text}
 ⚓ WARROOM   : {warroom_alert_status}
 🎯 ENTRY     : {entry_alert_status}
 ⚡ SQUEEZE   : {squeeze_alert_status}
 💵 SMC       : {smc_alert_status}
 🧠 CASUAL    : ✅ ON (tiap 4 jam)
 📊 PREDIKSI  : ✅ ON
-🔊 COPYTRADE : {copytrade_text} | Tracker: {"✅ ON" if _copytrade_tracker_enabled else "🔕 OFF"}
 🔔 CT ALERT  : {'✅ ON' if _copytrade_alert_enabled else '🔕 OFF'}
+🔊 COPYTRADE : {copytrade_text} | Tracker: {"✅ ON" if _copytrade_tracker_enabled else "🔕 OFF"}
 
 ─────────────────────────────────
 🗓️ SCHEDULES:{schedules_text}
+
 ─────────────────────────────────"""
     mood_data = get_market_mood_data()
     if mood_data:
