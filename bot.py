@@ -2502,21 +2502,12 @@ def get_cvd(coin, hours=1):
                 return _cvd_absolute_cache[coin][0]
         return 0
 
-
 def get_cvd_delta(coin):
-    """
-    CVD DELTA incremental — hanya trade baru sejak call terakhir.
-    Dipakai predator supaya CVD tidak selalu 0.
-    Return: (delta_in_M, is_first_call)
-    FIX: Hyperliquid tidak punya field 'tid' — pakai 'time' sebagai cursor.
-         Accum direset tiap 1 jam biar tidak jadi noise.
-    """
     try:
         trades = info.recent_trades(coin)
         if not trades:
             return 0, False
 
-        # Sort by time ascending
         sorted_trades = sorted(trades, key=lambda t: int(t.get('time', 0)))
 
         with state_lock:
@@ -2525,7 +2516,6 @@ def get_cvd_delta(coin):
 
         now_ms = int(time.time() * 1000)
 
-        # Reset accum tiap 1 jam
         if now_ms - accum_reset_at > 3_600_000:
             with state_lock:
                 _cvd_accum[coin] = 0
@@ -2537,11 +2527,13 @@ def get_cvd_delta(coin):
                 _cvd_last_tid[coin] = newest_time
                 _cvd_accum[coin] = 0
                 _cvd_accum[f"{coin}_reset"] = now_ms
-            return 0, True  # first call, skip
+            return 0, True
 
         new_trades = [t for t in sorted_trades if int(t.get('time', 0)) > last_time]
         if not new_trades:
-            return _cvd_accum.get(coin, 0) / 1e6, False
+            with state_lock:
+                accum = _cvd_accum.get(coin, 0)
+            return accum / 1e6, False
 
         delta = 0
         for t in new_trades:
