@@ -14959,7 +14959,7 @@ if __name__ == "__main__":
     import signal
     import sys
 
-    # ========== INITIALIZE ADAPTIVE SYSTEMS (STEP 1-4) ==========
+    # ========== DEFINE FUNCTION (TIDAK DIPANGGIL LANGSUNG) ==========
     def initialize_adaptive_systems():
         logger.info("[INIT] Initializing adaptive systems...")
         try:
@@ -14976,18 +14976,16 @@ if __name__ == "__main__":
             logger.error(f"[INIT] narratives error: {e}")
         logger.info("[INIT] Adaptive systems ready")
 
-    initialize_adaptive_systems()
+    # ========== JANGAN PANGGIL DI SINI! ==========
+    # initialize_adaptive_systems()  <-- HAPUS ATAU COMMENT BARIS INI
 
     _shutdown_event = threading.Event()
 
     def signal_handler(sig, frame):
         logger.info("Received shutdown signal, saving state...")
-        # FIX: Sinyal ke semua scanner untuk berhenti graceful
         global _liq_scanner_enabled, _conf_scanner_enabled
         _liq_scanner_enabled = False
         _conf_scanner_enabled = False
-        # FIX: Jangan acquire lock di signal handler — bisa deadlock jika lock sedang dipegang thread lain.
-        # Gunakan non-blocking save dengan try/except, state_lock dipegang di dalam fungsi itu sendiri.
         try:
             save_persistent_state()
         except Exception as e:
@@ -15012,14 +15010,19 @@ if __name__ == "__main__":
     # Load learning state
     load_learning_data()
     load_persistent_state()
-    load_best_params()  # Load saved optimal parameters
+    load_best_params()
     load_wallet_state()
 
-    # Init database & bandit
+    # ========== INIT DATABASE FIRST ==========
     init_db()
+    logger.info("[UPGRADE] Database initialized")
+
+    # ========== NOW SAFE TO CALL ADAPTIVE SYSTEMS ==========
+    initialize_adaptive_systems()
+
     with state_lock:
         _bandit = BanditUCB1(BANDIT_ARMS, c=1.5)
-    logger.info("[UPGRADE] Database & Bandit initialized")
+    logger.info("[UPGRADE] Bandit initialized")
 
     # Start background threads
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
@@ -15042,4 +15045,3 @@ if __name__ == "__main__":
         except Exception as e:
             logger.error(f"Polling error: {e}")
             time.sleep(15)
-
