@@ -7741,6 +7741,7 @@ def calculate_squeeze_scores(funding, short_liq, long_liq, big_bid, big_ask, ob_
 
     # 5. FUNDING VELOCITY
     try:
+		with state_lock:
         fund_prev = _funding_velocity.get(coin, funding)
         fund_velocity = funding - fund_prev
         _funding_velocity[coin] = funding
