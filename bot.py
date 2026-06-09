@@ -10138,101 +10138,114 @@ def start_squeeze_alert():
 
 # ============================================================
 # PART 13a: COMMAND HANDLERS (START sampai WARROOM)
-# ============================================================
+# =============================================
 
-# ---------- START / HELP ----------
 @bot.message_handler(commands=['start', 'help'])
 def start(message):
     sesi = get_sesi()
     waktu = get_wib()
     user = message.from_user.first_name
     teks = f"""
-🧬 HYPERLIQUID TERMINAL BOT
+🧬 **HL TERMINAL BOT v4.0**
 GM/GN 😼 {user}  
 
 {sesi} • {waktu}
-─────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-⚡ POWER TOOLS
-/warroom BTC — Full intel
-/screener — Scan token
+**⚡ POWER TOOLS**
+/warroom BTC — Full intel & SMC analysis
+/screener — Market dashboard pro
 /session BTC — Session analysis
-/entry BTC — Entry + TP/SL
+/entry BTC — Entry + TP/SL (market order)
+/smc BTC LONG — SMC zone + limit order
 /squeeze BTC — Squeeze scanner
 
-🏛️ MARKET DATA
+**🏛️ MARKET DATA**
 /price | /funding | /oi | /spark
 /gainers | /losers | /nuke
 /heatmap | /narrative | /topoi
 /summary | /btcdom | /volatility
 /oihistory | /atr
 
-📰 NEWS
+**📰 NEWS**
 /news — Berita crypto terbaru
 /news BTC — Cari berita tentang BTC
 
-🧭 ANALISIS PRO
+**🧭 ANALISIS PRO**
 /delta | /trap | /cluster
-/liqmap | /correlation | /sentiment
-/smartflow | /clusteropen | /smc
+/liqmap | /correlation | /corrmatrix
+/sentiment | /smartflow | /clusteropen
 
-🐋 WHALE INTEL
+**🐋 WHALE INTEL**
 /whale | /whalescan | /whalewall
 /entrywhale | /liquidations | /whalesentiment
 
-👤 TRACKER
+**👤 TRACKER**
 /positions 0xABC | /pnl 0xABC 
 /history 0xABC 
 
-🔊 COPYTRADE
+**🔊 COPYTRADE**
 /copytrade — Status & tracked wallets
 /addwallet 0xABC — Track wallet
 /removewallet 0xABC — Hapus wallet
 /trackedwallets — List all tracked
+/copytracker on|off — Nyalakan/matikan tracker
 
-🎭 MOOD & RADAR
+**🎭 MOOD & RADAR**
 /mood — Market mood
 /schedule 10 insane — Anomaly radar
 /schedule 30 mood — Auto mood
 /schedule 5 temen — Auto scan
 /stopschedule — Stop all auto
 
-🕶️ AUTO SNIPER
+**🕶️ AUTO SNIPER**
 /sniper — Smart money sniper ON
 /sniperaggro — AGGRO mode
 /sniperinsane — INSANE mode
 /stopsniper — Stop sniper
 
-👽 TEMEN MODE
+**👽 TEMEN MODE**
 /temen — Bacot ON
 /diem — Bacot OFF
-/temenstatus — 🌚
+/temenstatus — Status
 
-📊 LAPORAN & PREDIKSI
+**📊 LAPORAN & PREDIKSI**
 /reportcasual — AI report + prediksi
 /prediksi — Akurasi prediksi
 /learningstat — AI learning weights
 /regime — Market regime & adaptive
 /report — Manual report
 
-🔔 ALERTS & TOGGLE
-/predatortoggle on
-/copytradealert on
-/warroomalert on
-/entryalert on
-/squeezealert on
-/smcalert on
+**🔔 ALERTS & TOGGLE**
+/predatortoggle on|off
+/copytradealert on|off
+/warroomalert on|off
+/entryalert on|off
+/squeezealert on|off
+/smcalert on|off
+/liqstop|liqstart
 
-🦾 UTILS
-/status — System status
+**🧠 AI & PERFORMANCE**
+/performa — Bot performance stats
+/banditstatus — AI learning status
+/setmode low|medium|high — Threshold mode
+
+**📝 MANUAL TRADE LOGGER**
+/log LONG BTC 105000 SL:104000 TP:107000
+/closetrade LONG BTC 106000
+/mylog — History manual trade
+/logstat — Statistik & fingerprint
+
+**🦾 UTILS**
+/status — System status & toggles
 /ping — Cek bot
+/corrmatrix BTC — Correlation matrix
 
-─────────────────────────────────
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ DYOR — Not financial advice
 🔧 Bot by Cryptone
 """
-    bot.send_message(message.chat.id, teks, parse_mode='HTML')
-
+    bot.send_message(message.chat.id, teks, parse_mode='Markdown')
 
 # ---------- SESSION ----------
 @bot.message_handler(commands=['session'])
@@ -15342,9 +15355,9 @@ def status_cmd(message):
     temen_text = "✅ ON" if TEMEN_MODE else "🔴 OFF"
     liq_text = "✅ ON" if _liq_scanner_running else "🔴 OFF"
     conf_text = "⛔ DISABLED"
-    div_text = "✅ ON (30m)" if _last_divergence_check_global > 0 else "🟡 IDLE (belum scan)"
+    div_text = "✅ ON (30m)" if _last_divergence_check_global > 0 else "🟡 IDLE"
     cvd_text = "⛔ DISABLED"
-    smart_text = "✅ ON (adaptif)" if _last_smart_money_check_global > 0 else "🟡 IDLE (belum scan)"
+    smart_text = "✅ ON (adaptif)" if _last_smart_money_check_global > 0 else "🟡 IDLE"
     
     # ===== PREDATOR STATUS =====
     if not _predator_enabled:
@@ -15354,19 +15367,13 @@ def status_cmd(message):
     else:
         predator_text = "🟡 IDLE"
     
-    # ===== WARROOM ALERT STATUS =====
-    warroom_alert_status = "✅ ON (≥60, tiap 15m)" if _warroom_alert_running else "❌ OFF"
+    # ===== ALERT STATUS DENGAN TOGGLE COMMAND =====
+    warroom_alert_status = "✅ ON" if _warroom_alert_running else "❌ OFF"
+    entry_alert_status = "✅ ON" if _entry_alert_running else "❌ OFF"
+    squeeze_alert_status = "✅ ON" if _squeeze_alert_running else "❌ OFF"
+    smc_alert_status = "✅ ON" if _smc_alert_running else "❌ OFF"
     
-    # ===== ENTRY ALERT STATUS =====
-    entry_alert_status = "✅ ON (≥60, tiap 15m)" if _entry_alert_running else "❌ OFF"
-
-    # ===== SQUEEZE ALERT STATUS =====
-    squeeze_alert_status = "✅ ON (≥55, tiap 20m)" if _squeeze_alert_running else "❌ OFF"
-    
-    # ===== SMC ALERT STATUS (BARU) =====
-    smc_alert_status = "✅ ON (≥60%, RR≥1.8, tiap 20m)" if _smc_alert_running else "❌ OFF"
-    
-    # ===== COPYTRADE STATUS DENGAN MODE =====
+    # ===== COPYTRADE STATUS =====
     ct_total = len(WATCHED_WALLETS)
     ct_manual = len(MANUAL_WALLETS)
     ct_auto = ct_total - ct_manual
@@ -15380,71 +15387,88 @@ def status_cmd(message):
     else:
         copytrade_text = f"{mode_emoji} {COPYTRADE_MODE} | 🟡 Discovering..."
     
+    # ===== MANUAL TRADE LOGGER =====
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM manual_trades WHERE outcome IS NULL")
+        open_trades = c.fetchone()[0] or 0
+        c.execute("SELECT COUNT(*) FROM manual_trades WHERE outcome IS NOT NULL")
+        closed_trades = c.fetchone()[0] or 0
+        conn.close()
+        manual_text = f"📝 {open_trades} open | {closed_trades} closed"
+    except:
+        manual_text = "📝 Active"
+    
     session_text = get_sesi()
     uptime = get_uptime()
     token_src = "ENV ✅" if os.environ.get('TOKEN') else "HARDCODE ⚠️"
     token_preview = TOKEN[:8] + "..." + TOKEN[-4:] if TOKEN else "NONE"
     
-    teks = f"""⚠️ SYSTEM STATUS
-─────────────────────────────────
+    # ===== BUILD OUTPUT =====
+    teks = f"""⚠️ **SYSTEM STATUS**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👾 Bot       : ✅ ONLINE [{token_src}]
-🔐 Token     : {token_preview}
+🔐 Token     : `{token_preview}`
 ⏱️ Uptime    : {uptime}
 📡 Session   : {session_text}
 ⏰ WIB       : {get_wib()}
-─────────────────────────────────
-🕶️ SNIPER    : {sniper_text}
-👽 TEMEN     : {temen_text}
-⛔ LIQ SCAN  : {liq_text}
-🔍 CONFLUENCE: {conf_text}
-💀 DIVERGENCE: {div_text}
-💎 CVD       : {cvd_text}
-🌐 SMART FLOW: {smart_text}
-👹 PREDATOR  : {predator_text}
-⚓ WARROOM   : {warroom_alert_status}
-🎯 ENTRY     : {entry_alert_status}
-⚡ SQUEEZE   : {squeeze_alert_status}
-💵 SMC       : {smc_alert_status}
-🧠 CASUAL    : ✅ ON (tiap 4 jam)
-📊 PREDIKSI  : ✅ ON
-🔔 CT ALERT  : {'✅ ON' if _copytrade_alert_enabled else '🔕 OFF'}
-🔊 COPYTRADE : {copytrade_text} | Tracker: {"✅ ON" if _copytrade_tracker_enabled else "🔕 OFF"}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-─────────────────────────────────
-🗓️ SCHEDULES:{schedules_text}
-─────────────────────────────────"""
+**🕶️ SNIPER**    : {sniper_text}
+**👽 TEMEN**     : {temen_text}
+**⛔ LIQ SCAN**  : {liq_text} (/liqstop|liqstart)
+**🔍 CONFLUENCE**: {conf_text}
+**💀 DIVERGENCE**: {div_text}
+**💎 CVD**       : {cvd_text}
+**🌐 SMART FLOW**: {smart_text}
+**👹 PREDATOR**  : {predator_text} (/predatortoggle)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**🔔 ALERTS** (on/off)
+⚓ WARROOM   : {warroom_alert_status} (/warroomalert)
+🎯 ENTRY     : {entry_alert_status} (/entryalert)
+⚡ SQUEEZE   : {squeeze_alert_status} (/squeezealert)
+💵 SMC       : {smc_alert_status} (/smcalert)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**🔊 COPYTRADE**
+{copytrade_text}
+🔔 CT ALERT  : {'✅ ON' if _copytrade_alert_enabled else '🔕 OFF'} (/copytradealert)
+🔊 Tracker   : {'✅ ON' if _copytrade_tracker_enabled else '🔕 OFF'} (/copytracker)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**🧠 AI & LEARNING**
+📊 Signals   : {len(SIGNAL_OUTCOMES_HISTORY)} total
+⚙️ Mode      : Entry={ENTRY_MIN_SCORE} | SMC={SMC_MIN_CONFIDENCE} | Sq={SQUEEZE_MIN_SCORE}
+⚡ Bandit    : ✅ Active (/banditstatus)
+📝 Manual    : {manual_text} (/mylog)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**🗓️ SCHEDULES:**{schedules_text}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 **Toggle commands:**
+/warroomalert on|off
+/entryalert on|off  
+/squeezealert on|off
+/smcalert on|off
+/predatortoggle on|off
+/copytracker on|off
+/liqstop|liqstart
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ /start — Full command list
+"""
+    
+    # Tambah market mood kalau ada
     mood_data = get_market_mood_data()
     if mood_data:
-        teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']}\n   Funding avg: {mood_data['funding']:+.4f}%\n   🟢 {mood_data['green_pct']:.0f}% | 🔴 {100-mood_data['green_pct']:.0f}%\n"
-    teks += "─────────────────────────────────\n✅ Lets fvcking go"
-    bot.send_message(chat_id, teks)
+        teks += f"\n{mood_data['emoji']} Mood: {mood_data['mood']} | Fund avg: {mood_data['funding']:+.4f}%"
     
-@bot.message_handler(commands=['copytradealert'])
-def copytrade_alert_cmd(message):
-    global _copytrade_alert_enabled
-    if not is_owner(message):
-        return
-
-    parts = message.text.split()
-    if len(parts) < 2:
-        status = "✅ ON" if _copytrade_alert_enabled else "❌ OFF"
-        bot.reply_to(message,
-            f"🔔 COPYTRADE ALERT\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Status: {status}\n"
-            f"Jeda global: {_COPYTRADE_ALERT_COOLDOWN} detik\n\n"
-            f"/copytradealert on\n"
-            f"/copytradealert off")
-        return
-
-    if parts[1].lower() == "on":
-        _copytrade_alert_enabled = True
-        bot.reply_to(message, "✅ COPYTRADE ALERT ON\nNotifikasi wallet akan dikirim")
-    elif parts[1].lower() == "off":
-        _copytrade_alert_enabled = False
-        bot.reply_to(message, "🔕 COPYTRADE ALERT OFF\nTracking wallet tetap berjalan, tapi notifikasi dihentikan sementara.\n/copytradealert on untuk nyalakan lagi.")
-    else:
-        bot.reply_to(message, "Gunakan: on / off")
+    teks += "\n✅ Let's fvcking go!"
+    
+    bot.send_message(chat_id, teks, parse_mode='Markdown')
 
 
 # ---------- COPYTRADE ----------
@@ -15710,7 +15734,7 @@ def trackedwallets_cmd(message):
             positions_snap = dict(_wallet_last_positions)
 
         if not wallets_snap:
-            bot.reply_to(message, f"😴 Belum ada wallet yang ditrack.\n\nAuto-discovery jalan tiap {WALLET_DISCOVERY_INTERVAL//60} menit.\nAtau /addwallet 0xABC untuk tambah manual.")
+            bot.reply_to(message, f"🪫 Belum ada wallet yang ditrack.\n\nAuto-discovery jalan tiap {WALLET_DISCOVERY_INTERVAL//60} menit.\nAtau /addwallet 0xABC untuk tambah manual.")
             return
 
         teks = f"🔊 TRACKED WALLETS ({len(wallets_snap)})\n"
