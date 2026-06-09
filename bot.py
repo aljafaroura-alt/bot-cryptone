@@ -26,7 +26,7 @@ import hashlib
 import math
 import numpy as np
 
-from hyperliquid.info import Info
+from hyperliquid import Info
 from hyperliquid.utils import constants
 
 # ========== GLOBAL ERROR HANDLER ==========
