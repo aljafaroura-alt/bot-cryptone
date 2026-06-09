@@ -9196,8 +9196,8 @@ def check_squeeze_alert():
                         mq_sq = max(0.6, mq_sq)  # minimal 0.6x, tidak skip
                         result["score"] = max(30, min(99, int(result["score"] * mq_sq)))
                         result["market_mult"] = mq_sq
-                            alerts.append(result)
-                            logger.info(f"[SQUEEZE] {coin} SHORT SQUEEZE target={result['target_pct']:.1f}% RR={result['rr']:.1f} mq={mq_sq:.2f}")
+                        alerts.append(result)
+                        logger.info(f"[SQUEEZE] {coin} SHORT SQUEEZE target={result['target_pct']:.1f}% RR={result['rr']:.1f} mq={mq_sq:.2f}")
 
                 # LONG SQUEEZE
                 elif long_score >= dyn_sq_score and long_score > short_score:
