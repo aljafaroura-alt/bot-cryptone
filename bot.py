@@ -165,6 +165,12 @@ _FUSE_ERROR_LIMIT  = 5
 _FUSE_WINDOW_SEC   = 60
 _FUSE_COOLDOWN_SEC = 300   # 5 menit
 
+# ============================================================
+# LEARNING DECAY CONFIG
+# ============================================================
+_LEARNING_DECAY_DAYS = 7      # sinyal > 7 hari bobotnya dikurangi
+_LEARNING_DECAY_FACTOR = 0.7  # decay factor per hari setelah threshold
+
 def rate_limited_api_call(func, *args, **kwargs):
     """Wrapper untuk throttle semua Hyperliquid API call via token bucket."""
     _hl_rate_limiter.acquire()
@@ -470,6 +476,7 @@ _killzone_threshold_multiplier = {
     "squeeze": 0.70,  # threshold turun 30%
 }
 _last_killzone_alert = 0
+_killzone_pending_orders = {}  # {coin_direction: {'price': float, 'sl': float, 'tp': float, 'rr': float, 'entry_time': float, 'expiry': float, 'side': str, 'notified': bool}}
 
 def _cross_tag(coin, direction):
     """Return label konfirmasi kalau scanner lain sudah fire coin+direction dalam 1 jam."""
@@ -4773,6 +4780,125 @@ def update_killzone_status() -> dict:
     return result
 
 
+# ============================================================
+# KILLZONE PENDING ORDERS
+# ============================================================
+
+def get_killzone_entry_level(coin, direction):
+    """Return (entry_price, sl_price, tp_price, rr) atau (None, None, None, None) jika tidak ada."""
+    try:
+        if direction == "LONG":
+            levels = get_fresh_liquidity_levels(coin, min_strength=0.4)
+            mark = get_ctx(coin)[1]
+            supports = sorted([l for l in levels if l['price'] < mark], key=lambda x: x['price'], reverse=True)
+            if supports:
+                entry = supports[0]['price']
+            else:
+                res = get_smc_levels_advanced(coin, "LONG", mode="alert")
+                entry_low, entry_high = res[0], res[1]
+                entry = (entry_low + entry_high) / 2 if entry_low else None
+            if entry:
+                sl, _, tp, _, rr = get_smart_sltp(coin, entry, "LONG", source="killzone")
+                return entry, sl, tp, rr
+        else:
+            levels = get_fresh_liquidity_levels(coin, min_strength=0.4)
+            mark = get_ctx(coin)[1]
+            resistances = sorted([l for l in levels if l['price'] > mark], key=lambda x: x['price'])
+            if resistances:
+                entry = resistances[0]['price']
+            else:
+                res = get_smc_levels_advanced(coin, "SHORT", mode="alert")
+                entry_low, entry_high = res[0], res[1]
+                entry = (entry_low + entry_high) / 2 if entry_low else None
+            if entry:
+                sl, _, tp, _, rr = get_smart_sltp(coin, entry, "SHORT", source="killzone")
+                return entry, sl, tp, rr
+        return None, None, None, None
+    except Exception as e:
+        logger.debug(f"[KILLZONE_PENDING] {coin} get_entry_level error: {e}")
+        return None, None, None, None
+
+
+def place_killzone_pending_order(coin, direction, entry, sl, tp, rr):
+    """Simpan pending order killzone dan kirim notifikasi ke user."""
+    key = f"{coin}_{direction}"
+    expiry = time.time() + 1800  # 30 menit
+    _killzone_pending_orders[key] = {
+        'price': entry, 'sl': sl, 'tp': tp, 'rr': rr,
+        'entry_time': time.time(), 'expiry': expiry, 'side': direction,
+        'notified': False
+    }
+    teks = (
+        f"⏰ KILLZONE PENDING ORDER\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 {coin} {direction}\n"
+        f"📌 Entry limit: {fmt_price(entry)}\n"
+        f"🛑 SL: {fmt_price(sl)}\n"
+        f"✅ TP: {fmt_price(tp)}\n"
+        f"⚓ RR: 1:{rr:.1f}\n"
+        f"⏳ Berlaku 30 menit\n\n"
+        f"🔔 Akan notifikasi saat harga menyentuh level."
+    )
+    try:
+        send_to_both(teks)
+    except Exception as e:
+        logger.debug(f"[KILLZONE_PENDING] {coin} send error: {e}")
+    logger.info(f"[KILLZONE_PENDING] {coin} {direction} pending order set @ {fmt_price(entry)}")
+
+
+def check_killzone_pending_orders():
+    """Cek apakah harga sudah menyentuh pending order, kirim notifikasi trigger."""
+    if not _killzone_pending_orders:
+        return
+    now = time.time()
+    try:
+        mids = info.all_mids()
+    except Exception:
+        return
+    to_remove = []
+    for key, order in list(_killzone_pending_orders.items()):
+        # Hapus kalau expired
+        if now > order['expiry']:
+            to_remove.append(key)
+            logger.info(f"[KILLZONE_PENDING] {key} expired, removed")
+            continue
+        try:
+            coin, direction = key.split('_', 1)
+        except ValueError:
+            to_remove.append(key)
+            continue
+        price = float(mids.get(coin, 0))
+        if price == 0:
+            continue
+        entry = order['price']
+        # Cek apakah harga sudah menyentuh entry (toleransi 0.1%)
+        triggered = (
+            (direction == "LONG" and price >= entry * 0.999) or
+            (direction == "SHORT" and price <= entry * 1.001)
+        )
+        if triggered and not order.get('notified'):
+            teks = (
+                f"🚀 KILLZONE PENDING ORDER TRIGGERED!\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🎯 {coin} {direction}\n"
+                f"✅ Entry limit {fmt_price(entry)} tersentuh!\n"
+                f"💰 Harga sekarang: {fmt_price(price)}\n"
+                f"🛑 SL: {fmt_price(order['sl'])}\n"
+                f"✅ TP: {fmt_price(order['tp'])}\n"
+                f"⚓ RR: 1:{order['rr']:.1f}\n\n"
+                f"💡 Eksekusi segera atau tunggu konfirmasi candle."
+            )
+            try:
+                send_to_both(teks)
+            except Exception as e:
+                logger.debug(f"[KILLZONE_PENDING] {key} send error: {e}")
+            order['notified'] = True
+            to_remove.append(key)
+            logger.info(f"[KILLZONE_PENDING] {key} TRIGGERED @ {fmt_price(price)}")
+    for k in to_remove:
+        _killzone_pending_orders.pop(k, None)
+
+
 def check_killzone_incoming():
     """Deteksi 5-20 menit sebelum killzone → alert + setup potensial. Aktifkan killzone mode saat jam tepat."""
     global _killzone_active, _killzone_type, _killzone_start_time, _last_killzone_alert
@@ -4797,6 +4923,28 @@ def check_killzone_incoming():
             )
             try: send_to_both(teks)
             except Exception: pass
+            # PASANG PENDING ORDER saat killzone baru aktif
+            try:
+                _kz_data = get_cached_meta()
+                for _kz_asset, _kz_ctx in zip(_kz_data[0]["universe"][:10], _kz_data[1][:10]):
+                    _kz_coin = _kz_asset["name"]
+                    _kz_mark = float(_kz_ctx.get("markPx") or 0)
+                    if _kz_mark == 0:
+                        continue
+                    _kz_funding = get_funding_pct(_kz_ctx)
+                    _kz_ob_delta = get_ob_delta_fast(_kz_coin)
+                    if _kz_funding < -0.03 and _kz_ob_delta > 10:
+                        _kz_dir = "LONG"
+                        _kz_entry, _kz_sl, _kz_tp, _kz_rr = get_killzone_entry_level(_kz_coin, _kz_dir)
+                        if _kz_entry:
+                            place_killzone_pending_order(_kz_coin, _kz_dir, _kz_entry, _kz_sl, _kz_tp, _kz_rr)
+                    elif _kz_funding > 0.03 and _kz_ob_delta < -10:
+                        _kz_dir = "SHORT"
+                        _kz_entry, _kz_sl, _kz_tp, _kz_rr = get_killzone_entry_level(_kz_coin, _kz_dir)
+                        if _kz_entry:
+                            place_killzone_pending_order(_kz_coin, _kz_dir, _kz_entry, _kz_sl, _kz_tp, _kz_rr)
+            except Exception as _kz_setup_e:
+                logger.error(f"[KILLZONE_PENDING] setup error: {_kz_setup_e}")
             return
 
         # Alert 5-20 menit sebelum killzone
@@ -6698,10 +6846,16 @@ def evaluate_signal_outcomes():
                 correct = pct_move > 0.5 if direction == "LONG" else pct_move < -0.5
                 outcome_label = "NO_SLTP"
 
-            # Update bandit
+            # Hitung decay weight berdasarkan usia sinyal
+            age_days = (now - signal["entry_time"]) / 86400
+            if age_days > _LEARNING_DECAY_DAYS:
+                weight = max(0.1, min(1.0, _LEARNING_DECAY_FACTOR ** (age_days - _LEARNING_DECAY_DAYS)))
+            else:
+                weight = 1.0
+            # Update bandit dengan decay weight (sinyal lama = bobot lebih kecil)
             indicators_ev = signal.get("indicators", {})
             try:
-                update_bandit(indicators_ev, correct)
+                update_bandit(indicators_ev, correct, weight)
             except:
                 pass
             # Update DB
@@ -6742,7 +6896,7 @@ def evaluate_signal_outcomes():
             trim = len(SIGNAL_OUTCOMES_HISTORY) > 200
             if trim:
                 SIGNAL_OUTCOMES_HISTORY[:] = SIGNAL_OUTCOMES_HISTORY[-200:]
-        if len(recent) >= 10:
+        if len(recent) >= 5:  # dari 10 → 5: update bobot lebih cepat
             _update_learning_weights(recent)
         save_learning_data()
         logger.info(f"[LEARNING] Evaluated {new_outcomes} signals, total history={len(SIGNAL_OUTCOMES_HISTORY)}")
@@ -8245,7 +8399,7 @@ class BanditUCB1:
         key = f"{arm}_{regime}"
         self.counts[key] = self.counts.get(key, 0) + 1
         self.scores[key] = self.scores.get(key, 0.0) + reward
-        self._save(arm, reward == 1, regime)
+        self._save(arm, reward > 0, regime)  # reward > 0 = win (support fractional)
 
     def get_weights(self, regime=None):
         """Ambil bobot untuk regime tertentu, atau fallback ke RANGING."""
@@ -8258,6 +8412,12 @@ class BanditUCB1:
         if total == 0:
             return {arm: 1.0 for arm in self.arms}
         return {arm: max(0.5, min(2.0, self.scores.get(f"{arm}_{regime}", 0.0) / total * len(self.arms))) for arm in self.arms}
+
+    def decay_weights(self, decay_factor=0.95):
+        """Kurangi bobot semua arms secara berkala agar tidak stagnan."""
+        for key in list(self.scores.keys()):
+            self.scores[key] *= decay_factor
+        logger.debug(f"[BANDIT] Weights decayed by factor {decay_factor}")
 
 # ============================================================
 # REAL-TIME ADAPTIVE PARAMETERS (NO HISTORY NEEDED)
@@ -8462,12 +8622,13 @@ def get_bandit_weights(regime=None):
                 regime = "RANGING"
         return _bandit.get_weights(regime)
 
-def update_bandit(indicators, correct):
+def update_bandit(indicators, correct, weight=1.0):
     global _bandit
     with state_lock:
         if _bandit is None:
             _bandit = BanditUCB1(BANDIT_ARMS, c=1.5)
-        reward = 1 if correct else 0
+        # Reward fractional berdasarkan decay weight (0.1 – 1.0)
+        reward = weight if correct else 0
         try:
             regime = get_market_regime()
         except:
@@ -9555,10 +9716,13 @@ def check_entry_alert():
                     trendline_bonus += div_stack_score
                     trendline_tags.extend(div_tags)
                     logger.info(f"[ENTRY_ALERT] {coin} {div_label} div_stack={div_stack_score} confirms={div_confirmations}")
-                # TRIPLE LOCK: turunkan min_score threshold karena semua derivatif konfirmasi
+                # TRIPLE LOCK: turunkan min_score + need_align lebih agresif
                 if div_confirmations == 3:
-                    dynamic_min_score = max(55, dynamic_min_score - 8)
-                    logger.info(f"[ENTRY_ALERT] {coin} TRIPLE_LOCK → threshold turun ke {dynamic_min_score}")
+                    # Turunkan min_score lebih agresif (-12 vs sebelumnya -8)
+                    dynamic_min_score = max(50, dynamic_min_score - 12)
+                    # Turunkan need_align dari 2 menjadi 1 (cukup 1/3 TF alignment)
+                    need_align = max(1, need_align - 1)
+                    logger.info(f"[ENTRY_ALERT] {coin} TRIPLE_LOCK → threshold turun ke {dynamic_min_score}, need_align={need_align}")
 
                 # ============================================================
                 # MANUAL FINGERPRINT MATCH BOOST (Advanced)
@@ -15988,11 +16152,53 @@ def learning_stat_cmd(message):
                 teks += f"   {s_name:<8}: {wr:.0f}% {bar} ({len(results)} trades)\n"
             else:
                 teks += f"   {s_name:<8}: No data yet\n"
-        teks += f"\n💡 Auto-update tiap 10 sinyal dievaluasi\n📁 File: {LEARNING_FILE}"
+        teks += f"\n💡 Auto-update tiap 5 sinyal dievaluasi\n📁 File: {LEARNING_FILE}"
         bot.reply_to(message, teks)
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
+
+@bot.message_handler(commands=['learningboost'])
+def learning_boost_status(message):
+    """Тampilkan status learning engine detail + bandit weights adaptasi."""
+    if not is_owner(message):
+        return
+    if check_command_cooldown(message.from_user.id, "learningboost"):
+        bot.reply_to(message, f"⏳ Tunggu {COMMAND_COOLDOWN_SEC}s dulu")
+        return
+    try:
+        with state_lock:
+            total = len(SIGNAL_OUTCOMES_HISTORY)
+            if total > 0:
+                recent_20 = list(SIGNAL_OUTCOMES_HISTORY[-20:])
+                wins = sum(1 for o in recent_20 if o.get("correct"))
+                wr_recent = wins / len(recent_20) * 100
+            else:
+                wr_recent = 0
+            bandit_w = _bandit.get_weights() if _bandit else {}
+            pending = sum(1 for v in _signal_pending.values() if not v.get("evaluated"))
+
+        teks = (
+            f"🧠 LEARNING ENGINE BOOST\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⏰ {get_wib()}\n\n"
+            f"📊 Total sinyal tracked: {total}\n"
+            f"📈 Winrate (20 terbaru): {wr_recent:.1f}%\n"
+            f"⏳ Pending evaluasi: {pending}\n\n"
+            f"⚡ Interval evaluasi: 1 jam\n"
+            f"🔄 Update bobot: setiap 5 sinyal\n"
+            f"📉 Decay sinyal lama: >7 hari ×0.7\n"
+            f"📉 Decay bobot Bandit: ×0.95/hari\n\n"
+            f"🎯 BANDIT WEIGHTS (regime sekarang):\n"
+        )
+        for arm, w in bandit_w.items():
+            bar_len = int(w * 5)
+            bar = "█" * min(bar_len, 10) + "░" * max(0, 10 - bar_len)
+            teks += f"   {arm}: {w:.2f}x {bar}\n"
+        teks += f"\n💡 Bot makin adaptif seiring waktu.\n📊 /learningstat untuk statistik lengkap"
+        bot.reply_to(message, teks)
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
 
 
 # ---------- REGIME ----------
@@ -16950,10 +17156,17 @@ def run_scheduler():
                 except Exception as _fdb_e:
                     logger.debug(f"[SCHEDULER] db flush error: {_fdb_e}")
 
-            # Learning evaluation (2 jam)
-            if now - last_learning_eval >= 7200:
+            # Learning evaluation (1 jam) - lebih cepat adaptasi
+            if now - last_learning_eval >= 3600:  # dari 7200 → 3600
                 evaluate_signal_outcomes()
                 last_learning_eval = now
+
+            # Killzone pending order check (setiap ~30 detik)
+            if int(now) % 30 < 2:
+                try:
+                    check_killzone_pending_orders()
+                except Exception as _kpo_e:
+                    logger.debug(f"[SCHEDULER] killzone pending order check error: {_kpo_e}")
 
             # ========== ULTIMATE PREDATOR (tiap 60 menit) ==========
 
@@ -16962,6 +17175,12 @@ def run_scheduler():
             # ========== PERIODIC CACHE PRUNING ==========
             if int(now) % 3600 < 5:  # Setiap ~1 jam
                 prune_ts = now
+                # Bandit decay setiap 24 jam agar bobot tidak stagnan
+                if int(now) % 86400 < 3605:
+                    with state_lock:
+                        if _bandit:
+                            _bandit.decay_weights(0.95)
+                            logger.info("[LEARNING] Bandit weights decayed (×0.95) — harian")
                 # Refresh adaptive systems (vol_profile tiap 24h, session_stats tiap 1h)
                 try:
                     update_volatility_profile()   # no-op jika belum 24 jam
