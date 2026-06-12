@@ -15,6 +15,8 @@ from wallet_tracker import save_wallet_state
 from scanners import master_market_scan
 from correlation import get_correlation_matrix
 from market_data import update_volatility_profile, learn_session_stats, auto_discover_narratives
+# scheduler.py
+from scanners import master_market_scan, check_entry_alert, check_smc_alert, check_squeeze_alert, check_warroom_simple, run_sniper_scan
 
 logger = logging.getLogger(__name__)
 
