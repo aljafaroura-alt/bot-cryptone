@@ -7,7 +7,7 @@ from typing import Dict
 from indicators import get_candles_smc
 from hyperliquid_api import info
 from indicators import get_atr
-from market_regime import get_market_regime
+from market_data.market_regime import get_market_regime
 from utils import get_wib_hour
 from config import VOLATILITY_PROFILE
 from .smc_engine_analysis import detect_swing_points
