@@ -13,7 +13,7 @@ from alerts import send_to_both, send_to_owner
 
 logger = logging.getLogger(__name__)
 
-def register_start_handlers(bot):
+def register(bot):
     
     @bot.message_handler(commands=['start', 'help'])
     def start(message):
