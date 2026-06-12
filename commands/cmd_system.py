@@ -22,7 +22,7 @@ from alerts import send_to_both, send_to_owner
 
 logger = logging.getLogger(__name__)
 
-def register_system_handlers(bot):
+def register(bot):
     
     @bot.message_handler(commands=['ping'])
     def ping(message):
