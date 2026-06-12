@@ -17,7 +17,7 @@ from alerts import send_to_both
 
 logger = logging.getLogger(__name__)
 
-def register_entry_handlers(bot):
+def register(bot):
 
     # ========== ENTRY COMMAND ==========
     @bot.message_handler(commands=['entry'])
