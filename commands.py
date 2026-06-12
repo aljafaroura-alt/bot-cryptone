@@ -14,7 +14,8 @@ from market_regime import get_market_regime
 from database import get_manual_trade_stats, save_manual_trade, close_manual_trade
 from learning import track_signal_entry
 from wallet_tracker import get_wallet_positions, get_trade_history
-
+# commands.py
+from scanners import master_market_scan, check_entry_alert
 logger = logging.getLogger(__name__)
 
 def register_handlers(bot: TeleBot):
