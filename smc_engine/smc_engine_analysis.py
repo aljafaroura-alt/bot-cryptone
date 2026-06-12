@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Tuple
 
 from hyperliquid_api import get_ctx
 from indicators import get_candles_smc, get_atr, get_cvd
-from market_regime import get_market_regime
+from market_data.market_regime import get_market_regime
 from utils import get_wib_hour
 from config import state_lock, VOLATILITY_PROFILE
 from .smc_engine_zone import find_ob_zone, find_fvg_smc
