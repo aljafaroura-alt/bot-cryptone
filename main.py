@@ -19,6 +19,11 @@ from wallet_tracker import load_wallet_state, start_wallet_tracker
 from scheduler import run_scheduler, start_warroom_alert, start_entry_alert, start_squeeze_alert, start_smc_alert, start_sniper_scan
 from commands import bot, register_handlers
 from hyperliquid_api import info
+# main.py
+from scanners import master_market_scan, check_entry_alert, check_smc_alert, check_squeeze_alert, check_warroom_simple, run_sniper_scan
+
+# Atau import semua sekaligus
+from scanners import *
 
 # ========== LOGGING SETUP ==========
 _log_format = '%(asctime)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
