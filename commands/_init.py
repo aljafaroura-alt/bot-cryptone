@@ -1,35 +1,59 @@
 # commands/__init__.py - Menggabungkan semua command handlers
 
-from .cmd_start import register_start_handlers
-from .cmd_system import register_system_handlers
-from .cmd_price import register_price_handlers
-from .cmd_entry import register_entry_handlers
-from .cmd_scanner_toggle import register_scanner_toggle_handlers
-from .cmd_market import register_market_handlers
-from .cmd_whale import register_whale_handlers
-from .cmd_liquidity import register_liquidity_handlers
-from .cmd_screener import register_screener_handlers
-from .cmd_sniper import register_sniper_handlers
-from .cmd_copytrade import register_copytrade_handlers
-from .cmd_manual_log import register_manual_log_handlers
-from .cmd_narrative import register_narrative_handlers
-from .cmd_confluence import register_confluence_handlers
-from .cmd_other import register_other_handlers
+from .cmd_start import register as register_start
+from .cmd_system import register as register_system
+from .cmd_price import register as register_price
+from .cmd_entry import register as register_entry
+from .cmd_squeeze import register as register_squeeze
+from .cmd_scanner_toggle import register as register_scanner_toggle
+from .cmd_market import register as register_market
+from .cmd_whale import register as register_whale
+from .cmd_liquidity import register as register_liquidity
+from .cmd_screener import register as register_screener
+from .cmd_report import register as register_report
+from .cmd_mood import register as register_mood
+from .cmd_regime import register as register_regime
+from .cmd_narrative import register as register_narrative
+from .cmd_heatmap import register as register_heatmap
+from .cmd_topoi import register as register_topoi
+from .cmd_btcdom import register as register_btcdom
+from .cmd_summary import register as register_summary
+from .cmd_nuke import register as register_nuke
+from .cmd_smartflow import register as register_smartflow
+from .cmd_clusteropen import register as register_clusteropen
+from .cmd_whalesentiment import register as register_whalesentiment
+from .cmd_sniper import register as register_sniper
+from .cmd_copytrade import register as register_copytrade
+from .cmd_manual_log import register as register_manual_log
+from .cmd_confluence import register as register_confluence
+from .cmd_other import register as register_other
 
 def register_handlers(bot):
     """Daftarkan semua command handlers ke bot"""
-    register_start_handlers(bot)
-    register_system_handlers(bot)
-    register_price_handlers(bot)
-    register_entry_handlers(bot)
-    register_scanner_toggle_handlers(bot)
-    register_market_handlers(bot)
-    register_whale_handlers(bot)
-    register_liquidity_handlers(bot)
-    register_screener_handlers(bot)
-    register_sniper_handlers(bot)
-    register_copytrade_handlers(bot)
-    register_manual_log_handlers(bot)
-    register_narrative_handlers(bot)
-    register_confluence_handlers(bot)
-    register_other_handlers(bot)
+    register_start(bot)
+    register_system(bot)
+    register_price(bot)
+    register_entry(bot)
+    register_squeeze(bot)
+    register_scanner_toggle(bot)
+    register_market(bot)
+    register_whale(bot)
+    register_liquidity(bot)
+    register_screener(bot)
+    register_report(bot)
+    register_mood(bot)
+    register_regime(bot)
+    register_narrative(bot)
+    register_heatmap(bot)
+    register_topoi(bot)
+    register_btcdom(bot)
+    register_summary(bot)
+    register_nuke(bot)
+    register_smartflow(bot)
+    register_clusteropen(bot)
+    register_whalesentiment(bot)
+    register_sniper(bot)
+    register_copytrade(bot)
+    register_manual_log(bot)
+    register_confluence(bot)
+    register_other(bot)
