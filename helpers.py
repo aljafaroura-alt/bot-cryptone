@@ -1,6 +1,7 @@
 # helpers.py
 import time
 import logging
+import requests
 from hyperliquid.info import Info
 from hyperliquid.utils import constants
 
@@ -30,8 +31,13 @@ def get_cached_meta():
     global _cached_meta, _cached_meta_time
     now = time.time()
     if _cached_meta is None or now - _cached_meta_time > 300:
-        _cached_meta = rate_limited_call(info.meta_and_asset_ctxs)
-        _cached_meta_time = now
+        try:
+            _cached_meta = rate_limited_call(info.meta_and_asset_ctxs)
+            _cached_meta_time = now
+        except Exception as e:
+            logger.error(f"get_cached_meta error: {e}")
+            if _cached_meta is None:
+                raise
     return _cached_meta
 
 def get_ctx(coin: str):
@@ -40,12 +46,16 @@ def get_ctx(coin: str):
         for asset, ctx in zip(data[0]["universe"], data[1]):
             if asset["name"].upper() == coin.upper():
                 return ctx, float(ctx.get("markPx") or 0)
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"get_ctx {coin} error: {e}")
     return None, 0
 
 def get_all_mids():
-    return rate_limited_call(info.all_mids)
+    try:
+        return rate_limited_call(info.all_mids)
+    except Exception as e:
+        logger.error(f"get_all_mids error: {e}")
+        return {}
 
 def get_oi_usd(ctx, mark=None):
     try:
@@ -68,3 +78,13 @@ def get_funding_pct(ctx):
         return float(ctx.get("funding") or 0) * 100
     except:
         return 0
+
+# Test function to verify connection
+def test_connection():
+    try:
+        mids = info.all_mids()
+        if mids and len(mids) > 0:
+            return True, f"Connected, {len(mids)} coins"
+        return False, "No data"
+    except Exception as e:
+        return False, str(e)
