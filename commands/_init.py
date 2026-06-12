@@ -1,4 +1,4 @@
-# commands/__init__.py - Menggabungkan semua command handlers
+# commands/__init__.py - FINAL (dengan file yang sudah dipecah)
 
 from .cmd_start import register as register_start
 from .cmd_system import register as register_system
@@ -26,7 +26,11 @@ from .cmd_sniper import register as register_sniper
 from .cmd_copytrade import register as register_copytrade
 from .cmd_manual_log import register as register_manual_log
 from .cmd_confluence import register as register_confluence
-from .cmd_other import register as register_other
+from .cmd_temen import register as register_temen
+from .cmd_schedule import register as register_schedule
+from .cmd_killzone import register as register_killzone
+from .cmd_fuse import register as register_fuse
+from .cmd_performa import register as register_performa
 
 def register_handlers(bot):
     """Daftarkan semua command handlers ke bot"""
@@ -56,4 +60,8 @@ def register_handlers(bot):
     register_copytrade(bot)
     register_manual_log(bot)
     register_confluence(bot)
-    register_other(bot)
+    register_temen(bot)
+    register_schedule(bot)
+    register_killzone(bot)
+    register_fuse(bot)
+    register_performa(bot)
