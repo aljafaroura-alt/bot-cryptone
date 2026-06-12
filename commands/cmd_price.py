@@ -14,7 +14,7 @@ from alerts import send_to_both
 
 logger = logging.getLogger(__name__)
 
-def register_price_handlers(bot):
+def register(bot):
     
     @bot.message_handler(commands=['price'])
     def super_price(message):
