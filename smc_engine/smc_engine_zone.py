@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from hyperliquid_api import get_candles_smc
+from indicators import get_candles_smc
 from indicators import get_candles_smc as get_candles
 from config import state_lock
 
