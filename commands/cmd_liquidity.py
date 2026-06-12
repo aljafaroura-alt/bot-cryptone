@@ -10,7 +10,7 @@ from market_data import update_liquidity_levels, get_fresh_liquidity_levels, get
 
 logger = logging.getLogger(__name__)
 
-def register_liquidity_handlers(bot):
+def register(bot):
 
     @bot.message_handler(commands=['liquidations', 'liq'])
     def liquidations(message):
