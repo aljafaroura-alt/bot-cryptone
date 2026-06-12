@@ -4,7 +4,8 @@ import time
 import logging
 from typing import Tuple, Optional, Dict, Any, List
 
-from hyperliquid_api import get_ctx, get_candles_smc, api_call_with_retry, info
+from hyperliquid_api import get_ctx, api_call_with_retry, info
+from indicators import get_candles_smc
 from market_data import get_ob_delta_fast, get_funding_pct, get_change, get_orderbook_depth, get_spread_warning
 from market_regime import get_market_regime
 from indicators import get_atr, get_cvd
