@@ -14,7 +14,7 @@ concurrency:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # tetap, tapi bot akan mati setelah ini
+    timeout-minutes: 350
     
     steps:
       - name: Checkout repo
@@ -30,7 +30,6 @@ jobs:
             learning_data.json
             predictions.json
             wallet_tracker_state.json
-          # PERBAIKAN: Gunakan key tetap (bukan run_id)
           key: bot-state-${{ runner.os }}-persist
           restore-keys: bot-state-${{ runner.os }}-
       
@@ -42,7 +41,9 @@ jobs:
       - name: Run bot
         env:
           TOKEN: ${{ secrets.TOKEN }}
-        run: python bot.py
+          USER_ID: ${{ secrets.USER_ID }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+        run: python main.py   # ← GANTI dari bot.py ke main.py
       
       - name: Save state files after run
         if: always()
@@ -53,5 +54,4 @@ jobs:
             learning_data.json
             predictions.json
             wallet_tracker_state.json
-          # PERBAIKAN: Gunakan key yang sama dengan restore
           key: bot-state-${{ runner.os }}-persist
