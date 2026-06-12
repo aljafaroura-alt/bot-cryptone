@@ -4,7 +4,8 @@ import math
 import logging
 from typing import Dict
 
-from hyperliquid_api import get_candles_smc, info
+from indicators import get_candles_smc
+from hyperliquid_api import info
 from indicators import get_atr
 from market_regime import get_market_regime
 from utils import get_wib_hour
