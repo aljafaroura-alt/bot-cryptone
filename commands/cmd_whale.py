@@ -11,7 +11,7 @@ from alerts import send_to_both
 
 logger = logging.getLogger(__name__)
 
-def register_whale_handlers(bot):
+def register(bot):
 
     @bot.message_handler(commands=['whale'])
     def whale(message):
