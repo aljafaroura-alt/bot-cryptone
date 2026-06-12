@@ -2,7 +2,8 @@ import time
 import logging
 from typing import Dict, Any
 
-from hyperliquid_api import get_cached_meta, get_change, api_call_with_retry, info
+from hyperliquid_api import get_cached_meta, api_call_with_retry, info
+from market_data.market_basic import get_change
 from config import state_lock
 
 logger = logging.getLogger(__name__)
