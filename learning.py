@@ -5,7 +5,7 @@ import logging
 import sqlite3
 from typing import Dict, List, Any, Optional
 
-from config import (LEARNING_FILE_PATH, LEARNING_WEIGHTS, SIGNAL_OUTCOMES_HISTORY,
+from config import (LEARNING_FILE, LEARNING_WEIGHTS, SIGNAL_OUTCOMES_HISTORY,
                     _signal_pending, state_lock, get_market_regime, _LEARNING_DECAY_DAYS,
                     _LEARNING_DECAY_FACTOR, ENTRY_MIN_SCORE, SMC_MIN_CONFIDENCE,
                     SQUEEZE_MIN_SCORE, ENTRY_MIN_RR, SMC_MIN_RR, BEST_PARAMS_FILE)
