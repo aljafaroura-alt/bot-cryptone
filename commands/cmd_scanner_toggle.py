@@ -9,7 +9,7 @@ from config import _entry_alert_running, _smc_alert_running, _squeeze_alert_runn
 
 logger = logging.getLogger(__name__)
 
-def register_scanner_toggle_handlers(bot):
+def register(bot):
 
     @bot.message_handler(commands=['entryalert'])
     def entry_alert_cmd(message):
