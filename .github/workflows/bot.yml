@@ -5,7 +5,7 @@ on:
     branches: [ main ]
   workflow_dispatch:
   schedule:
-    - cron: '*/20 * * * *'  # tiap 20 menit
+    - cron: '*/20 * * * *'
 
 concurrency:
   group: bot-cryptone
@@ -15,13 +15,13 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 350
-    
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Restore cached state files
         uses: actions/cache@v3
         with:
@@ -30,21 +30,22 @@ jobs:
             learning_data.json
             predictions.json
             wallet_tracker_state.json
-          key: bot-state-${{ runner.os }}-persist
-          restore-keys: bot-state-${{ runner.os }}-
-      
+            *.db
+          key: bot-state-${{ github.run_id }}
+          restore-keys: bot-state-
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-      
+
       - name: Run bot
         env:
           TOKEN: ${{ secrets.TOKEN }}
           USER_ID: ${{ secrets.USER_ID }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
-        run: python main.py   # ← GANTI dari bot.py ke main.py
-      
+        run: python main.py
+
       - name: Save state files after run
         if: always()
         uses: actions/cache/save@v3
@@ -54,4 +55,5 @@ jobs:
             learning_data.json
             predictions.json
             wallet_tracker_state.json
-          key: bot-state-${{ runner.os }}-persist
+            *.db
+          key: bot-state-${{ github.run_id }}
