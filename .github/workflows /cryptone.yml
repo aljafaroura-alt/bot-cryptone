@@ -66,4 +66,4 @@ jobs:
           # 350-minute job timeout above forcibly kills it.
           RUN_DURATION_SECONDS: ${{ github.event.inputs.run_duration_seconds || '21000' }}
         run: python cryptone_v3.py
-        # trigger
+        # triggers
