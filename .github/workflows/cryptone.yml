@@ -13,6 +13,10 @@ on:
         description: "Run only the quick data-integrity check (--check) instead of the full loop"
         required: false
         default: "false"
+      reset_state:
+        description: "Discard saved state.json and start fresh this run (true/false)"
+        required: false
+        default: "false"
 
 concurrency:
   group: cryptone-v3-radar
@@ -35,6 +39,22 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Rolling-key cache: restore-keys always falls back to the most
+      # recent cache under the "cryptone-state-" prefix, and since `key`
+      # includes github.run_id (unique every run) it never hits an exact
+      # match, so actions/cache always saves a fresh entry at the end of
+      # the job. Net effect: every run picks up state.json from wherever
+      # the previous run left off, without ever needing a fixed key that
+      # would block re-saving.
+      - name: Restore radar state
+        if: ${{ github.event.inputs.reset_state != 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: cryptone-state-${{ github.run_id }}
+          restore-keys: |
+            cryptone-state-
+
       - name: Quick data integrity check
         if: ${{ github.event.inputs.check_only == 'true' }}
         run: python cryptone_v3.py --check
@@ -50,5 +70,20 @@ jobs:
           DISCOVERY_SCAN_INTERVAL: ${{ vars.DISCOVERY_SCAN_INTERVAL }}
           WS_SYMBOLS: ${{ vars.WS_SYMBOLS }}
           ANCHOR_SYMBOLS: ${{ vars.ANCHOR_SYMBOLS }}
+          STORAGE_PATH: data
           RUN_DURATION_SECONDS: ${{ github.event.inputs.run_duration_seconds || '21000' }}
         run: python cryptone_v3.py
+
+      # Surface state.json as a build artifact too — separate from the
+      # cache, useful for manually inspecting/downloading what got saved,
+      # or as a recovery copy if the cache entry ever gets evicted
+      # (GitHub evicts cache entries unused for 7+ days, or beyond the
+      # 10GB per-repo cache cap).
+      - name: Upload state snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cryptone-state-${{ github.run_id }}
+          path: data/state.json
+          retention-days: 14
+          if-no-files-found: ignore
