@@ -17,10 +17,18 @@ on:
         description: "Discard saved state.json and start fresh this run (true/false)"
         required: false
         default: "false"
+      relaunch:
+        description: "Internal: whether this run should re-trigger itself when it ends (true/false)"
+        required: false
+        default: "true"
 
 concurrency:
   group: cryptone-v3-radar
   cancel-in-progress: false
+
+permissions:
+  actions: write   # required so the job can dispatch a new run of itself
+  contents: read
 
 jobs:
   run-radar:
@@ -71,7 +79,10 @@ jobs:
           WS_SYMBOLS: ${{ vars.WS_SYMBOLS }}
           ANCHOR_SYMBOLS: ${{ vars.ANCHOR_SYMBOLS }}
           STORAGE_PATH: data
-          RUN_DURATION_SECONDS: ${{ github.event.inputs.run_duration_seconds || '21000' }}
+          # Leave headroom below timeout-minutes (350min = 21000s) so the
+          # process exits cleanly and checkpoints/uploads before the
+          # runner is killed, instead of racing the hard timeout.
+          RUN_DURATION_SECONDS: ${{ github.event.inputs.run_duration_seconds || '20700' }}
         run: python cryptone_v3.py
 
       # Surface state.json as a build artifact too — separate from the
@@ -87,3 +98,25 @@ jobs:
           path: data/state.json
           retention-days: 14
           if-no-files-found: ignore
+
+      # "Infinity pool": relaunch this same workflow the moment this run
+      # ends, regardless of whether it finished cleanly, errored, or hit
+      # timeout-minutes. Runs *in addition to* the every-5-hours cron, so
+      # in steady state the radar chains itself continuously instead of
+      # sitting idle between cron ticks. Skips relaunching when:
+      #   - this was itself a --check-only run
+      #   - the run explicitly opted out via relaunch=false (prevents a
+      #     runaway chain if you ever need to stop it by hand — trigger
+      #     one manual run with relaunch=false to break the loop)
+      - name: Relaunch radar (self-dispatch)
+        if: ${{ always() && github.event.inputs.check_only != 'true' && github.event.inputs.relaunch != 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Re-triggering ${{ github.workflow }} to keep the radar running continuously..."
+          gh workflow run "${{ github.workflow }}" \
+            --ref "${{ github.ref_name }}" \
+            -f run_duration_seconds="${{ github.event.inputs.run_duration_seconds || '20700' }}" \
+            -f check_only="false" \
+            -f reset_state="false" \
+            -f relaunch="true"
