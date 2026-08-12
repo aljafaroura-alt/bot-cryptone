@@ -8,7 +8,7 @@ on:
       run_duration_seconds:
         description: "Override RUN_DURATION_SECONDS for this manual run (seconds)"
         required: false
-        default: "300"
+        default: "21000"
       check_only:
         description: "Run only the quick data-integrity check (--check) instead of the full loop"
         required: false
@@ -33,7 +33,7 @@ permissions:
 jobs:
   run-radar:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 358   # just under GitHub's 360min (6h) hard cap for hosted runners
 
     steps:
       - name: Checkout
@@ -79,10 +79,10 @@ jobs:
           WS_SYMBOLS: ${{ vars.WS_SYMBOLS }}
           ANCHOR_SYMBOLS: ${{ vars.ANCHOR_SYMBOLS }}
           STORAGE_PATH: data
-          # Leave headroom below timeout-minutes (350min = 21000s) so the
-          # process exits cleanly and checkpoints/uploads before the
-          # runner is killed, instead of racing the hard timeout.
-          RUN_DURATION_SECONDS: ${{ github.event.inputs.run_duration_seconds || '20700' }}
+          # ~5h50m — leaves ~8min headroom below timeout-minutes so the
+          # process exits cleanly (checkpoint + disconnect) instead of
+          # racing GitHub's hard SIGKILL at the timeout boundary.
+          RUN_DURATION_SECONDS: ${{ github.event.inputs.run_duration_seconds || '21000' }}
         run: python cryptone_v3.py
 
       # Surface state.json as a build artifact too — separate from the
@@ -116,7 +116,7 @@ jobs:
           echo "Re-triggering ${{ github.workflow }} to keep the radar running continuously..."
           gh workflow run "${{ github.workflow }}" \
             --ref "${{ github.ref_name }}" \
-            -f run_duration_seconds="${{ github.event.inputs.run_duration_seconds || '20700' }}" \
+            -f run_duration_seconds="${{ github.event.inputs.run_duration_seconds || '21000' }}" \
             -f check_only="false" \
             -f reset_state="false" \
             -f relaunch="true"
