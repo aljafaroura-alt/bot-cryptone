@@ -9118,12 +9118,12 @@ class TelegramFormatter:
 
         ts = events[0].timestamp.strftime('%H:%M:%S UTC')
         out = [
-            f"👀 *WATCHING ({len(events)})* — {ts}",
+            f"⏱️ *WATCHING ({len(events)})* — {ts}",
             "```",
             "\n".join(table_lines),
             "```",
             "CHG = since detection, not 24h",
-            "📊 tap symbol on radar for chart",
+            "📊 check coins or tickers on Tradingview",
         ]
         return "\n".join(out)
 
