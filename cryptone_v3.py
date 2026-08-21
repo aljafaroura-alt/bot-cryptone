@@ -1956,6 +1956,132 @@ class ChartConfig:
     # "geometry only, no new judgment" rule as the other 4 zones.
     event_origin_enabled: bool = True
 
+# =====================================================================
+# RADAR RESOLUTION  (P1 Adaptive Resolution)
+# =====================================================================
+
+@dataclass
+class RadarResolution:
+    """P1 Adaptive Resolution (war-room #4): timeframe yang paling cocok 
+    dengan kondisi pasar saat ini, berdasarkan evidence yang ada (reversal/
+    pre-move stage, compression state, multi-horizon reconciliation).
+    
+    Ini hanya layer VISIBILITY — TIDAK ada di StateMachine/PreMoveEngine/
+    ReversalEngine yang mengambil keputusan berdasarkan ini. Murni untuk
+    chart rendering dan logging Telegram.
+    """
+    state: str              # 'VERY_FAST' | 'FAST_EXPANSION' | 'MACRO_PERSISTENT' | 
+                            # 'COMPRESSION_BUILD' | 'QUIET'
+    timeframe: str          # misal '5m', '15m', '1h'
+    lookback_bars: int      # jumlah bar untuk di-render di timeframe ini
+    reason: str             # penjelasan human-readable
+
+
+def classify_radar_resolution(
+    probe: object,
+    timeframe_config: "TimeframeConfig",
+    chart_config: "ChartConfig",
+    compression_state: Optional[str] = None,
+) -> RadarResolution:
+    """P1 Adaptive Resolution, full version: milih timeframe yang paling 
+    sesuai dengan kondisi saat ini, untuk chart rendering dan display saja.
+    TIDAK mempengaruhi keputusan engine manapun.
+    
+    `probe` bisa Event object atau SimpleNamespace dengan field yang sama:
+      - reversal_stage: Optional[str]
+      - pre_move_stage: Optional[str]
+      - horizon_context: Optional[str]
+      - horizon_onset_bars: Optional[int]
+    
+    `compression_state`: 'COMPRESSED'/'DISPLACED'/'NEUTRAL' atau None.
+    """
+    # Default: QUIET di setup_context (15m) — view standar
+    default_tf = timeframe_config.setup_context
+    default_bars = chart_config.lookback_for(default_tf)
+    quiet = RadarResolution(
+        state="QUIET",
+        timeframe=default_tf,
+        lookback_bars=default_bars,
+        reason="Tidak ada pre-move/reversal aktif, compression netral"
+    )
+    
+    # Extract values dari probe
+    reversal_stage = getattr(probe, 'reversal_stage', None)
+    pre_move_stage = getattr(probe, 'pre_move_stage', None)
+    horizon_context = getattr(probe, 'horizon_context', None)
+    horizon_onset_bars = getattr(probe, 'horizon_onset_bars', None)
+    
+    # Case 1: Reversal confirmed — paling urgent, pake 5m buat lihat detail exhaustion
+    if reversal_stage == "CONFIRMED":
+        tf = "5m"
+        return RadarResolution(
+            state="VERY_FAST",
+            timeframe=tf,
+            lookback_bars=chart_config.lookback_for(tf),
+            reason=f"Reversal confirmed — 5m buat detail exhaustion"
+        )
+    
+    # Case 2: Reversal building, atau pre-move activating/confirmed
+    if reversal_stage in ("EARLY", "BUILDING") or pre_move_stage in ("ACTIVATING", "CONFIRMED"):
+        tf = "5m"
+        reason_parts = []
+        if reversal_stage:
+            reason_parts.append(f"reversal {reversal_stage}")
+        if pre_move_stage:
+            reason_parts.append(f"pre-move {pre_move_stage}")
+        return RadarResolution(
+            state="VERY_FAST" if pre_move_stage == "CONFIRMED" else "FAST_EXPANSION",
+            timeframe=tf,
+            lookback_bars=chart_config.lookback_for(tf),
+            reason=f"{' / '.join(reason_parts)} — 5m buat read real-time"
+        )
+    
+    # Case 3: Pre-move building (positioning+compression lagi forming)
+    if pre_move_stage in ("EARLY", "BUILDING"):
+        tf = "15m"
+        return RadarResolution(
+            state="COMPRESSION_BUILD",
+            timeframe=tf,
+            lookback_bars=chart_config.lookback_for(tf),
+            reason=f"Pre-move {pre_move_stage} — 15m setup view"
+        )
+    
+    # Case 4: Horizon persistent — structure konsisten di semua horizon
+    if horizon_context and horizon_context.endswith("_PERSISTENT"):
+        tf = "1h"
+        if horizon_onset_bars:
+            reason = f"Horizon persistent dari {horizon_onset_bars} bars — 1h macro view"
+        else:
+            reason = "Horizon persistent — 1h macro view"
+        return RadarResolution(
+            state="MACRO_PERSISTENT",
+            timeframe=tf,
+            lookback_bars=chart_config.lookback_for(tf),
+            reason=reason
+        )
+    
+    # Case 5: Compression building (volatility contraction tanpa pre-move)
+    if compression_state == "COMPRESSED":
+        tf = "15m"
+        return RadarResolution(
+            state="COMPRESSION_BUILD",
+            timeframe=tf,
+            lookback_bars=chart_config.lookback_for(tf),
+            reason="Compression lagi forming — 15m setup view"
+        )
+    
+    # Case 6: Price displacement (udah gerak)
+    if compression_state == "DISPLACED":
+        tf = "5m"
+        return RadarResolution(
+            state="FAST_EXPANSION",
+            timeframe=tf,
+            lookback_bars=chart_config.lookback_for(tf),
+            reason="Price udah displaced — 5m buat momentum read"
+        )
+    
+    return quiet
+
 
 @dataclass
 class PreMoveConfig:
