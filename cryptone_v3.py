@@ -13,7 +13,7 @@ real-only production mode):
      dari load-bearing intelligence path per war-room decision
   5. DiscoveryEngine — threshold dinamis per liquidity class (high/mid/low)
   6. StateMachine — evidence-based transitions, dengan Evidence flags
-     (aligned/crowded/exhaustion/divergent) load-bearing pada transition
+     (aligned/crowded/exhaustion/divergent) load-bearing pada transition 
      gates, bukan cuma passenger di dict
   7. DataQualityTracker — per-symbol freshness (trade/book/REST) sebagai
      evidence; microstructure flags didiskon otomatis kalau data basi
