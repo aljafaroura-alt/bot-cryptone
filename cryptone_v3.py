@@ -1653,7 +1653,7 @@ class DiscoveryScoringConfig:
     # writes into StateMachine/CORE gates directly — it only ever hands
     # a CONFIRMED_FOOTPRINT symbol back to the SAME eligibility path
     # every other candidate goes through.
-    use_narrative_intelligence: bool = False
+    use_narrative_intelligence: bool = True
     narrative_intel_interval_seconds: float = 7200.0  # 2h opportunity window, not a call quota
     narrative_intel_max_calls_per_batch: int = 15      # safety cap even if the queue is bigger
     narrative_intel_source_policy: Tuple[str, ...] = ("web",)
@@ -2575,6 +2575,47 @@ class CorrelationConfig:
 
 
 @dataclass
+class ClusterConfig:
+    """P5 — "master key" clustering. Purely mechanical grouping of this
+    scan's candidates that need an AIContextEngine read, using ONLY
+    data Cryptone's own CorrelationEngine already computed from tick
+    data this same scan (candidate.correlation_readings) — zero new
+    fetch, zero AI call to decide the grouping itself. The point: N
+    symbols that are COUPLED to the same anchor and moving the same
+    direction almost always share one external narrative (e.g. "L1s
+    rallying on a BTC dominance shift") — asking Gemini N separate
+    times about N symbols riding the same wave is redundant spend AND
+    N independent reads that can drift/disagree on what's structurally
+    the same story. ClusterEngine groups them so AIContextEngine.
+    evaluate_batch() can ask ONE question covering the whole group.
+
+    Every candidate that needs a read gets evaluated, clustered or not
+    — a candidate that doesn't share (anchor, direction, COUPLED) with
+    anyone else this scan becomes its own cluster of size 1, never
+    silently dropped from evaluation.
+    """
+    enabled: bool = True
+    # Correlation status required against the shared anchor for two
+    # symbols to be considered part of the same story. COUPLED only
+    # (not DECOUPLING/DECOUPLED) — a symbol actively diverging from its
+    # anchor is, by definition, NOT sharing that anchor's narrative
+    # right now, so it must never be batched with couples that are.
+    required_correlation_status: str = "COUPLED"
+    # Cap per cluster — a huge market-wide co-move (e.g. everything
+    # COUPLED to BTC after a macro print) could otherwise put 30+
+    # symbols in one prompt, which both risks blowing max_output_tokens
+    # on the batch response and dilutes per-symbol read quality. Excess
+    # members beyond this are NOT dropped — they spill into additional
+    # same-key clusters (chunked), same "never silently drop" contract
+    # as the rest of this file's optional-layer posture.
+    max_cluster_size: int = 6
+    # A "cluster" of exactly 1 symbol just goes through evaluate_batch()
+    # like any other cluster (one prompt, one symbol) — no special-cased
+    # single-symbol code path, so there is exactly one AI call shape to
+    # reason about and test, not two.
+
+
+@dataclass
 class ChartConfig:
     """P1 (chart-on-actionable-event, per user request): candlestick chart
     sent alongside HIGH/CRITICAL Telegram alerts, on top of (not instead
@@ -3261,6 +3302,7 @@ class Config:
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     regime: RegimeConfig = field(default_factory=RegimeConfig)
     correlation: CorrelationConfig = field(default_factory=CorrelationConfig)
+    cluster: ClusterConfig = field(default_factory=ClusterConfig)
     chart: ChartConfig = field(default_factory=ChartConfig)
     pre_move: PreMoveConfig = field(default_factory=PreMoveConfig)
     reversal: ReversalConfig = field(default_factory=ReversalConfig)
@@ -3291,6 +3333,22 @@ class Config:
 
     max_events: int = 100
     alert_cooldown: int = 60
+
+    # P-fix (repeat-alert spam): alert_cooldown alone is a pure timer —
+    # once it elapses, a candidate sitting in the SAME episode_stage
+    # (e.g. still WAIT/pending, no real transition) re-fires on the next
+    # scan even if price only wiggled a hundredth of a percent and
+    # nothing informationally changed. That's what produced a fresh
+    # Telegram message every ~60-90s for a symbol that was, in trading
+    # terms, doing nothing. This adds a content gate on top of the time
+    # gate: a same-stage repeat must ALSO have moved at least this much
+    # (in percent, absolute value) since the last alert actually sent
+    # for that (symbol, episode_stage) key, or it's skipped even though
+    # the cooldown window is open. Real transitions (episode_stage_changed
+    # / is_transition) always bypass this — same as they already bypass
+    # the time cooldown — so a genuine WAIT->CONFIRMED flip is never
+    # held back by this gate.
+    min_repeat_price_change_pct: float = 0.5
 
     telegram_enabled: bool = False
     telegram_token: Optional[str] = None
@@ -6163,6 +6221,15 @@ class EconomicCalendarProvider:
 
     def mark_daily_digest_sent(self) -> None:
         self._daily_digest_sent_date = utc_now().strftime("%Y-%m-%d")
+
+    def has_events_cache(self) -> bool:
+        """True once at least one successful fetch has populated
+        self._cached_events (even if that week's file turned out to
+        have zero High/Medium entries). Lets callers distinguish
+        'genuinely zero events today' from 'we've never successfully
+        fetched, so we don't actually know' — _get_cached_events()
+        otherwise collapses both into the same empty list."""
+        return self._cached_events is not None
 
     def export_state(self) -> dict:
         """Fix (duplicate reminder bug): _reminded/_daily_digest_sent_date
@@ -11735,6 +11802,155 @@ class AIContextPacketBuilder:
 
 
 # =====================================================================
+# CLUSTER ENGINE  (P5 — "master key" mechanical clustering)
+#
+# Groups this scan's AIContextPacket-bearing candidates by shared
+# correlation anchor + direction + COUPLED status — data
+# CorrelationEngine already computed from tick data this same scan,
+# sitting on candidate.correlation_readings. No AI, no new fetch, pure
+# grouping logic. Feeds AIContextEngine.evaluate_batch() (below) so N
+# symbols riding the same co-move get ONE Gemini call instead of N —
+# same posture as ResearchIntentClusterer (P4.4) but one layer
+# earlier: P4.4 clusters research REQUESTS after a gap is already
+# identified; this clusters the routine per-candidate AI context read
+# itself, before any gap analysis happens at all.
+#
+# Contract: every symbol with a packet gets evaluated. A symbol that
+# shares no (anchor, direction, COUPLED) key with anyone else this
+# scan simply becomes a cluster of size 1 — clustering can only ever
+# reduce call count, never drop a symbol from being read.
+# =====================================================================
+
+@dataclass
+class SymbolCluster:
+    """One group of symbols to be evaluated by a single
+    AIContextEngine.evaluate_batch() call. cluster_id is deterministic
+    (not random) so repeated scans with an unchanged grouping produce
+    a stable, traceable id in logs — same posture as
+    ResearchRequestBuilder._request_id.
+    """
+    cluster_id: str
+    anchor: Optional[str]        # None for the singleton/no-shared-anchor fallback bucket
+    direction: Optional[str]     # None alongside anchor=None
+    symbols: List[str]
+    packets: Dict[str, "AIContextPacket"]
+    reason: str                  # human-readable, for debug logging only
+
+    def to_dict(self) -> dict:
+        return {
+            "cluster_id": self.cluster_id,
+            "anchor": self.anchor,
+            "direction": self.direction,
+            "symbols": list(self.symbols),
+            "reason": self.reason,
+        }
+
+
+class ClusterEngine:
+    """Pure Python, no I/O, no AI call — mirrors InformationGapDetector's
+    contract shape (stateless, testable without an API key). Takes this
+    scan's {symbol: AIContextPacket} plus the live Candidate objects
+    (for .direction and .correlation_readings, both already computed
+    earlier this same scan), returns a List[SymbolCluster] that
+    together cover every packet exactly once.
+    """
+
+    def __init__(self, config: Optional[ClusterConfig] = None):
+        self.cfg = config or ClusterConfig()
+
+    def cluster(
+        self,
+        packets: Dict[str, "AIContextPacket"],
+        candidates: Dict[str, "Candidate"],
+    ) -> List[SymbolCluster]:
+        if not packets:
+            return []
+
+        if not self.cfg.enabled:
+            # Clustering off entirely -> every symbol is its own
+            # cluster of 1. Behaviorally identical to the old
+            # one-call-per-symbol path, just routed through the same
+            # evaluate_batch() code path for a single member.
+            return [
+                self._singleton(symbol, packet)
+                for symbol, packet in packets.items()
+            ]
+
+        # --- group by (anchor, direction) among symbols whose
+        # CorrelationReading against that anchor is COUPLED ---
+        groups: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        ungrouped: List[str] = []
+
+        for symbol in packets:
+            candidate = candidates.get(symbol)
+            direction = getattr(candidate, "direction", None) if candidate else None
+            readings = getattr(candidate, "correlation_readings", None) if candidate else None
+
+            if not direction or not readings:
+                ungrouped.append(symbol)
+                continue
+
+            # A symbol can be COUPLED to more than one anchor (e.g. BTC
+            # and ETH both). First qualifying anchor wins — deterministic
+            # since correlation_readings preserves CorrelationEngine's
+            # own anchor_symbols order, not re-sorted here.
+            matched = False
+            for reading in readings:
+                if reading.status == self.cfg.required_correlation_status:
+                    groups[(reading.anchor, direction)].append(symbol)
+                    matched = True
+                    break
+            if not matched:
+                ungrouped.append(symbol)
+
+        clusters: List[SymbolCluster] = []
+
+        for (anchor, direction), symbols in groups.items():
+            # Chunk oversized groups rather than dropping members —
+            # see ClusterConfig.max_cluster_size docstring.
+            for i in range(0, len(symbols), self.cfg.max_cluster_size):
+                chunk = symbols[i : i + self.cfg.max_cluster_size]
+                chunk_packets = {s: packets[s] for s in chunk}
+                cluster_id = self._cluster_id(anchor, direction, chunk)
+                clusters.append(SymbolCluster(
+                    cluster_id=cluster_id,
+                    anchor=anchor,
+                    direction=direction,
+                    symbols=chunk,
+                    packets=chunk_packets,
+                    reason=(
+                        f"{len(chunk)} symbol(s) COUPLED to {anchor}, "
+                        f"direction={direction}"
+                    ),
+                ))
+
+        # Symbols with no qualifying (anchor, direction, COUPLED) match
+        # this scan — each becomes its own singleton cluster. This is
+        # the "never silently drop a symbol" guarantee: clustering can
+        # only reduce call count relative to the old one-per-symbol
+        # path, never reduce coverage.
+        for symbol in ungrouped:
+            clusters.append(self._singleton(symbol, packets[symbol]))
+
+        return clusters
+
+    @staticmethod
+    def _singleton(symbol: str, packet: "AIContextPacket") -> SymbolCluster:
+        return SymbolCluster(
+            cluster_id=f"solo::{symbol}",
+            anchor=None,
+            direction=None,
+            symbols=[symbol],
+            packets={symbol: packet},
+            reason="no qualifying cluster-mate this scan",
+        )
+
+    @staticmethod
+    def _cluster_id(anchor: str, direction: str, symbols: List[str]) -> str:
+        return f"{anchor}::{direction}::" + ",".join(sorted(symbols))
+
+
+# =====================================================================
 # AI CONTEXT ENGINE  (P1 — AIContextEngine)
 #
 # Takes the AIContextPacket P0 built (pure Python, no API call) and asks
@@ -11984,6 +12200,196 @@ class AIContextEngine:
         except (AttributeError, TypeError, ValueError, KeyError, json.JSONDecodeError) as e:
             logger.debug(f"AIContextEngine: malformed response for {symbol}: {e}")
             return None
+
+    # -------------------------------------------------------------
+    # P5 — evaluate_batch(): the ClusterEngine-fed counterpart to
+    # evaluate() above. Same contract (Gemini describes support/
+    # contradictions/missing_context/risk, never a direction, never
+    # overrides Cryptone's own read), extended to N symbols sharing
+    # one prompt instead of one. Returns a dict covering EVERY symbol
+    # in `packets` — a symbol Gemini's response is silent about, or
+    # that fails to parse individually, still gets an explicit None
+    # entry rather than being absent from the returned dict, so a
+    # caller can tell "evaluated, nothing usable" apart from "never
+    # asked about this key at all".
+    # -------------------------------------------------------------
+
+    _BATCH_SYSTEM_PROMPT = (
+        "You are a market-context analyst assisting an automated crypto "
+        "trading radar called Cryptone. You will be given a JSON array of "
+        "snapshots, each for a DIFFERENT symbol that Cryptone's own "
+        "deterministic engines (microstructure, positioning, pre-move, "
+        "reversal, regime, correlation) have ALREADY read — those reads "
+        "are ground truth and you cannot override any of them. These "
+        "symbols were grouped together because Cryptone's own tick data "
+        "shows them currently coupled to the same anchor and moving the "
+        "same direction, so they likely share one external narrative — "
+        "but treat that as a hint, not a guarantee: if a symbol's own "
+        "situation clearly diverges, say so for that symbol specifically "
+        "rather than forcing a shared story. For EACH symbol in the "
+        "input array, identify what EXTERNAL context (news, macro, "
+        "narrative) supports it, contradicts it, or is conspicuously "
+        "missing. Do not recommend a trade. Do not say long/short/buy/"
+        "sell for any symbol. Do not invent facts not present in the "
+        "packet or general market knowledge you are confident about — if "
+        "you are not sure, say so in missing_context instead of "
+        "guessing. Respond with ONLY a JSON array, no markdown, no "
+        "explanation outside the JSON, one object per input symbol, same "
+        "order as the input: "
+        '[{"symbol": "<must exactly match the input symbol>", '
+        '"interpretation": "<max 40 words, plain language>", '
+        '"support": ["<short phrase>", ...], '
+        '"contradictions": ["<short phrase>", ...], '
+        '"missing_context": ["<short phrase>", ...], '
+        '"risk": "LOW"|"MEDIUM"|"HIGH"}, ...]. '
+        "Empty arrays are fine and expected when there's nothing to say "
+        "in that category — do not pad with filler. Every symbol given "
+        "must appear exactly once in the output array."
+    )
+
+    async def evaluate_batch(
+        self, packets: Dict[str, "AIContextPacket"]
+    ) -> Dict[str, Optional[AIContextResult]]:
+        """One Gemini call covering every symbol in `packets`. Falls
+        back to per-symbol evaluate() (still one call each, but
+        correct) only when packets has exactly one entry — no reason
+        to pay the batch prompt's larger fixed overhead for a cluster
+        of 1. Disabled/no-client/empty-input all return an all-None
+        dict, same fail-open contract as evaluate().
+        """
+        if not packets:
+            return {}
+
+        if len(packets) == 1:
+            symbol, packet = next(iter(packets.items()))
+            return {symbol: await self.evaluate(packet)}
+
+        if not self.enabled or self._client is None:
+            return {symbol: None for symbol in packets}
+
+        # Cache check per-symbol, same fingerprint contract as
+        # evaluate() — if EVERY member of this cluster already has a
+        # fresh cached result, skip the call entirely. A partial cache
+        # hit still calls the batch (cheaper than splitting into a
+        # second request just for the cache misses), but the fresh
+        # response overwrites the stale-but-still-valid cache entries
+        # too — harmless, since it's re-confirming the same content
+        # fingerprint's answer.
+        now = utc_now()
+        all_cached = True
+        cached_results: Dict[str, Optional[AIContextResult]] = {}
+        for symbol, packet in packets.items():
+            fingerprint = self._fingerprint(packet)
+            cached = self._cache.get(symbol)
+            if (
+                cached is not None
+                and cached[1] == fingerprint
+                and (now - cached[0]).total_seconds() < self.sc.llm_cache_seconds
+            ):
+                cached_results[symbol] = cached[2]
+            else:
+                all_cached = False
+                break
+        if all_cached:
+            return cached_results
+
+        symbols_in_order = list(packets.keys())
+        prompt_items = [
+            {"symbol": s, "snapshot": json.loads(packets[s].to_json())}
+            for s in symbols_in_order
+        ]
+        prompt = "Symbols (JSON array):\n" + json.dumps(prompt_items)
+
+        try:
+            response = await asyncio.wait_for(
+                self._client.aio.models.generate_content(
+                    model=self.sc.llm_model,
+                    contents=prompt,
+                    config=genai_types.GenerateContentConfig(
+                        system_instruction=self._BATCH_SYSTEM_PROMPT,
+                        temperature=0.1,
+                        # Scales with cluster size — 400 tokens was
+                        # calibrated for one symbol's worth of output;
+                        # a hard floor keeps small clusters unaffected.
+                        max_output_tokens=max(400, 250 * len(symbols_in_order)),
+                        response_mime_type="application/json",
+                    ),
+                ),
+                timeout=self.sc.llm_timeout_seconds,
+            )
+        except Exception as e:
+            logger.debug(
+                f"AIContextEngine.evaluate_batch fetch failed "
+                f"({len(symbols_in_order)} symbols): {type(e).__name__}: {e}"
+            )
+            results = {symbol: None for symbol in symbols_in_order}
+            for symbol, packet in packets.items():
+                self._cache[symbol] = (now, self._fingerprint(packet), None)
+            return results
+
+        results = self._parse_batch_response(response, symbols_in_order)
+        for symbol, packet in packets.items():
+            self._cache[symbol] = (now, self._fingerprint(packet), results.get(symbol))
+        return results
+
+    @staticmethod
+    def _parse_batch_response(
+        response, expected_symbols: List[str]
+    ) -> Dict[str, Optional[AIContextResult]]:
+        """Defensive parse, same posture as _parse_response — a
+        malformed array, a missing symbol, or one bad element never
+        takes the whole batch down. Every expected_symbols entry is
+        guaranteed present in the return dict (None if Gemini omitted
+        it or its element failed to parse), so a caller can iterate
+        expected_symbols and never KeyError.
+        """
+        results: Dict[str, Optional[AIContextResult]] = {s: None for s in expected_symbols}
+        try:
+            text = response.text
+            if not text:
+                return results
+            parsed = json.loads(text)
+            if not isinstance(parsed, list):
+                logger.debug("AIContextEngine.evaluate_batch: malformed response — expected a JSON array")
+                return results
+
+            expected_set = set(expected_symbols)
+            for item in parsed:
+                try:
+                    symbol = str(item.get("symbol", "")).strip()
+                    if symbol not in expected_set:
+                        continue  # hallucinated/mismatched symbol — never fabricate a mapping
+
+                    interpretation = str(item.get("interpretation", "")).strip()[:400]
+                    if not interpretation:
+                        continue  # nothing usable for this symbol — leave its entry None
+
+                    def _str_list(key: str) -> List[str]:
+                        raw = item.get(key, [])
+                        if not isinstance(raw, list):
+                            return []
+                        return [str(x)[:200] for x in raw if str(x).strip()][:10]
+
+                    risk = str(item.get("risk", "")).strip().upper()
+                    if risk not in ("LOW", "MEDIUM", "HIGH"):
+                        risk = "MEDIUM"
+
+                    results[symbol] = AIContextResult(
+                        symbol=symbol,
+                        generated_at=utc_now(),
+                        interpretation=interpretation,
+                        support=_str_list("support"),
+                        contradictions=_str_list("contradictions"),
+                        missing_context=_str_list("missing_context"),
+                        risk=risk,
+                        model="gemini-batch",
+                    )
+                except (AttributeError, TypeError, ValueError) as e:
+                    logger.debug(f"AIContextEngine.evaluate_batch: skipped malformed element: {e}")
+                    continue
+        except (AttributeError, TypeError, ValueError, KeyError, json.JSONDecodeError) as e:
+            logger.debug(f"AIContextEngine: malformed batch response: {e}")
+        return results
 
 
 # =====================================================================
@@ -17412,10 +17818,16 @@ class EventEngine:
     while repeated events *within the same episode stage* still throttle
     on the normal (symbol, state) cooldown as before.
     """
-    def __init__(self, max_events: int = 100, cooldown: int = 60):
+    def __init__(self, max_events: int = 100, cooldown: int = 60, min_repeat_price_change_pct: float = 0.5):
         self.max_events = max_events
         self.cooldown = cooldown
+        self.min_repeat_price_change_pct = min_repeat_price_change_pct
         self._last_event: Dict[Tuple[str, str], datetime] = {}
+        # P-fix (repeat-alert spam): last price actually SENT for this
+        # (symbol, episode_stage) key, separate from _last_event's
+        # timestamp — lets a same-stage repeat be judged on "did price
+        # actually move" rather than only "did the timer run out".
+        self._last_event_price: Dict[Tuple[str, str], float] = {}
         self._events: deque = deque(maxlen=max_events)
 
     def generate_event(
@@ -17475,6 +17887,22 @@ class EventEngine:
             last = self._last_event.get(key)
             if last and (now - last).total_seconds() < self.cooldown:
                 return None
+            # Time cooldown has elapsed, but that alone isn't a reason
+            # to resend — check whether price actually moved enough
+            # since the last alert we SENT for this exact (symbol,
+            # episode_stage) to be worth a fresh Telegram message. No
+            # prior sent-price on record (first alert for this key)
+            # just falls through and sends normally.
+            last_price = self._last_event_price.get(key)
+            check_price = current_price if current_price is not None else candidate.detected_price
+            if (
+                last_price is not None
+                and check_price is not None
+                and last_price != 0
+            ):
+                moved_pct = abs((check_price - last_price) / last_price) * 100.0
+                if moved_pct < self.min_repeat_price_change_pct:
+                    return None
 
         event = Event(
             symbol=candidate.symbol,
@@ -17573,6 +18001,7 @@ class EventEngine:
             ),
         )
         self._last_event[key] = now
+        self._last_event_price[key] = event.current_price
         self._events.append(event)
         return event
 
@@ -19777,6 +20206,10 @@ class CryptoneV3:
         # pattern — see AIContextEngine's docstring for the fail-open
         # contract and the use_ai_context_engine toggle.
         self.ai_context_engine = AIContextEngine(self.config)
+        # ClusterEngine (P5): mechanical grouping over this scan's
+        # AIContextPackets — see ClusterEngine/ClusterConfig docstrings.
+        # No API key / client of its own, pure Python.
+        self.cluster_engine = ClusterEngine(self.config.cluster)
         # P2: pure combination logic over P0/P1 output, no config/I-O
         # of its own — see CollaborationEngine docstring.
         self.collaboration_engine = CollaborationEngine()
@@ -19893,7 +20326,8 @@ class CryptoneV3:
 
         self.event_engine = EventEngine(
             max_events=self.config.max_events,
-            cooldown=self.config.alert_cooldown
+            cooldown=self.config.alert_cooldown,
+            min_repeat_price_change_pct=self.config.min_repeat_price_change_pct,
         )
 
         self.hyperliquid = HyperliquidAdapter(self.config)
@@ -20725,11 +21159,22 @@ class CryptoneV3:
                             self.economic_calendar.mark_daily_digest_sent()
                     else:
                         logger.debug("_check_economic_calendar: digest render failed, will retry next cycle")
-                else:
-                    # No High/Medium events today at all — still mark as
-                    # "sent" so an empty day doesn't retry every scan
-                    # cycle until midnight; there's nothing to send.
+                elif self.economic_calendar.has_events_cache():
+                    # Cache is populated and genuinely has zero High/Medium
+                    # events today — safe to mark "sent" so an empty day
+                    # doesn't retry every scan cycle until midnight.
                     self.economic_calendar.mark_daily_digest_sent()
+                else:
+                    # today_events came back empty because the underlying
+                    # fetch/cache is empty (transient failure, WAF block,
+                    # first-run race, etc.) — NOT because today is
+                    # genuinely event-free. Do NOT mark as sent here, or
+                    # a single bad fetch at digest_hour_utc silently
+                    # skips the entire day's digest with no retry.
+                    logger.debug(
+                        "_check_economic_calendar: no cached events available yet, "
+                        "will retry digest next cycle instead of marking as sent"
+                    )
 
             if cal_cfg.per_event_reminder_enabled:
                 due = await self.economic_calendar.get_due_reminders(cal_cfg.reminder_lead_minutes)
@@ -21287,48 +21732,21 @@ class CryptoneV3:
                 logger.debug(f"AIContextPacketBuilder failed for {symbol}: {type(e).__name__}: {e}")
                 candidate.ai_context_packet = None
 
-            # P1 (AIContextEngine): ask Gemini to interpret the packet
-            # just built above — support/contradictions/missing_context/
-            # risk, never a direction. Gated on both the packet existing
-            # AND the engine actually being enabled (checked inside
-            # evaluate() too, but checking here avoids constructing the
-            # coroutine at all on the common "disabled" path across a
-            # whole universe of symbols). Same defensive wrapper posture
-            # as the packet build immediately above — a bug or an
-            # unexpected exception in this brand-new call path can never
-            # take down the real scan loop.
-            if candidate.ai_context_packet is not None and self.ai_context_engine.enabled:
-                try:
-                    candidate.ai_context_result = await self.ai_context_engine.evaluate(
-                        candidate.ai_context_packet
-                    )
-                except Exception as e:
-                    logger.debug(f"AIContextEngine.evaluate failed for {symbol}: {type(e).__name__}: {e}")
-                    candidate.ai_context_result = None
-            else:
-                candidate.ai_context_result = None
-
-            # P2 (CollaborationEngine): combine this scan's market-
-            # mechanics view (pre_move/reversal, already set above) with
-            # whatever AIContextEngine just produced (or didn't) into a
-            # relation — sync, no I/O. Wrapped defensively same as P0/P1
-            # immediately above.
-            try:
-                candidate.collaboration_result = self.collaboration_engine.evaluate(candidate)
-            except Exception as e:
-                logger.debug(f"CollaborationEngine.evaluate failed for {symbol}: {type(e).__name__}: {e}")
-                candidate.collaboration_result = None
-
-            # CalibrationTracker (P3.9/P4): record this scan's
-            # CollaborationResult (if it carries a directional thesis)
-            # so its relation call accumulates a track record against
-            # what price actually does next. Read-only w.r.t. candidate
-            # — never writes back to it. Same defensive wrapper posture
-            # as every other optional layer immediately above.
-            try:
-                self.calibration_tracker.record(candidate.collaboration_result, data.price)
-            except Exception as e:
-                logger.debug(f"CalibrationTracker.record failed for {symbol}: {type(e).__name__}: {e}")
+            # P1 (AIContextEngine) / P2 (CollaborationEngine) / calibration
+            # recording used to run right here, one Gemini call per
+            # symbol, sequentially inside this loop. P5 (ClusterEngine)
+            # moved the actual AI call OUT of this loop into its own
+            # pass immediately after (see "P5 — CLUSTER ENGINE" below,
+            # same placement pattern as the existing P4.4/P4.8/P4.9
+            # post-loop passes) so symbols sharing a correlation anchor
+            # + direction this scan can be batched into ONE call instead
+            # of N. ai_context_result/collaboration_result are left as
+            # None here as an explicit placeholder — both are always
+            # assigned a real value (result or None) in the P5 pass
+            # below before anything downstream reads them this same
+            # scan, so this is never a stale/missing-write gap.
+            candidate.ai_context_result = None
+            candidate.collaboration_result = None
 
             # P3 (CapabilityBridgeEngine): send the AI OUT to look for
             # external context Cryptone's own market-mechanics engines
@@ -21508,6 +21926,96 @@ class CryptoneV3:
             # ev_obj/episode_stage_changed/price there — scoped to this
             # scan() call only, not on Candidate itself.
             pending_notifications[symbol] = (ev_obj, episode_stage_changed, new_stage, data.price, data.funding_rate)
+
+        # P5 (ClusterEngine + AIContextEngine.evaluate_batch): runs once,
+        # right after the per-candidate loop, over every AIContextPacket
+        # collected above — clustering inherently needs to see every
+        # symbol's packet/direction/correlation_readings at once, same
+        # reasoning as P4.4's placement below. Groups symbols sharing a
+        # correlation anchor + direction (COUPLED, per ClusterEngine) so
+        # ONE Gemini call covers the whole group instead of N separate
+        # calls — the "master key" the P5 design doc describes. A
+        # symbol with no packet (P0 build failed, or the candidate isn't
+        # eligible this scan) is simply absent from `packets` and never
+        # reaches this pass — same as it never reached the old inline
+        # evaluate() call either.
+        packets_for_ai: Dict[str, "AIContextPacket"] = {
+            s: self.state_machine._candidates[s].ai_context_packet
+            for s in symbols_to_score
+            if s in self.state_machine._candidates
+            and self.state_machine._candidates[s].ai_context_packet is not None
+        }
+
+        if packets_for_ai and self.ai_context_engine.enabled:
+            try:
+                clusters = self.cluster_engine.cluster(
+                    packets_for_ai,
+                    {s: self.state_machine._candidates[s] for s in packets_for_ai},
+                )
+            except Exception as e:
+                logger.debug(f"ClusterEngine.cluster failed: {type(e).__name__}: {e}")
+                # Fail-open: clustering itself must never cost a symbol
+                # its AI read — fall back to one singleton cluster per
+                # symbol, identical in shape to ClusterEngine's own
+                # enabled=False path.
+                clusters = [
+                    SymbolCluster(
+                        cluster_id=f"solo::{s}", anchor=None, direction=None,
+                        symbols=[s], packets={s: p}, reason="ClusterEngine.cluster raised",
+                    )
+                    for s, p in packets_for_ai.items()
+                ]
+
+            if clusters:
+                logger.info(
+                    f"🔗 ClusterEngine (P5): {len(packets_for_ai)} symbol(s) -> "
+                    f"{len(clusters)} AI call(s) this scan "
+                    f"({sum(1 for c in clusters if len(c.symbols) > 1)} multi-symbol cluster(s))"
+                )
+
+            for cluster in clusters:
+                try:
+                    batch_results = await self.ai_context_engine.evaluate_batch(cluster.packets)
+                except Exception as e:
+                    logger.debug(
+                        f"AIContextEngine.evaluate_batch failed for cluster "
+                        f"{cluster.cluster_id}: {type(e).__name__}: {e}"
+                    )
+                    batch_results = {s: None for s in cluster.symbols}
+
+                for s in cluster.symbols:
+                    candidate = self.state_machine._candidates.get(s)
+                    if candidate is not None:
+                        candidate.ai_context_result = batch_results.get(s)
+        # else: engine disabled or nothing to evaluate this scan —
+        # every candidate.ai_context_result stays None, exactly as it
+        # would have with the old inline call path under the same
+        # conditions.
+
+        # P2 (CollaborationEngine) + CalibrationTracker: moved out of
+        # the main per-candidate loop alongside P1 above, so it runs
+        # AFTER every candidate's ai_context_result is final for this
+        # scan (batched or not) rather than reading a still-None
+        # placeholder. Same try/except-per-candidate posture, same
+        # "one bad item never discards earlier results" contract as
+        # every other post-loop pass in this file.
+        for symbol in symbols_to_score:
+            candidate = self.state_machine._candidates.get(symbol)
+            if candidate is None:
+                continue
+
+            try:
+                candidate.collaboration_result = self.collaboration_engine.evaluate(candidate)
+            except Exception as e:
+                logger.debug(f"CollaborationEngine.evaluate failed for {symbol}: {type(e).__name__}: {e}")
+                candidate.collaboration_result = None
+
+            snap = snapshots.get(symbol)
+            price = snap.price if snap is not None else None
+            try:
+                self.calibration_tracker.record(candidate.collaboration_result, price)
+            except Exception as e:
+                logger.debug(f"CalibrationTracker.record failed for {symbol}: {type(e).__name__}: {e}")
 
         # P4.4 (ResearchIntentClusterer): runs once, right after the
         # per-candidate loop, over every (ResearchIntent,
