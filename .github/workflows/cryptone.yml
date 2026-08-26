@@ -67,7 +67,11 @@ jobs:
         if: ${{ github.event.inputs.check_only == 'true' }}
         run: python cryptone_v3.py --check
 
+      # id added so the relaunch step below can, if ever needed, inspect
+      # this specific step's outcome (steps.run_radar.outcome /
+      # steps.run_radar.conclusion) rather than only the job-level status.
       - name: Run Cryptone radar
+        id: run_radar
         if: ${{ github.event.inputs.check_only != 'true' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -101,16 +105,36 @@ jobs:
           if-no-files-found: ignore
 
       # "Infinity pool": relaunch this same workflow the moment this run
-      # ends, regardless of whether it finished cleanly, errored, or hit
-      # timeout-minutes. Runs *in addition to* the every-5-hours cron, so
-      # in steady state the radar chains itself continuously instead of
-      # sitting idle between cron ticks. Skips relaunching when:
+      # ends, so in steady state the radar chains itself continuously
+      # instead of sitting idle between cron ticks. Runs *in addition to*
+      # the every-5-hours cron.
+      #
+      # Changed from `if: always()` to `if: !cancelled()`:
+      #   - `always()` re-triggers unconditionally, even when the run was
+      #     manually cancelled or stuck/hung. Combined with
+      #     `cancel-in-progress: false`, a bad run (cancelled, hung,
+      #     repeatedly failing) kept spawning new queued runs behind it
+      #     with no way to stop the chain short of manually cancelling
+      #     every run in the queue — which is exactly what happened.
+      #   - `!cancelled()` still relaunches on success AND on ordinary
+      #     failure (so a transient crash doesn't kill the radar
+      #     permanently), but stops the chain the moment a run is
+      #     cancelled — manually, or by GitHub for exceeding
+      #     timeout-minutes. That gives you a clean, reliable way to stop
+      #     the loop by hand: cancel one run, and no new run gets queued
+      #     behind it.
+      #
+      # Still skips relaunching when:
       #   - this was itself a --check-only run
-      #   - the run explicitly opted out via relaunch=false (prevents a
-      #     runaway chain if you ever need to stop it by hand — trigger
-      #     one manual run with relaunch=false to break the loop)
+      #   - the run explicitly opted out via relaunch=false (manual
+      #     override to break the loop without waiting on a cancel)
       - name: Relaunch radar (self-dispatch)
-        if: ${{ always() && github.event.inputs.check_only != 'true' && github.event.inputs.relaunch != 'false' }}
+        if: >-
+          ${{
+            !cancelled() &&
+            github.event.inputs.check_only != 'true' &&
+            github.event.inputs.relaunch != 'false'
+          }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
